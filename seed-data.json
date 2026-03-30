@@ -1,0 +1,60 @@
+{
+  "users": {
+    "hturra": {
+      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "role": "admin",
+      "nombre": "Hernán Turra",
+      "initials": "HT",
+      "empresa": "all"
+    },
+    "dbravo": {
+      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "role": "empresa",
+      "nombre": "D. Bravo",
+      "initials": "DB",
+      "empresa": "tg-inversiones"
+    },
+    "strujillo": {
+      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "role": "empresa",
+      "nombre": "S. Trujillo",
+      "initials": "ST",
+      "empresa": "mt-inversiones"
+    }
+  },
+  "empresas": {
+    "tg-inversiones": {
+      "nombre": "TG Inversiones SPA",
+      "rut": "77.859.376-9",
+      "giro": "Otras actividades auxiliares de las actividades de servicios financieros",
+      "direccion": "",
+      "comuna": "",
+      "ciudad": "",
+      "email_facturacion": "facturas@tginversiones.cl",
+      "simplefactura": {
+        "username": "",
+        "password": "",
+        "rut_emisor": "77859376-9"
+      }
+    },
+    "mt-inversiones": {
+      "nombre": "MT Inversiones SPA",
+      "rut": "77.885.698-0",
+      "giro": "Otras actividades auxiliares de las actividades de servicios financieros",
+      "direccion": "",
+      "comuna": "",
+      "ciudad": "",
+      "email_facturacion": "facturasmtinversioneschile@gmail.com",
+      "simplefactura": {
+        "username": "",
+        "password": "",
+        "rut_emisor": "77885698-0"
+      }
+    }
+  },
+  "config": {
+    "simplefactura_base_url": "https://api.simplefactura.cl",
+    "nombre_item_default": "Venta paquete activo digital",
+    "descripcion_item_default": "Venta paquete activo digital"
+  }
+}

@@ -1,0 +1,1797 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Facturación MT & TG Inversiones</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #0a0e1a;
+  --bg2: #0f1422;
+  --card: #151b2e;
+  --card-b: rgba(255,255,255,.06);
+  --card-hover: #1a2138;
+  --txt: #e8eaed;
+  --txt2: #9ba3b2;
+  --txt3: #5a6070;
+  --green: #00d4aa;
+  --green-bg: rgba(0,212,170,.08);
+  --gold: #d4af37;
+  --blue: #4a9eff;
+  --blue-bg: rgba(74,158,255,.08);
+  --red: #e05050;
+  --red-bg: rgba(224,80,80,.08);
+  --orange: #f0a030;
+  --orange-bg: rgba(240,160,48,.08);
+  --purple: #a078f0;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,.5);
+  --transition: all .2s ease;
+  color-scheme: dark;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--txt); min-height: 100vh; }
+a { color: var(--blue); text-decoration: none; }
+
+/* ── Login ──────────────────────────────────────────── */
+#login-screen { display:flex; align-items:center; justify-content:center; min-height:100vh; background: linear-gradient(135deg, var(--bg) 0%, #0d1225 50%, #111830 100%); }
+.login-box { background: var(--card); border:1px solid var(--card-b); border-radius: 16px; padding: 48px 40px; width: 400px; max-width: 90vw; box-shadow: var(--shadow); }
+.login-logo { text-align:center; margin-bottom:32px; }
+.login-logo h1 { font-size:24px; font-weight:700; color: var(--txt); margin-bottom:4px; }
+.login-logo p { color: var(--txt2); font-size:13px; }
+.login-logo .accent { color: var(--green); }
+.form-group { margin-bottom:20px; }
+.form-group label { display:block; font-size:12px; color:var(--txt2); margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+.form-group input, .form-group select { width:100%; padding:12px 16px; background: var(--bg2); border:1px solid var(--card-b); border-radius: var(--radius-sm); color: var(--txt); font-size:14px; outline:none; transition: var(--transition); }
+.form-group input:focus, .form-group select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(0,212,170,.1); }
+.btn { padding:12px 24px; border:none; border-radius: var(--radius-sm); font-size:14px; font-weight:600; cursor:pointer; transition: var(--transition); display:inline-flex; align-items:center; gap:8px; }
+.btn-primary { background: var(--green); color: #0a0e1a; width:100%; justify-content:center; }
+.btn-primary:hover { background: #00e8b8; transform: translateY(-1px); }
+.btn-secondary { background: var(--bg2); color: var(--txt); border: 1px solid var(--card-b); }
+.btn-secondary:hover { background: var(--card-hover); }
+.btn-danger { background: var(--red); color: white; }
+.btn-sm { padding:8px 14px; font-size:12px; }
+.btn-xs { padding:4px 10px; font-size:11px; border-radius:6px; }
+.btn-icon { padding:8px; border-radius:8px; background:transparent; border:1px solid var(--card-b); color:var(--txt2); cursor:pointer; }
+.btn-icon:hover { background:var(--card-hover); color:var(--txt); }
+.login-error { color: var(--red); font-size:13px; text-align:center; margin-top:12px; display:none; }
+
+/* ── Layout ─────────────────────────────────────────── */
+#admin-app, #empresa-app { display:none; }
+.app-layout { display:flex; min-height:100vh; }
+.sidebar { width:260px; background: var(--bg2); border-right:1px solid var(--card-b); display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; z-index:100; transition: transform .3s; }
+.sidebar-header { padding:20px; border-bottom:1px solid var(--card-b); }
+.sidebar-header h2 { font-size:16px; font-weight:700; color:var(--txt); }
+.sidebar-header p { font-size:11px; color:var(--txt3); margin-top:2px; }
+.sidebar-nav { flex:1; padding:12px; overflow-y:auto; }
+.nav-section { margin-bottom:16px; }
+.nav-section-title { font-size:10px; color:var(--txt3); text-transform:uppercase; letter-spacing:1px; padding:0 12px; margin-bottom:8px; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius: var(--radius-sm); cursor:pointer; color:var(--txt2); font-size:13px; font-weight:500; transition: var(--transition); }
+.nav-item:hover { background: var(--card); color: var(--txt); }
+.nav-item.active { background: rgba(0,212,170,.1); color: var(--green); }
+.nav-item .badge { margin-left:auto; background:var(--red); color:white; font-size:10px; padding:2px 7px; border-radius:10px; font-weight:700; }
+.sidebar-footer { padding:16px; border-top:1px solid var(--card-b); }
+.user-info { display:flex; align-items:center; gap:10px; }
+.user-avatar { width:36px; height:36px; border-radius:50%; background:var(--green); color:#0a0e1a; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+.user-details { flex:1; }
+.user-details .name { font-size:13px; font-weight:600; }
+.user-details .role { font-size:11px; color:var(--txt3); }
+.main-content { margin-left:260px; flex:1; padding:24px 32px; min-height:100vh; }
+.topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+.topbar h1 { font-size:22px; font-weight:700; }
+.topbar-actions { display:flex; align-items:center; gap:12px; }
+
+/* ── Cards & Stats ──────────────────────────────────── */
+.stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { background: var(--card); border:1px solid var(--card-b); border-radius: var(--radius); padding:20px; transition: var(--transition); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.stat-label { font-size:12px; color:var(--txt2); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+.stat-value { font-size:28px; font-weight:700; }
+.stat-value.green { color: var(--green); }
+.stat-value.blue { color: var(--blue); }
+.stat-value.gold { color: var(--gold); }
+.stat-value.red { color: var(--red); }
+.stat-sub { font-size:12px; color:var(--txt3); margin-top:4px; }
+
+.card { background: var(--card); border:1px solid var(--card-b); border-radius: var(--radius); padding:24px; margin-bottom:20px; }
+.card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.card-header h3 { font-size:16px; font-weight:600; }
+.card-header .card-actions { display:flex; gap:8px; }
+
+/* ── Tables ─────────────────────────────────────────── */
+.table-wrapper { overflow-x:auto; border-radius: var(--radius-sm); }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+thead th { background: var(--bg2); padding:10px 12px; text-align:left; font-weight:600; color:var(--txt2); font-size:11px; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--card-b); position:sticky; top:0; }
+tbody td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.03); }
+tbody tr:hover { background: rgba(255,255,255,.02); }
+tbody tr.selected { background: rgba(0,212,170,.06); }
+
+/* ── Badges ─────────────────────────────────────────── */
+.badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-green { background: var(--green-bg); color: var(--green); border:1px solid rgba(0,212,170,.2); }
+.badge-blue { background: var(--blue-bg); color: var(--blue); border:1px solid rgba(74,158,255,.2); }
+.badge-red { background: var(--red-bg); color: var(--red); border:1px solid rgba(224,80,80,.2); }
+.badge-orange { background: var(--orange-bg); color: var(--orange); border:1px solid rgba(240,160,48,.2); }
+.badge-purple { background: rgba(160,120,240,.08); color: var(--purple); border:1px solid rgba(160,120,240,.2); }
+.badge-gray { background: rgba(90,96,112,.1); color: var(--txt3); border:1px solid rgba(90,96,112,.2); }
+
+/* ── Upload area ────────────────────────────────────── */
+.upload-area { border:2px dashed var(--card-b); border-radius: var(--radius); padding:40px; text-align:center; transition: var(--transition); cursor:pointer; }
+.upload-area:hover, .upload-area.dragover { border-color: var(--green); background: rgba(0,212,170,.03); }
+.upload-area p { color:var(--txt2); margin-top:8px; font-size:13px; }
+.upload-icon { font-size:40px; opacity:.5; }
+
+/* ── Tabs ───────────────────────────────────────────── */
+.tabs { display:flex; gap:4px; background: var(--bg2); border-radius: var(--radius-sm); padding:4px; margin-bottom:20px; }
+.tab { padding:8px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; color:var(--txt2); transition: var(--transition); }
+.tab:hover { color:var(--txt); }
+.tab.active { background: var(--card); color: var(--green); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+
+/* ── Modal ──────────────────────────────────────────── */
+.modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,.7); z-index:1000; display:none; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal { background: var(--card); border:1px solid var(--card-b); border-radius: 16px; padding:32px; width:600px; max-width:90vw; max-height:85vh; overflow-y:auto; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.modal h3 { font-size:18px; margin-bottom:20px; }
+.modal-actions { display:flex; gap:12px; justify-content:flex-end; margin-top:24px; }
+
+/* ── Toast ──────────────────────────────────────────── */
+.toast { position:fixed; bottom:24px; right:24px; z-index:9999; padding:14px 22px; border-radius:10px; font-size:13px; font-weight:600; animation:slideIn .3s ease; box-shadow:0 4px 20px rgba(0,0,0,.4); max-width:400px; }
+.toast-success { background:#0d2b1f; border:1px solid var(--green); color:var(--green); }
+.toast-error { background:#2b0d0d; border:1px solid var(--red); color:var(--red); }
+.toast-info { background:#0d1e2b; border:1px solid var(--blue); color:var(--blue); }
+@keyframes slideIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+
+/* ── Checkbox ───────────────────────────────────────── */
+.checkbox-wrapper { display:flex; align-items:center; gap:8px; cursor:pointer; }
+.checkbox-wrapper input[type="checkbox"] { width:16px; height:16px; accent-color: var(--green); }
+
+/* ── Empresa selector ───────────────────────────────── */
+.empresa-selector { display:flex; gap:8px; }
+.empresa-btn { padding:8px 16px; border-radius:8px; border:1px solid var(--card-b); background:var(--bg2); color:var(--txt2); cursor:pointer; font-size:13px; font-weight:500; transition: var(--transition); }
+.empresa-btn:hover { border-color:var(--green); color:var(--txt); }
+.empresa-btn.active { background:rgba(0,212,170,.1); border-color:var(--green); color:var(--green); }
+
+/* ── Progress bar ───────────────────────────────────── */
+.progress-bar { background:var(--bg2); border-radius:20px; height:8px; overflow:hidden; }
+.progress-fill { height:100%; border-radius:20px; transition: width .5s ease; }
+.progress-fill.green { background: var(--green); }
+.progress-fill.blue { background: var(--blue); }
+
+/* ── Empty state ────────────────────────────────────── */
+.empty-state { text-align:center; padding:60px 20px; color:var(--txt3); }
+.empty-state .icon { font-size:48px; margin-bottom:16px; opacity:.3; }
+.empty-state h3 { color:var(--txt2); margin-bottom:8px; }
+
+/* ── Responsive ─────────────────────────────────────── */
+.mobile-toggle { display:none; position:fixed; top:12px; left:12px; z-index:200; background:var(--card); border:1px solid var(--card-b); border-radius:8px; padding:8px 12px; color:var(--txt); cursor:pointer; font-size:18px; }
+@media (max-width:768px) {
+  .mobile-toggle { display:block; }
+  .sidebar { transform:translateX(-100%); }
+  .sidebar.open { transform:translateX(0); }
+  .main-content { margin-left:0; padding:16px; padding-top:52px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── View containers ────────────────────────────────── */
+.view { display:none; }
+.view.active { display:block; }
+
+/* ── Search ─────────────────────────────────────────── */
+.search-box { position:relative; }
+.search-box input { width:100%; padding:10px 14px 10px 36px; background:var(--bg2); border:1px solid var(--card-b); border-radius: var(--radius-sm); color:var(--txt); font-size:13px; }
+.search-box::before { content:''; position:absolute; left:12px; top:50%; transform:translateY(-50%); width:14px; height:14px; border:2px solid var(--txt3); border-radius:50%; }
+
+/* ── Inline edit ────────────────────────────────────── */
+.inline-input { background:var(--bg2); border:1px solid var(--card-b); border-radius:6px; padding:6px 10px; color:var(--txt); font-size:12px; width:100%; }
+.inline-input:focus { border-color:var(--green); outline:none; }
+
+select.inline-input { appearance:auto; }
+select.inline-input option { background:var(--bg2); color:var(--txt); }
+</style>
+</head>
+<body>
+
+<!-- ════════ LOGIN ════════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>MT & TG <span class="accent">Facturación</span></h1>
+      <p>Sistema integrado de facturación electrónica</p>
+    </div>
+    <div class="form-group">
+      <label>Usuario</label>
+      <input type="text" id="inp-user" placeholder="Ingrese su usuario" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="inp-pass" placeholder="Ingrese su contraseña" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">Iniciar sesión</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ════════ ADMIN APP ════════ -->
+<div id="admin-app">
+  <button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
+  <div class="app-layout">
+    <aside class="sidebar" id="admin-sidebar">
+      <div class="sidebar-header">
+        <h2>Facturación</h2>
+        <p>MT & TG Inversiones</p>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">Principal</div>
+          <div class="nav-item active" onclick="adminNav('dashboard')">&#x1F4CA; Dashboard</div>
+          <div class="nav-item" onclick="adminNav('cartolas')">&#x1F4C4; Cargar Cartola</div>
+          <div class="nav-item" onclick="adminNav('movimientos')">&#x1F4CB; Movimientos</div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Facturación</div>
+          <div class="nav-item" onclick="adminNav('facturacion')">&#x1F9FE; Facturar</div>
+          <div class="nav-item" onclick="adminNav('lotes')">&#x1F4E6; Lotes</div>
+          <div class="nav-item" onclick="adminNav('exportar')">&#x2B07; Exportar CSV</div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Datos</div>
+          <div class="nav-item" onclick="adminNav('clientes')">&#x1F465; Base de Clientes</div>
+          <div class="nav-item" onclick="adminNav('importar')">&#x1F4E5; Importar Clientes</div>
+        </div>
+        <div class="nav-section">
+          <div class="nav-section-title">Sistema</div>
+          <div class="nav-item" onclick="adminNav('config')">&#x2699; Configuración</div>
+          <div class="nav-item" onclick="adminNav('usuarios')">&#x1F464; Usuarios</div>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="admin-avatar">HT</div>
+          <div class="user-details">
+            <div class="name" id="admin-name">Admin</div>
+            <div class="role">Administrador</div>
+          </div>
+          <button class="btn-icon" onclick="doLogout()" title="Cerrar sesión">&#x23FB;</button>
+        </div>
+      </div>
+    </aside>
+    <main class="main-content" id="admin-main">
+      <!-- Empresa selector (admin only) -->
+      <div class="empresa-selector" id="empresa-selector" style="margin-bottom:20px;">
+        <button class="empresa-btn active" onclick="selectEmpresa('all')" data-emp="all">Todas</button>
+        <button class="empresa-btn" onclick="selectEmpresa('tg-inversiones')" data-emp="tg-inversiones">TG Inversiones</button>
+        <button class="empresa-btn" onclick="selectEmpresa('mt-inversiones')" data-emp="mt-inversiones">MT Inversiones</button>
+      </div>
+
+      <!-- DASHBOARD VIEW -->
+      <div class="view active" id="view-dashboard">
+        <div class="topbar"><h1>Dashboard</h1></div>
+        <div class="stats-grid" id="dashboard-stats"></div>
+        <div class="card">
+          <div class="card-header"><h3>Resumen por empresa</h3></div>
+          <div id="dashboard-chart-container" style="height:300px;"><canvas id="chart-dashboard"></canvas></div>
+        </div>
+      </div>
+
+      <!-- CARGAR CARTOLA VIEW -->
+      <div class="view" id="view-cartolas">
+        <div class="topbar"><h1>Cargar Cartola Bancaria</h1></div>
+        <div class="card">
+          <div class="card-header"><h3>Subir archivo de cartola</h3></div>
+          <div style="display:flex;gap:16px;margin-bottom:20px;">
+            <div class="form-group" style="flex:1">
+              <label>Empresa</label>
+              <select id="cartola-empresa" class="inline-input">
+                <option value="tg-inversiones">TG Inversiones</option>
+                <option value="mt-inversiones">MT Inversiones</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>Banco</label>
+              <select id="cartola-banco" class="inline-input">
+                <option value="BCI">BCI</option>
+                <option value="SANTANDER">Santander</option>
+              </select>
+            </div>
+          </div>
+          <div class="upload-area" id="cartola-upload" onclick="document.getElementById('cartola-file').click()">
+            <div class="upload-icon">&#x1F4C2;</div>
+            <p>Arrastra o haz clic para subir cartola (.xls / .xlsx)</p>
+            <input type="file" id="cartola-file" accept=".xls,.xlsx" style="display:none" onchange="handleCartolaFile(this)">
+          </div>
+          <div id="cartola-status" style="margin-top:16px;display:none;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span class="badge badge-blue" id="cartola-filename"></span>
+              <span id="cartola-count" style="font-size:13px;color:var(--txt2)"></span>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-primary" onclick="procesarCartola()">Procesar Cartola</button>
+            </div>
+          </div>
+          <div id="cartola-result" style="margin-top:20px;display:none;"></div>
+        </div>
+      </div>
+
+      <!-- MOVIMIENTOS VIEW -->
+      <div class="view" id="view-movimientos">
+        <div class="topbar">
+          <h1>Movimientos</h1>
+          <div class="topbar-actions">
+            <div class="tabs" id="mov-filter-tabs">
+              <div class="tab active" onclick="filterMovimientos('todos')">Todos</div>
+              <div class="tab" onclick="filterMovimientos('pendiente')">Pendientes</div>
+              <div class="tab" onclick="filterMovimientos('listo')">Listos</div>
+              <div class="tab" onclick="filterMovimientos('facturado')">Facturados</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 id="mov-count">Movimientos</h3>
+            <div class="card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="loadMovimientos()">Actualizar</button>
+            </div>
+          </div>
+          <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="mov-select-all" onchange="toggleSelectAll(this)"></th>
+                  <th>Fecha</th>
+                  <th>ID Transf.</th>
+                  <th>Monto</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Banco</th>
+                  <th>Tipo DTE</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="mov-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- FACTURACION VIEW -->
+      <div class="view" id="view-facturacion">
+        <div class="topbar"><h1>Facturar</h1></div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Movimientos listos para facturar</h3>
+            <div class="card-actions">
+              <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote de facturación</button>
+            </div>
+          </div>
+          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="fact-select-all" onchange="toggleSelectAllFact(this)"></th>
+                  <th>Fecha</th>
+                  <th>Monto</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Tipo</th>
+                  <th>Banco</th>
+                </tr>
+              </thead>
+              <tbody id="fact-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOTES VIEW -->
+      <div class="view" id="view-lotes">
+        <div class="topbar"><h1>Lotes de Facturación</h1></div>
+        <div id="lotes-list"></div>
+      </div>
+
+      <!-- EXPORTAR VIEW -->
+      <div class="view" id="view-exportar">
+        <div class="topbar"><h1>Exportar CSV</h1></div>
+        <div class="card">
+          <div class="card-header"><h3>Exportación manual para SimpleFactura</h3></div>
+          <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Selecciona movimientos listos y descarga el CSV en formato SimpleFactura para carga masiva manual.</p>
+          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="exp-select-all" onchange="toggleSelectAllExp(this)"></th>
+                  <th>Fecha</th>
+                  <th>Monto</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Tipo DTE</th>
+                  <th>Banco</th>
+                </tr>
+              </thead>
+              <tbody id="exp-tbody"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:16px;display:flex;gap:12px;">
+            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">Descargar CSV SimpleFactura</button>
+            <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar como facturados</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CLIENTES VIEW -->
+      <div class="view" id="view-clientes">
+        <div class="topbar">
+          <h1>Base de Clientes</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-primary btn-sm" onclick="showAddCliente()">+ Nuevo Cliente</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 id="clientes-count">Clientes</h3>
+            <div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar por RUT o nombre..." id="clientes-search" oninput="filterClientes()"></div>
+          </div>
+          <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th></tr>
+              </thead>
+              <tbody id="clientes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- IMPORTAR CLIENTES VIEW -->
+      <div class="view" id="view-importar">
+        <div class="topbar"><h1>Importar Base de Clientes</h1></div>
+        <div class="card">
+          <div class="card-header"><h3>Importar desde Excel (Base de Datos)</h3></div>
+          <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Sube el archivo Excel con las hojas DME RECIBIDAS (empresas) y DMP RECIBIDAS (personas) para poblar la base de clientes tributarios.</p>
+          <div style="display:flex;gap:16px;margin-bottom:20px;">
+            <div class="form-group" style="flex:1">
+              <label>Empresa destino</label>
+              <select id="import-empresa" class="inline-input">
+                <option value="tg-inversiones">TG Inversiones</option>
+                <option value="mt-inversiones">MT Inversiones</option>
+              </select>
+            </div>
+          </div>
+          <div class="upload-area" onclick="document.getElementById('import-file').click()">
+            <div class="upload-icon">&#x1F4C1;</div>
+            <p>Arrastra o haz clic para subir Base de Datos (.xlsx)</p>
+            <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
+          </div>
+          <div id="import-result" style="margin-top:16px;display:none;"></div>
+        </div>
+      </div>
+
+      <!-- CONFIG VIEW -->
+      <div class="view" id="view-config">
+        <div class="topbar"><h1>Configuración</h1></div>
+        <div class="card">
+          <div class="card-header"><h3>SimpleFactura API</h3></div>
+          <div id="config-empresas"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Configuración General</h3></div>
+          <div class="form-group">
+            <label>Nombre ítem por defecto</label>
+            <input type="text" id="cfg-nombre-item" class="inline-input">
+          </div>
+          <div class="form-group">
+            <label>Descripción ítem por defecto</label>
+            <input type="text" id="cfg-desc-item" class="inline-input">
+          </div>
+          <div class="form-group">
+            <label>URL base SimpleFactura</label>
+            <input type="text" id="cfg-sf-url" class="inline-input">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveConfig()" style="margin-top:12px;">Guardar configuración</button>
+        </div>
+      </div>
+
+      <!-- USUARIOS VIEW -->
+      <div class="view" id="view-usuarios">
+        <div class="topbar">
+          <h1>Gestión de Usuarios</h1>
+          <div class="topbar-actions"><button class="btn btn-primary btn-sm" onclick="showAddUser()">+ Nuevo Usuario</button></div>
+        </div>
+        <div class="card">
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Empresa</th><th>Acciones</th></tr></thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ════════ EMPRESA APP (TG/MT user view) ════════ -->
+<div id="empresa-app">
+  <button class="mobile-toggle" onclick="toggleSidebar()">&#9776;</button>
+  <div class="app-layout">
+    <aside class="sidebar" id="empresa-sidebar">
+      <div class="sidebar-header">
+        <h2 id="emp-header-name">Facturación</h2>
+        <p id="emp-header-sub">Inversiones</p>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-item active" onclick="empNav('dashboard')">&#x1F4CA; Dashboard</div>
+          <div class="nav-item" onclick="empNav('cartolas')">&#x1F4C4; Cargar Cartola</div>
+          <div class="nav-item" onclick="empNav('movimientos')">&#x1F4CB; Movimientos</div>
+          <div class="nav-item" onclick="empNav('facturacion')">&#x1F9FE; Facturar</div>
+          <div class="nav-item" onclick="empNav('exportar')">&#x2B07; Exportar CSV</div>
+          <div class="nav-item" onclick="empNav('clientes')">&#x1F465; Clientes</div>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="emp-avatar">DB</div>
+          <div class="user-details">
+            <div class="name" id="emp-name">Operador</div>
+            <div class="role" id="emp-role-label">Empresa</div>
+          </div>
+          <button class="btn-icon" onclick="doLogout()" title="Cerrar sesión">&#x23FB;</button>
+        </div>
+      </div>
+    </aside>
+    <main class="main-content" id="empresa-main">
+      <!-- Empresa users see same views but filtered - we reuse rendering functions -->
+      <div class="view active" id="emp-view-dashboard"><div class="topbar"><h1 id="emp-dash-title">Dashboard</h1></div><div class="stats-grid" id="emp-dashboard-stats"></div></div>
+      <div class="view" id="emp-view-cartolas">
+        <div class="topbar"><h1>Cargar Cartola</h1></div>
+        <div class="card">
+          <div class="card-header"><h3>Subir archivo de cartola</h3></div>
+          <div class="form-group">
+            <label>Banco</label>
+            <select id="emp-cartola-banco" class="inline-input">
+              <option value="BCI">BCI</option>
+              <option value="SANTANDER">Santander</option>
+            </select>
+          </div>
+          <div class="upload-area" onclick="document.getElementById('emp-cartola-file').click()">
+            <div class="upload-icon">&#x1F4C2;</div>
+            <p>Arrastra o haz clic para subir cartola</p>
+            <input type="file" id="emp-cartola-file" accept=".xls,.xlsx" style="display:none" onchange="handleCartolaFileEmp(this)">
+          </div>
+          <div id="emp-cartola-status" style="margin-top:16px;display:none;"></div>
+          <div id="emp-cartola-result" style="margin-top:20px;display:none;"></div>
+        </div>
+      </div>
+      <div class="view" id="emp-view-movimientos">
+        <div class="topbar"><h1>Movimientos</h1><div class="topbar-actions"><div class="tabs" id="emp-mov-filter-tabs">
+          <div class="tab active" onclick="filterMovimientos('todos')">Todos</div>
+          <div class="tab" onclick="filterMovimientos('pendiente')">Pendientes</div>
+          <div class="tab" onclick="filterMovimientos('listo')">Listos</div>
+          <div class="tab" onclick="filterMovimientos('facturado')">Facturados</div>
+        </div></div></div>
+        <div class="card"><div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr>
+          <th><input type="checkbox" onchange="toggleSelectAll(this)"></th><th>Fecha</th><th>ID</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Banco</th><th>Tipo</th><th>Estado</th><th>Acc.</th>
+        </tr></thead><tbody id="emp-mov-tbody"></tbody></table></div></div>
+      </div>
+      <div class="view" id="emp-view-facturacion">
+        <div class="topbar"><h1>Facturar</h1></div>
+        <div class="card"><div class="card-header"><h3>Movimientos listos</h3><div class="card-actions"><button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote</button></div></div>
+        <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" onchange="toggleSelectAllFact(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-fact-tbody"></tbody></table></div></div>
+      </div>
+      <div class="view" id="emp-view-exportar">
+        <div class="topbar"><h1>Exportar CSV</h1></div>
+        <div class="card"><p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Exportación manual CSV formato SimpleFactura</p>
+        <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" onchange="toggleSelectAllExp(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-exp-tbody"></tbody></table></div>
+        <div style="margin-top:16px;display:flex;gap:12px;">
+          <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">Descargar CSV</button>
+          <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar facturados</button>
+        </div></div>
+      </div>
+      <div class="view" id="emp-view-clientes">
+        <div class="topbar"><h1>Base de Clientes</h1></div>
+        <div class="card"><div class="card-header"><h3 id="emp-clientes-count">Clientes</h3><div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar..." id="emp-clientes-search" oninput="filterClientes()"></div></div>
+        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ════════ MODAL ════════ -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════════════════
+let TOKEN = localStorage.getItem('mttg_token') || null;
+let ME = {};
+let DB = { empresas: {}, config: {}, users: {} };
+let CURRENT_EMPRESA = 'all';
+let CURRENT_VIEW = 'dashboard';
+let MOV_FILTER = 'todos';
+let ALL_MOVIMIENTOS = [];
+let ALL_CLIENTES = [];
+let PARSED_CARTOLA = null;
+const isAdmin = () => ME.role === 'admin';
+const getEmpresaId = () => isAdmin() ? (CURRENT_EMPRESA === 'all' ? '' : CURRENT_EMPRESA) : ME.empresa;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════════════════════════════════════
+async function doLogin() {
+  const username = document.getElementById('inp-user').value.trim().toLowerCase();
+  const password = document.getElementById('inp-pass').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+
+    TOKEN = data.token;
+    ME = data.user;
+    DB.empresas = data.empresas || {};
+    DB.config = data.config || {};
+    localStorage.setItem('mttg_token', TOKEN);
+
+    // Log login
+    fetch('/api/notifications/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ displayName: ME.nombre })
+    }).catch(() => {});
+
+    if (ME.role === 'admin') showAdmin();
+    else showEmpresa();
+  } catch (err) {
+    errEl.textContent = 'Error de conexión';
+    errEl.style.display = 'block';
+  }
+}
+
+function doLogout() {
+  TOKEN = null; ME = {}; DB = { empresas: {}, config: {}, users: {} };
+  localStorage.removeItem('mttg_token');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('admin-app').style.display = 'none';
+  document.getElementById('empresa-app').style.display = 'none';
+}
+
+async function tryAutoLogin() {
+  if (!TOKEN) return;
+  try {
+    const res = await apiFetch('/api/data');
+    if (!res) { doLogout(); return; }
+    DB.empresas = res.empresas || {};
+    DB.config = res.config || {};
+    if (res.users) { DB.users = res.users; ME.role = 'admin'; showAdmin(); }
+    else { ME.empresa = res.empresaId; ME.role = 'empresa'; showEmpresa(); }
+  } catch { doLogout(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// API HELPER
+// ══════════════════════════════════════════════════════════════════════════════
+async function apiFetch(url, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  if (TOKEN) headers.Authorization = `Bearer ${TOKEN}`;
+  const res = await fetch(url, { ...opts, headers });
+  if (res.status === 401) { doLogout(); return null; }
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SHOW APP
+// ══════════════════════════════════════════════════════════════════════════════
+function showAdmin() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-app').style.display = 'block';
+  document.getElementById('empresa-app').style.display = 'none';
+  document.getElementById('admin-avatar').textContent = ME.initials || 'AD';
+  document.getElementById('admin-name').textContent = ME.nombre || ME.username;
+  loadDashboard();
+}
+
+function showEmpresa() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-app').style.display = 'none';
+  document.getElementById('empresa-app').style.display = 'block';
+  CURRENT_EMPRESA = ME.empresa;
+  const emp = DB.empresas[ME.empresa] || {};
+  document.getElementById('emp-header-name').textContent = emp.nombre || ME.empresa;
+  document.getElementById('emp-header-sub').textContent = 'Facturación';
+  document.getElementById('emp-avatar').textContent = ME.initials || '??';
+  document.getElementById('emp-name').textContent = ME.nombre || ME.username;
+  document.getElementById('emp-dash-title').textContent = `Dashboard — ${emp.nombre || ME.empresa}`;
+  loadDashboard();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════════════════════════════
+function adminNav(view) {
+  CURRENT_VIEW = view;
+  document.querySelectorAll('#admin-main .view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('view-' + view);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('#admin-sidebar .nav-item').forEach(n => n.classList.remove('active'));
+  event?.target?.classList?.add('active');
+  closeSidebar();
+
+  if (view === 'dashboard') loadDashboard();
+  else if (view === 'movimientos') loadMovimientos();
+  else if (view === 'facturacion') loadFacturacion();
+  else if (view === 'lotes') loadLotes();
+  else if (view === 'exportar') loadExportar();
+  else if (view === 'clientes') loadClientes();
+  else if (view === 'config') renderConfig();
+  else if (view === 'usuarios') renderUsuarios();
+}
+
+function empNav(view) {
+  CURRENT_VIEW = view;
+  document.querySelectorAll('#empresa-main .view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('emp-view-' + view);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('#empresa-sidebar .nav-item').forEach(n => n.classList.remove('active'));
+  event?.target?.classList?.add('active');
+  closeSidebar();
+
+  if (view === 'dashboard') loadDashboard();
+  else if (view === 'movimientos') loadMovimientos();
+  else if (view === 'facturacion') loadFacturacion();
+  else if (view === 'exportar') loadExportar();
+  else if (view === 'clientes') loadClientes();
+}
+
+function selectEmpresa(emp) {
+  CURRENT_EMPRESA = emp;
+  document.querySelectorAll('.empresa-btn').forEach(b => b.classList.toggle('active', b.dataset.emp === emp));
+  if (CURRENT_VIEW === 'dashboard') loadDashboard();
+  else if (CURRENT_VIEW === 'movimientos') loadMovimientos();
+  else if (CURRENT_VIEW === 'facturacion') loadFacturacion();
+  else if (CURRENT_VIEW === 'exportar') loadExportar();
+  else if (CURRENT_VIEW === 'clientes') loadClientes();
+  else if (CURRENT_VIEW === 'lotes') loadLotes();
+}
+
+function toggleSidebar() {
+  const sb = isAdmin() ? document.getElementById('admin-sidebar') : document.getElementById('empresa-sidebar');
+  sb.classList.toggle('open');
+}
+function closeSidebar() {
+  document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FORMATTING
+// ══════════════════════════════════════════════════════════════════════════════
+const fmt = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
+const fmtShort = v => {
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(1) + 'B';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + Math.round(v).toLocaleString('es-CL');
+};
+
+function estadoBadge(estado) {
+  const map = {
+    pendiente: ['Pendiente', 'orange'],
+    listo: ['Listo', 'green'],
+    en_lote: ['En lote', 'blue'],
+    facturado: ['Facturado', 'green'],
+    ya_emitido: ['Ya emitido', 'gray'],
+    error: ['Error', 'red'],
+    exportado_manual: ['Exportado', 'purple']
+  };
+  const [label, color] = map[estado] || [estado, 'gray'];
+  return `<span class="badge badge-${color}">${label}</span>`;
+}
+
+function tipoDteBadge(tipo) {
+  if (tipo === 34) return '<span class="badge badge-blue">F. Exenta (34)</span>';
+  if (tipo === 41) return '<span class="badge badge-purple">Boleta (41)</span>';
+  return '<span class="badge badge-gray">—</span>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  const empParam = getEmpresaId();
+  const url = empParam ? `/api/dashboard?empresa_id=${empParam}` : '/api/dashboard';
+  const stats = await apiFetch(url);
+  if (!stats) return;
+
+  const container = isAdmin() ? 'dashboard-stats' : 'emp-dashboard-stats';
+  const el = document.getElementById(container);
+
+  if (isAdmin() && CURRENT_EMPRESA === 'all') {
+    let totalMov = 0, totalPend = 0, totalListos = 0, totalFact = 0, totalMonto = 0, totalMontoFact = 0;
+    for (const eid of Object.keys(stats)) {
+      const s = stats[eid];
+      totalMov += s.total; totalPend += s.pendientes; totalListos += s.listos;
+      totalFact += s.facturados; totalMonto += s.montoTotal; totalMontoFact += s.montoFacturado;
+    }
+    el.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total movimientos</div><div class="stat-value blue">${totalMov}</div></div>
+      <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value gold">${totalPend}</div></div>
+      <div class="stat-card"><div class="stat-label">Listos para facturar</div><div class="stat-value green">${totalListos}</div></div>
+      <div class="stat-card"><div class="stat-label">Facturados</div><div class="stat-value green">${totalFact}</div></div>
+      <div class="stat-card"><div class="stat-label">Monto total</div><div class="stat-value">${fmtShort(totalMonto)}</div></div>
+      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(totalMontoFact)}</div></div>
+    `;
+  } else {
+    const eid = getEmpresaId() || Object.keys(stats)[0];
+    const s = stats[eid] || {};
+    el.innerHTML = `
+      <div class="stat-card"><div class="stat-label">Movimientos</div><div class="stat-value blue">${s.total || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value gold">${s.pendientes || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Listos</div><div class="stat-value green">${s.listos || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Facturados</div><div class="stat-value green">${s.facturados || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Monto total</div><div class="stat-value">${fmtShort(s.montoTotal || 0)}</div></div>
+      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(s.montoFacturado || 0)}</div></div>
+      <div class="stat-card"><div class="stat-label">Clientes en base</div><div class="stat-value blue">${s.totalClientes || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Lotes emitidos</div><div class="stat-value">${s.totalLotes || 0}</div></div>
+    `;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CARTOLA PARSING
+// ══════════════════════════════════════════════════════════════════════════════
+function parseCartolaData(workbook, banco) {
+  const movimientos = [];
+
+  if (banco === 'SANTANDER') {
+    // Santander: Sheet "Transferencias Recibidas"
+    // Row 9 = headers: Número de Movimiento, Fecha, Monto, Glosa
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Find header row
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(15, data.length); i++) {
+      const row = data[i];
+      if (row && String(row[0] || '').includes('mero de Movimiento')) { headerIdx = i; break; }
+      if (row && String(row[0] || '').includes('Número')) { headerIdx = i; break; }
+    }
+    if (headerIdx === -1) headerIdx = 9; // fallback
+
+    for (let i = headerIdx + 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row || !row[0]) continue;
+      const idTransf = String(row[0]).trim();
+      if (!idTransf || idTransf === '0' || idTransf === '000000000') {
+        // Santander sometimes puts 000000000 - use index
+      }
+      let fecha = String(row[1] || '').trim();
+      // Convert DD/MM/YYYY to YYYY-MM-DD
+      if (fecha.includes('/')) {
+        const [d, m, y] = fecha.split('/');
+        fecha = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+      }
+
+      let monto = row[2];
+      if (typeof monto === 'string') {
+        monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+      }
+      if (!monto || monto <= 0) continue;
+
+      const glosa = String(row[3] || '').trim();
+      // Extract RUT from glosa: look for pattern like "0XXXXXXXXXX Transf"
+      let rut = '';
+      let nombre = '';
+      const glosaMatch = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]+(?:de\s+)?(.*)$/i);
+      if (glosaMatch) {
+        rut = glosaMatch[1];
+        nombre = glosaMatch[2] || '';
+      } else {
+        // Try another pattern
+        const m2 = glosa.match(/(\d{7,9}[0-9kK])/);
+        if (m2) rut = m2[1];
+        nombre = glosa.replace(/^0*\d+\s+/, '').replace(/Transf[\s.]+(?:de\s+)?/i, '').trim();
+      }
+
+      const useId = (idTransf !== '000000000' && idTransf !== '0') ? idTransf : `S${i}`;
+
+      movimientos.push({
+        id_transferencia: useId,
+        fecha, monto,
+        glosa, rut, nombre_origen: nombre,
+        banco_origen: 'Santander', cuenta_origen: ''
+      });
+    }
+  } else if (banco === 'BCI') {
+    // BCI .xls format: columns appear to be structured differently
+    // From analysis: date, id, rut, banco, cuenta, monto, estado, nombre, etc.
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // BCI format varies - let's detect structure
+    // Common BCI pattern: each row has date, transaction ID, RUT, bank, account, amount, status, name
+    let currentDate = '';
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      if (!row || row.length < 2) continue;
+
+      // Check if first cell is a date (DD/MM/YYYY)
+      const firstCell = String(row[0] || '');
+      if (firstCell.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+        const [d, m, y] = firstCell.split('/');
+        currentDate = `${y}-${m}-${d}`;
+        continue;
+      }
+
+      // Try to find transaction rows: ID, RUT, Banco, Cuenta, Monto, Estado, Nombre
+      // BCI cartola structure from analysis:
+      // Col 0: ID transferencia (numeric)
+      // Col 1: RUT (XX.XXX.XXX-X)
+      // Col 2: Banco origen
+      // Col 3: Cuenta origen
+      // Col 4: Monto
+      // Col 5: Estado (Recibidas)
+      // Col 6: Nombre
+
+      const col0 = String(row[0] || '').trim();
+      const col1 = String(row[1] || '').trim();
+
+      // If col0 is a long number and col1 looks like RUT
+      if (col0.match(/^\d{5,}$/) && col1.match(/\d+[\.\-]/)) {
+        const idTransf = col0;
+        const rut = col1.replace(/[.\-\s]/g, '');
+        const bancoOrigen = String(row[2] || '').trim();
+        const cuentaOrigen = String(row[3] || '').trim();
+        let monto = row[4];
+        if (typeof monto === 'string') monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+        if (!monto || monto <= 0) continue;
+        const estado = String(row[5] || '').trim();
+        const nombre = String(row[6] || '').trim();
+
+        if (estado.toLowerCase().includes('recibida')) {
+          movimientos.push({
+            id_transferencia: idTransf,
+            fecha: currentDate,
+            monto, glosa: nombre,
+            rut, nombre_origen: nombre,
+            banco_origen: bancoOrigen || 'BCI',
+            cuenta_origen: cuentaOrigen
+          });
+        }
+      }
+      // Alternative: some BCI exports have different column ordering
+      // Check if any column contains "Recibidas"
+      else {
+        let hasRecibidas = false;
+        let montoIdx = -1, rutIdx = -1, idIdx = -1, nombreIdx = -1;
+        for (let j = 0; j < row.length; j++) {
+          const cell = String(row[j] || '');
+          if (cell === 'Recibidas') hasRecibidas = true;
+          if (cell.match(/^\d{5,}$/) && idIdx === -1) idIdx = j;
+          if (cell.match(/^\d{1,2}\.\d{3}\.\d{3}[\-][0-9kK]$/)) rutIdx = j;
+          if (typeof row[j] === 'number' && row[j] > 1000) montoIdx = j;
+        }
+
+        if (hasRecibidas && (idIdx >= 0 || montoIdx >= 0)) {
+          const idTransf = idIdx >= 0 ? String(row[idIdx]) : `B${i}`;
+          const rut = rutIdx >= 0 ? String(row[rutIdx]).replace(/[.\-\s]/g, '') : '';
+          let monto = montoIdx >= 0 ? row[montoIdx] : 0;
+          if (typeof monto === 'string') monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+          if (!monto || monto <= 0) continue;
+
+          // Find name - usually longest string in row
+          let nombre = '';
+          for (let j = 0; j < row.length; j++) {
+            const cell = String(row[j] || '');
+            if (cell.length > nombre.length && cell !== 'Recibidas' && !cell.match(/^\d+$/) && !cell.match(/^\d+[\.\-]/)) {
+              nombre = cell;
+            }
+          }
+
+          movimientos.push({
+            id_transferencia: idTransf,
+            fecha: currentDate,
+            monto, glosa: nombre, rut,
+            nombre_origen: nombre,
+            banco_origen: 'BCI', cuenta_origen: ''
+          });
+        }
+      }
+    }
+  }
+
+  return movimientos;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CARTOLA UPLOAD HANDLERS
+// ══════════════════════════════════════════════════════════════════════════════
+function handleCartolaFile(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  const banco = document.getElementById('cartola-banco').value;
+  readAndParseCartola(file, banco, 'cartola-status', 'cartola-filename', 'cartola-count');
+}
+
+function handleCartolaFileEmp(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  const banco = document.getElementById('emp-cartola-banco').value;
+  readAndParseCartola(file, banco, 'emp-cartola-status', null, null);
+}
+
+function readAndParseCartola(file, banco, statusId, fnameId, countId) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', WTF: false });
+      PARSED_CARTOLA = { movimientos: parseCartolaData(wb, banco), banco, filename: file.name };
+
+      const statusEl = document.getElementById(statusId);
+      statusEl.style.display = 'block';
+      if (fnameId) document.getElementById(fnameId).textContent = file.name;
+      if (countId) document.getElementById(countId).textContent = `${PARSED_CARTOLA.movimientos.length} movimientos encontrados`;
+
+      if (!fnameId) {
+        // Empresa view
+        statusEl.innerHTML = `
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span class="badge badge-blue">${file.name}</span>
+            <span style="font-size:13px;color:var(--txt2)">${PARSED_CARTOLA.movimientos.length} movimientos</span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="procesarCartolaEmp()" style="margin-top:12px;">Procesar</button>`;
+      }
+
+      showToast(`${PARSED_CARTOLA.movimientos.length} movimientos detectados en cartola`, 'success');
+    } catch (err) {
+      showToast('Error al leer archivo: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function procesarCartola() {
+  if (!PARSED_CARTOLA) return showToast('No hay cartola cargada', 'error');
+  const empresaId = document.getElementById('cartola-empresa').value;
+  await enviarMovimientos(empresaId, PARSED_CARTOLA.banco, PARSED_CARTOLA.movimientos, 'cartola-result');
+}
+
+async function procesarCartolaEmp() {
+  if (!PARSED_CARTOLA) return showToast('No hay cartola cargada', 'error');
+  await enviarMovimientos(ME.empresa, PARSED_CARTOLA.banco, PARSED_CARTOLA.movimientos, 'emp-cartola-result');
+}
+
+async function enviarMovimientos(empresaId, banco, movimientos, resultId) {
+  const resultEl = document.getElementById(resultId);
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<p style="color:var(--txt2)">Procesando...</p>';
+
+  const data = await apiFetch('/api/movimientos/procesar', {
+    method: 'POST',
+    body: JSON.stringify({ empresa_id: empresaId, banco_cartola: banco, movimientos })
+  });
+
+  if (!data || !data.ok) {
+    resultEl.innerHTML = `<p style="color:var(--red)">Error: ${data?.error || 'Error desconocido'}</p>`;
+    return;
+  }
+
+  resultEl.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div class="stat-card" style="flex:1;min-width:140px;"><div class="stat-label">Nuevos</div><div class="stat-value green">${data.nuevos}</div></div>
+      <div class="stat-card" style="flex:1;min-width:140px;"><div class="stat-label">Duplicados</div><div class="stat-value gold">${data.duplicados}</div></div>
+      <div class="stat-card" style="flex:1;min-width:140px;"><div class="stat-label">Errores</div><div class="stat-value red">${data.errores}</div></div>
+      <div class="stat-card" style="flex:1;min-width:140px;"><div class="stat-label">Total procesados</div><div class="stat-value blue">${data.total}</div></div>
+    </div>`;
+  showToast(`Cartola procesada: ${data.nuevos} nuevos, ${data.duplicados} duplicados`, 'success');
+  PARSED_CARTOLA = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOVIMIENTOS
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadMovimientos() {
+  const empId = getEmpresaId();
+  let url = '/api/movimientos?limit=500';
+  if (empId) url += `&empresa_id=${empId}`;
+  if (MOV_FILTER !== 'todos') url += `&estado=${MOV_FILTER}`;
+
+  ALL_MOVIMIENTOS = await apiFetch(url) || [];
+  renderMovimientos();
+}
+
+function filterMovimientos(filter) {
+  MOV_FILTER = filter;
+  const tabsContainer = isAdmin() ? 'mov-filter-tabs' : 'emp-mov-filter-tabs';
+  document.querySelectorAll(`#${tabsContainer} .tab`).forEach(t => t.classList.remove('active'));
+  event?.target?.classList?.add('active');
+  loadMovimientos();
+}
+
+function renderMovimientos() {
+  const tbody = document.getElementById(isAdmin() ? 'mov-tbody' : 'emp-mov-tbody');
+  if (!ALL_MOVIMIENTOS.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos</td></tr>';
+    return;
+  }
+  if (isAdmin()) document.getElementById('mov-count').textContent = `${ALL_MOVIMIENTOS.length} movimientos`;
+
+  tbody.innerHTML = ALL_MOVIMIENTOS.map(m => `
+    <tr data-id="${m.id}">
+      <td><input type="checkbox" class="mov-check" value="${m.id}"></td>
+      <td>${m.fecha || '—'}</td>
+      <td style="font-size:11px;font-family:monospace;">${m.id_transferencia || '—'}</td>
+      <td style="font-weight:600;">${fmt(m.monto)}</td>
+      <td style="font-size:12px;">${m.rut || '<span style="color:var(--orange)">Sin RUT</span>'}</td>
+      <td>${m.razon_social || '<span style="color:var(--txt3)">—</span>'}</td>
+      <td><span class="badge badge-gray">${m.banco_cartola || '—'}</span></td>
+      <td>${tipoDteBadge(m.tipo_dte)}</td>
+      <td>${estadoBadge(m.estado)}</td>
+      <td><button class="btn-icon" onclick="editMovimiento(${m.id})" title="Editar">&#9998;</button></td>
+    </tr>
+  `).join('');
+}
+
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.mov-check').forEach(c => c.checked = cb.checked);
+}
+
+function getSelectedMovIds(className = 'mov-check') {
+  return [...document.querySelectorAll(`.${className}:checked`)].map(c => parseInt(c.value));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EDIT MOVIMIENTO
+// ══════════════════════════════════════════════════════════════════════════════
+function editMovimiento(id) {
+  const m = ALL_MOVIMIENTOS.find(x => x.id === id);
+  if (!m) return;
+
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Editar movimiento #${id}</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>RUT</label><input type="text" id="edit-rut" class="inline-input" value="${m.rut || ''}"></div>
+      <div class="form-group"><label>Razón Social</label><input type="text" id="edit-razon" class="inline-input" value="${m.razon_social || ''}"></div>
+      <div class="form-group"><label>Giro</label><input type="text" id="edit-giro" class="inline-input" value="${m.giro || ''}"></div>
+      <div class="form-group"><label>Dirección</label><input type="text" id="edit-dir" class="inline-input" value="${m.direccion || ''}"></div>
+      <div class="form-group"><label>Comuna</label><input type="text" id="edit-comuna" class="inline-input" value="${m.comuna || ''}"></div>
+      <div class="form-group"><label>Ciudad</label><input type="text" id="edit-ciudad" class="inline-input" value="${m.ciudad || ''}"></div>
+      <div class="form-group"><label>Email receptor</label><input type="text" id="edit-email" class="inline-input" value="${m.email_receptor || ''}"></div>
+      <div class="form-group"><label>Tipo DTE</label>
+        <select id="edit-tipo" class="inline-input">
+          <option value="34" ${m.tipo_dte === 34 ? 'selected' : ''}>34 - Factura exenta</option>
+          <option value="41" ${m.tipo_dte === 41 ? 'selected' : ''}>41 - Boleta electrónica</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Estado</label>
+        <select id="edit-estado" class="inline-input">
+          <option value="pendiente" ${m.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+          <option value="listo" ${m.estado === 'listo' ? 'selected' : ''}>Listo</option>
+          <option value="facturado" ${m.estado === 'facturado' ? 'selected' : ''}>Facturado</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Monto</label><input type="number" id="edit-monto" class="inline-input" value="${m.monto_total || m.monto || 0}"></div>
+    </div>
+    <p style="font-size:11px;color:var(--txt3);margin-top:8px;">Glosa: ${m.glosa || '—'} | ID: ${m.id_compuesto || '—'}</p>
+    <div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="buscarClientePorRut(${id})">Buscar cliente por RUT</button></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveMovimiento(${id})">Guardar</button>
+    </div>
+  `;
+  showModal();
+}
+
+async function buscarClientePorRut(movId) {
+  const rut = document.getElementById('edit-rut').value.trim();
+  if (!rut) return showToast('Ingrese un RUT', 'error');
+  const rutNorm = rut.replace(/[.\-\s]/g, '').toUpperCase();
+  const data = await apiFetch(`/api/clientes/buscar/${rutNorm}`);
+  if (!data) return showToast('Cliente no encontrado en la base', 'error');
+  document.getElementById('edit-razon').value = data.razon_social || '';
+  document.getElementById('edit-giro').value = data.giro || '';
+  document.getElementById('edit-dir').value = data.direccion || '';
+  document.getElementById('edit-comuna').value = data.comuna || '';
+  document.getElementById('edit-ciudad').value = data.ciudad || '';
+  document.getElementById('edit-email').value = data.email || '';
+  const rutNum = parseInt(rutNorm);
+  document.getElementById('edit-tipo').value = rutNum >= 50000000 ? '34' : '41';
+  document.getElementById('edit-estado').value = 'listo';
+  showToast('Datos del cliente cargados', 'success');
+}
+
+async function saveMovimiento(id) {
+  const monto = parseFloat(document.getElementById('edit-monto').value) || 0;
+  const tipoDte = parseInt(document.getElementById('edit-tipo').value);
+  await apiFetch(`/api/movimientos/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      rut: document.getElementById('edit-rut').value,
+      razon_social: document.getElementById('edit-razon').value,
+      giro: document.getElementById('edit-giro').value,
+      direccion: document.getElementById('edit-dir').value,
+      comuna: document.getElementById('edit-comuna').value,
+      ciudad: document.getElementById('edit-ciudad').value,
+      email_receptor: document.getElementById('edit-email').value,
+      tipo_dte: tipoDte,
+      estado: document.getElementById('edit-estado').value,
+      nombre_item: 'Venta paquete activo digital',
+      descripcion_item: 'Venta paquete activo digital',
+      precio: monto, monto_exento: tipoDte === 34 ? monto : 0, monto_total: monto
+    })
+  });
+  closeModal();
+  showToast('Movimiento actualizado', 'success');
+  loadMovimientos();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FACTURACION
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadFacturacion() {
+  const empId = getEmpresaId();
+  let url = '/api/movimientos?estado=listo&limit=500';
+  if (empId) url += `&empresa_id=${empId}`;
+  const movs = await apiFetch(url) || [];
+
+  const tbody = document.getElementById(isAdmin() ? 'fact-tbody' : 'emp-fact-tbody');
+  if (!movs.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos listos para facturar</td></tr>';
+    return;
+  }
+  tbody.innerHTML = movs.map(m => `
+    <tr>
+      <td><input type="checkbox" class="fact-check" value="${m.id}" checked></td>
+      <td>${m.fecha || '—'}</td>
+      <td style="font-weight:600">${fmt(m.monto)}</td>
+      <td style="font-size:12px">${m.rut || '—'}</td>
+      <td>${m.razon_social || '—'}</td>
+      <td>${tipoDteBadge(m.tipo_dte)}</td>
+      <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
+    </tr>
+  `).join('');
+}
+
+function toggleSelectAllFact(cb) { document.querySelectorAll('.fact-check').forEach(c => c.checked = cb.checked); }
+function toggleSelectAllExp(cb) { document.querySelectorAll('.exp-check').forEach(c => c.checked = cb.checked); }
+
+async function crearLoteFacturacion() {
+  const ids = [...document.querySelectorAll('.fact-check:checked')].map(c => parseInt(c.value));
+  if (!ids.length) return showToast('Selecciona movimientos', 'error');
+  const empId = getEmpresaId();
+  const data = await apiFetch('/api/facturacion/crear-lote', {
+    method: 'POST',
+    body: JSON.stringify({ empresa_id: empId, movimiento_ids: ids })
+  });
+  if (data?.ok) {
+    showToast(`Lote creado: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
+    if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
+  } else {
+    showToast(data?.error || 'Error al crear lote', 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LOTES
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadLotes() {
+  const empId = getEmpresaId();
+  let url = '/api/facturacion/lotes';
+  if (empId) url += `?empresa_id=${empId}`;
+  const lotes = await apiFetch(url) || [];
+
+  const el = document.getElementById('lotes-list');
+  if (!lotes.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4E6;</div><h3>No hay lotes</h3><p>Crea un lote desde la vista de facturación</p></div>';
+    return;
+  }
+
+  el.innerHTML = lotes.map(l => `
+    <div class="card">
+      <div class="card-header">
+        <h3>Lote ${l.lote_id}</h3>
+        <div class="card-actions">
+          ${l.estado === 'pendiente' ? `
+            <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">Emitir vía API</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportarCSVLote('${l.lote_id}')">Descargar CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="marcarExportadoLote('${l.lote_id}')">Marcar exportado</button>
+          ` : estadoBadge(l.estado)}
+        </div>
+      </div>
+      <div style="display:flex;gap:24px;color:var(--txt2);font-size:13px;">
+        <span><strong>${l.cantidad}</strong> documentos</span>
+        <span><strong>${fmt(l.monto_total)}</strong> total</span>
+        <span>Empresa: <strong>${l.empresa_id}</strong></span>
+        <span>Método: <strong>${l.metodo}</strong></span>
+        <span>Creado: ${l.created_at}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function emitirLote(loteId) {
+  if (!confirm('Emitir este lote vía SimpleFactura API?')) return;
+  showToast('Enviando a SimpleFactura...', 'info');
+  const data = await apiFetch(`/api/facturacion/emitir/${loteId}`, { method: 'POST' });
+  if (data?.ok) {
+    showToast(`Emitidos: ${data.exitosos} OK, ${data.fallidos} errores`, data.fallidos ? 'error' : 'success');
+    loadLotes();
+  } else {
+    showToast(data?.error || 'Error al emitir', 'error');
+  }
+}
+
+function exportarCSVLote(loteId) {
+  window.open(`/api/facturacion/exportar-csv/${loteId}?token=${TOKEN}`, '_blank');
+}
+
+async function marcarExportadoLote(loteId) {
+  await apiFetch(`/api/facturacion/marcar-exportado/${loteId}`, { method: 'POST' });
+  showToast('Lote marcado como exportado', 'success');
+  loadLotes();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXPORT CSV (selection)
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadExportar() {
+  const empId = getEmpresaId();
+  let url = '/api/movimientos?estado=listo&limit=500';
+  if (empId) url += `&empresa_id=${empId}`;
+  const movs = await apiFetch(url) || [];
+
+  const tbody = document.getElementById(isAdmin() ? 'exp-tbody' : 'emp-exp-tbody');
+  if (!movs.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos listos</td></tr>';
+    return;
+  }
+  tbody.innerHTML = movs.map(m => `
+    <tr>
+      <td><input type="checkbox" class="exp-check" value="${m.id}" checked></td>
+      <td>${m.fecha || '—'}</td>
+      <td style="font-weight:600">${fmt(m.monto)}</td>
+      <td style="font-size:12px">${m.rut || '—'}</td>
+      <td>${m.razon_social || '—'}</td>
+      <td>${tipoDteBadge(m.tipo_dte)}</td>
+      <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
+    </tr>
+  `).join('');
+}
+
+async function exportarCSVSeleccion() {
+  const ids = [...document.querySelectorAll('.exp-check:checked')].map(c => parseInt(c.value));
+  if (!ids.length) return showToast('Selecciona movimientos', 'error');
+  const empId = getEmpresaId();
+
+  const res = await fetch('/api/facturacion/exportar-seleccion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ movimiento_ids: ids, empresa_id: empId })
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Facturacion_${empId || 'seleccion'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV descargado', 'success');
+}
+
+async function marcarExportadosManual() {
+  const ids = [...document.querySelectorAll('.exp-check:checked')].map(c => parseInt(c.value));
+  if (!ids.length) return showToast('Selecciona movimientos', 'error');
+  await apiFetch('/api/movimientos/bulk-estado', {
+    method: 'PUT',
+    body: JSON.stringify({ ids, estado: 'facturado' })
+  });
+  showToast('Movimientos marcados como facturados', 'success');
+  loadExportar();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CLIENTES
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadClientes() {
+  const empId = getEmpresaId();
+  let url = '/api/clientes';
+  if (empId) url += `?empresa_id=${empId}`;
+  ALL_CLIENTES = await apiFetch(url) || [];
+  renderClientes();
+}
+
+function filterClientes() {
+  const search = (document.getElementById(isAdmin() ? 'clientes-search' : 'emp-clientes-search')?.value || '').toLowerCase();
+  renderClientes(search);
+}
+
+function renderClientes(search = '') {
+  let filtered = ALL_CLIENTES;
+  if (search) {
+    filtered = filtered.filter(c =>
+      (c.rut || '').toLowerCase().includes(search) ||
+      (c.razon_social || '').toLowerCase().includes(search) ||
+      (c.nombre || '').toLowerCase().includes(search)
+    );
+  }
+
+  const countEl = document.getElementById(isAdmin() ? 'clientes-count' : 'emp-clientes-count');
+  if (countEl) countEl.textContent = `${filtered.length} clientes`;
+
+  const tbody = document.getElementById(isAdmin() ? 'clientes-tbody' : 'emp-clientes-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt3)">No hay clientes</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.slice(0, 200).map(c => `
+    <tr>
+      <td style="font-size:12px;font-family:monospace;">${c.rut || '—'}</td>
+      <td>${c.razon_social || '—'}</td>
+      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${c.giro || '—'}</td>
+      <td style="font-size:11px;">${c.direccion || '—'}</td>
+      <td>${c.comuna || '—'}</td>
+      <td style="font-size:11px;">${c.email || '—'}</td>
+      <td><span class="badge badge-${c.tipo === 'empresa' ? 'blue' : 'purple'}">${c.tipo === 'empresa' ? 'Empresa' : 'Persona'}</span></td>
+      ${isAdmin() ? `<td><span class="badge badge-gray">${c.empresa_id}</span></td>` : ''}
+    </tr>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IMPORTAR CLIENTES
+// ══════════════════════════════════════════════════════════════════════════════
+async function handleImportFile(input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  const empresaId = document.getElementById('import-empresa').value;
+  const resultEl = document.getElementById('import-result');
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<p style="color:var(--txt2)">Leyendo archivo...</p>';
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', WTF: false });
+
+      const clientes = [];
+
+      // Parse DME RECIBIDAS (empresas)
+      if (wb.SheetNames.includes('DME RECIBIDAS')) {
+        const ws = wb.Sheets['DME RECIBIDAS'];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r[0]) continue;
+          clientes.push({
+            tipo: 'empresa', rut: String(r[0]), razon_social: String(r[1] || ''),
+            giro: String(r[2] || ''), direccion: String(r[3] || ''),
+            comuna: String(r[4] || ''), ciudad: String(r[5] || ''),
+            nombre: String(r[6] || ''), email: String(r[7] || ''),
+            telefono: r[8] ? String(r[8]) : '',
+            representante_legal: String(r[9] || ''), rut_representante: String(r[10] || '')
+          });
+        }
+      }
+
+      // Parse DMP RECIBIDAS (personas)
+      if (wb.SheetNames.includes('DMP RECIBIDAS')) {
+        const ws = wb.Sheets['DMP RECIBIDAS'];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r[0]) continue;
+          clientes.push({
+            tipo: 'persona', rut: String(r[0]), razon_social: String(r[1] || ''),
+            giro: String(r[2] || ''), direccion: String(r[3] || ''),
+            comuna: String(r[4] || ''), ciudad: String(r[5] || ''),
+            nombre: String(r[6] || ''), email: String(r[7] || ''),
+            telefono: r[8] ? String(r[8]) : '',
+            representante_legal: '', rut_representante: ''
+          });
+        }
+      }
+
+      resultEl.innerHTML = `<p style="color:var(--txt2)">Importando ${clientes.length} clientes...</p>`;
+
+      const res = await apiFetch('/api/clientes/import', {
+        method: 'POST',
+        body: JSON.stringify({ empresa_id: empresaId, clientes })
+      });
+
+      if (res?.ok) {
+        resultEl.innerHTML = `
+          <div style="display:flex;gap:16px;">
+            <div class="stat-card" style="flex:1"><div class="stat-label">Importados</div><div class="stat-value green">${res.imported}</div></div>
+            <div class="stat-card" style="flex:1"><div class="stat-label">Omitidos (duplicados)</div><div class="stat-value gold">${res.skipped}</div></div>
+          </div>`;
+        showToast(`${res.imported} clientes importados`, 'success');
+      } else {
+        resultEl.innerHTML = `<p style="color:var(--red)">Error: ${res?.error || 'Error desconocido'}</p>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<p style="color:var(--red)">Error: ${err.message}</p>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════════════════════════
+function renderConfig() {
+  const empresas = DB.empresas || {};
+  const config = DB.config || {};
+
+  document.getElementById('cfg-nombre-item').value = config.nombre_item_default || '';
+  document.getElementById('cfg-desc-item').value = config.descripcion_item_default || '';
+  document.getElementById('cfg-sf-url').value = config.simplefactura_base_url || 'https://api.simplefactura.cl';
+
+  const container = document.getElementById('config-empresas');
+  container.innerHTML = Object.entries(empresas).map(([id, emp]) => `
+    <div style="border:1px solid var(--card-b);border-radius:var(--radius-sm);padding:16px;margin-bottom:12px;">
+      <h4 style="margin-bottom:12px;color:var(--green);">${emp.nombre} (${id})</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label>RUT emisor</label><input type="text" class="inline-input" id="cfg-rut-${id}" value="${emp.simplefactura?.rut_emisor || ''}"></div>
+        <div class="form-group"><label>Email facturación</label><input type="text" class="inline-input" id="cfg-email-${id}" value="${emp.email_facturacion || ''}"></div>
+        <div class="form-group"><label>Usuario SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfuser-${id}" value="${emp.simplefactura?.username || ''}"></div>
+        <div class="form-group"><label>Contraseña SimpleFactura</label><input type="password" class="inline-input" id="cfg-sfpass-${id}" value="${emp.simplefactura?.password || ''}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveConfig() {
+  const empresas = { ...DB.empresas };
+  for (const id of Object.keys(empresas)) {
+    empresas[id].simplefactura = {
+      ...empresas[id].simplefactura,
+      rut_emisor: document.getElementById(`cfg-rut-${id}`)?.value || '',
+      username: document.getElementById(`cfg-sfuser-${id}`)?.value || '',
+      password: document.getElementById(`cfg-sfpass-${id}`)?.value || ''
+    };
+    empresas[id].email_facturacion = document.getElementById(`cfg-email-${id}`)?.value || '';
+  }
+
+  const config = {
+    ...DB.config,
+    nombre_item_default: document.getElementById('cfg-nombre-item').value,
+    descripcion_item_default: document.getElementById('cfg-desc-item').value,
+    simplefactura_base_url: document.getElementById('cfg-sf-url').value
+  };
+
+  await apiFetch('/api/data', { method: 'PUT', body: JSON.stringify({ empresas, config }) });
+  DB.empresas = empresas;
+  DB.config = config;
+  showToast('Configuración guardada', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USUARIOS
+// ══════════════════════════════════════════════════════════════════════════════
+async function renderUsuarios() {
+  const users = await apiFetch('/api/users') || {};
+  DB.users = users;
+
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = Object.entries(users).map(([uname, u]) => `
+    <tr>
+      <td style="font-family:monospace">${uname}</td>
+      <td>${u.nombre}</td>
+      <td><span class="badge badge-${u.role === 'admin' ? 'green' : 'blue'}">${u.role}</span></td>
+      <td>${u.empresa === 'all' ? 'Todas' : u.empresa || '—'}</td>
+      <td>
+        <button class="btn-icon" onclick="editUser('${uname}')" title="Editar">&#9998;</button>
+        ${uname !== ME.username ? `<button class="btn-icon" onclick="deleteUser('${uname}')" title="Eliminar" style="color:var(--red)">&#10006;</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function showAddUser() {
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Nuevo usuario</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Usuario</label><input type="text" id="new-username" class="inline-input"></div>
+      <div class="form-group"><label>Nombre</label><input type="text" id="new-nombre" class="inline-input"></div>
+      <div class="form-group"><label>Contraseña</label><input type="password" id="new-pass" class="inline-input"></div>
+      <div class="form-group"><label>Iniciales</label><input type="text" id="new-initials" class="inline-input" maxlength="2"></div>
+      <div class="form-group"><label>Rol</label>
+        <select id="new-role" class="inline-input"><option value="admin">Admin</option><option value="empresa">Empresa</option></select>
+      </div>
+      <div class="form-group"><label>Empresa</label>
+        <select id="new-empresa" class="inline-input"><option value="all">Todas</option><option value="tg-inversiones">TG Inversiones</option><option value="mt-inversiones">MT Inversiones</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNewUser()">Crear</button>
+    </div>`;
+  showModal();
+}
+
+async function saveNewUser() {
+  const username = document.getElementById('new-username').value.trim().toLowerCase();
+  const password = document.getElementById('new-pass').value;
+  if (!username || !password) return showToast('Completa todos los campos', 'error');
+
+  const passHash = await sha256hex(password);
+  const users = { ...DB.users };
+  users[username] = {
+    passHash,
+    nombre: document.getElementById('new-nombre').value,
+    initials: document.getElementById('new-initials').value.toUpperCase(),
+    role: document.getElementById('new-role').value,
+    empresa: document.getElementById('new-empresa').value
+  };
+
+  await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify(users) });
+  DB.users = users;
+  closeModal();
+  showToast('Usuario creado', 'success');
+  renderUsuarios();
+}
+
+function editUser(username) {
+  const u = DB.users[username];
+  if (!u) return;
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Editar usuario: ${username}</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Nombre</label><input type="text" id="eu-nombre" class="inline-input" value="${u.nombre || ''}"></div>
+      <div class="form-group"><label>Iniciales</label><input type="text" id="eu-initials" class="inline-input" value="${u.initials || ''}" maxlength="2"></div>
+      <div class="form-group"><label>Nueva contraseña (dejar vacío para no cambiar)</label><input type="password" id="eu-pass" class="inline-input"></div>
+      <div class="form-group"><label>Rol</label>
+        <select id="eu-role" class="inline-input"><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option><option value="empresa" ${u.role==='empresa'?'selected':''}>Empresa</option></select>
+      </div>
+      <div class="form-group"><label>Empresa</label>
+        <select id="eu-empresa" class="inline-input"><option value="all" ${u.empresa==='all'?'selected':''}>Todas</option><option value="tg-inversiones" ${u.empresa==='tg-inversiones'?'selected':''}>TG Inversiones</option><option value="mt-inversiones" ${u.empresa==='mt-inversiones'?'selected':''}>MT Inversiones</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditUser('${username}')">Guardar</button>
+    </div>`;
+  showModal();
+}
+
+async function saveEditUser(username) {
+  const users = { ...DB.users };
+  users[username] = {
+    ...users[username],
+    nombre: document.getElementById('eu-nombre').value,
+    initials: document.getElementById('eu-initials').value.toUpperCase(),
+    role: document.getElementById('eu-role').value,
+    empresa: document.getElementById('eu-empresa').value
+  };
+
+  const newPass = document.getElementById('eu-pass').value;
+  if (newPass) users[username].passHash = await sha256hex(newPass);
+
+  await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify(users) });
+  DB.users = users;
+  closeModal();
+  showToast('Usuario actualizado', 'success');
+  renderUsuarios();
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Eliminar usuario ${username}?`)) return;
+  const users = { ...DB.users };
+  delete users[username];
+  await apiFetch('/api/users', { method: 'PUT', body: JSON.stringify(users) });
+  DB.users = users;
+  showToast('Usuario eliminado', 'success');
+  renderUsuarios();
+}
+
+function showAddCliente() {
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Nuevo cliente</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>RUT</label><input type="text" id="nc-rut" class="inline-input"></div>
+      <div class="form-group"><label>Razón Social</label><input type="text" id="nc-razon" class="inline-input"></div>
+      <div class="form-group"><label>Giro</label><input type="text" id="nc-giro" class="inline-input"></div>
+      <div class="form-group"><label>Dirección</label><input type="text" id="nc-dir" class="inline-input"></div>
+      <div class="form-group"><label>Comuna</label><input type="text" id="nc-comuna" class="inline-input"></div>
+      <div class="form-group"><label>Ciudad</label><input type="text" id="nc-ciudad" class="inline-input"></div>
+      <div class="form-group"><label>Email</label><input type="text" id="nc-email" class="inline-input"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="nc-tipo" class="inline-input"><option value="empresa">Empresa</option><option value="persona">Persona</option></select>
+      </div>
+      <div class="form-group"><label>Empresa</label>
+        <select id="nc-empresa" class="inline-input"><option value="tg-inversiones">TG Inversiones</option><option value="mt-inversiones">MT Inversiones</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveNewCliente()">Crear</button>
+    </div>`;
+  showModal();
+}
+
+async function saveNewCliente() {
+  const data = await apiFetch('/api/clientes', {
+    method: 'POST',
+    body: JSON.stringify({
+      rut: document.getElementById('nc-rut').value,
+      razon_social: document.getElementById('nc-razon').value,
+      giro: document.getElementById('nc-giro').value,
+      direccion: document.getElementById('nc-dir').value,
+      comuna: document.getElementById('nc-comuna').value,
+      ciudad: document.getElementById('nc-ciudad').value,
+      email: document.getElementById('nc-email').value,
+      tipo: document.getElementById('nc-tipo').value,
+      empresa_id: document.getElementById('nc-empresa').value
+    })
+  });
+  if (data?.ok) { closeModal(); showToast('Cliente creado', 'success'); loadClientes(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════════════════════════════
+async function sha256hex(msg) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function showToast(msg, type = 'success') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function showModal() { document.getElementById('modal-overlay').classList.add('show'); }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+
+// Close modal on overlay click
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Enter to login
+document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('inp-user').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('inp-pass').focus(); });
+
+// Drag and drop for upload areas
+document.querySelectorAll('.upload-area').forEach(area => {
+  area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
+  area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+  area.addEventListener('drop', e => {
+    e.preventDefault(); area.classList.remove('dragover');
+    const input = area.querySelector('input[type="file"]');
+    if (input && e.dataTransfer.files[0]) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+});
+
+// Auto-login on page load
+tryAutoLogin();
+</script>
+</body>
+</html>

@@ -1517,6 +1517,30 @@ async function testSF(empresaId) {
   }
 }
 
+async function verEmisoresSF(empresaId) {
+  const resultEl = document.getElementById(`sf-plantillas-result-${empresaId}`);
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '⏳ Consultando emisores disponibles en SimpleFactura...';
+  await saveConfig();
+  const data = await apiFetch(`/api/facturacion/listar-emisores/${empresaId}`);
+  if (!data?.ok) { resultEl.innerHTML = `<span style="color:var(--red)">❌ ${data?.error || 'Error'}</span>`; return; }
+  let html = `<strong>Emisores disponibles en la cuenta SF (${data.sucursales?.length || 0}):</strong><br>`;
+  html += '<table style="font-size:12px;border-collapse:collapse;margin-top:6px;width:100%">';
+  html += '<tr style="background:var(--surface2)"><th style="padding:3px 8px;border:1px solid var(--border)">Emisor (RazonSocial)</th><th style="padding:3px 8px;border:1px solid var(--border)">RUT Emisor</th><th style="padding:3px 8px;border:1px solid var(--border)">Sucursal</th><th style="padding:3px 8px;border:1px solid var(--border)">Usar</th></tr>';
+  for (const s of (data.sucursales || [])) {
+    html += `<tr>
+      <td style="padding:3px 8px;border:1px solid var(--border)">${s.emisorNombre || '-'}</td>
+      <td style="padding:3px 8px;border:1px solid var(--border);font-family:monospace">${s.rutEmisor || '-'}</td>
+      <td style="padding:3px 8px;border:1px solid var(--border)">${s.nombreSucursal || '-'}</td>
+      <td style="padding:3px 8px;border:1px solid var(--border);text-align:center">
+        <button class="btn btn-xs" onclick="document.getElementById('cfg-sfrutemis-${empresaId}').value='${s.rutEmisor || ''}'; document.getElementById('cfg-sfsuc-${empresaId}').value='${s.nombreSucursal || 'Casa Matriz'}'; saveConfig();" style="background:var(--green);color:#0a0e1a;padding:2px 8px;font-size:11px">Usar</button>
+      </td>
+    </tr>`;
+  }
+  html += '</table><em style="font-size:11px;color:var(--txt2)">Haz clic en "Usar" para configurar automáticamente el RUT emisor y guardar.</em>';
+  resultEl.innerHTML = html;
+}
+
 async function diagnosticoPlantillas(empresaId) {
   const resultEl = document.getElementById(`sf-plantillas-result-${empresaId}`);
   resultEl.style.display = 'block';
@@ -1818,6 +1842,10 @@ function renderConfig() {
           <small style="color:var(--txt3);margin-top:4px;display:block;">Si se configura, se usa en lugar del email/contraseña. Válido 1 año. Generado en SF → Configuración → Integraciones.</small>
         </div>
         <div class="form-group"><label>Nombre sucursal SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfsuc-${id}" value="${emp.simplefactura?.nombre_sucursal || 'Casa Matriz'}" placeholder="Casa Matriz"></div>
+        <div class="form-group"><label>🏢 RUT emisor en SF <small style="color:var(--yellow);font-weight:600;">(obligatorio si la cuenta tiene múltiples empresas)</small></label>
+          <input type="text" class="inline-input" id="cfg-sfrutemis-${id}" value="${emp.simplefactura?.rut_emisor_sf || ''}" placeholder="Ej: 77859376-9">
+          <small style="color:var(--txt3);margin-top:4px;display:block;">RUT de la empresa emisora en SimpleFactura. Usa el botón "Ver Emisores" para ver los disponibles.</small>
+        </div>
         <div class="form-group"><label>Tipo DTE personas naturales</label>
           <select class="inline-input" id="cfg-dtepers-${id}">
             <option value="41" ${(emp.simplefactura?.tipo_dte_personas ?? 41) == 41 ? 'selected' : ''}>41 - Boleta Exenta (por defecto)</option>
@@ -1834,6 +1862,7 @@ function renderConfig() {
       </div>
       <div style="margin-top:10px;">
         <button class="btn btn-secondary btn-sm" onclick="testSF('${id}')">🔌 Probar conexión SF</button>
+        <button class="btn btn-secondary btn-sm" onclick="verEmisoresSF('${id}')" style="margin-left:8px">🏢 Ver Emisores</button>
         <span id="sf-test-result-${id}" style="margin-left:10px;font-size:13px;"></span>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -1855,6 +1884,7 @@ async function saveConfig() {
       password: document.getElementById(`cfg-sfpass-${id}`)?.value || '',
       api_token: document.getElementById(`cfg-sftoken-${id}`)?.value.trim() || '',
       nombre_sucursal: document.getElementById(`cfg-sfsuc-${id}`)?.value || 'Casa Matriz',
+      rut_emisor_sf: document.getElementById(`cfg-sfrutemis-${id}`)?.value.trim() || '',
       tipo_dte_personas: parseInt(document.getElementById(`cfg-dtepers-${id}`)?.value || '41'),
       tipo_dte_empresas: parseInt(document.getElementById(`cfg-dteempr-${id}`)?.value || '34')
     };

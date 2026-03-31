@@ -797,16 +797,10 @@ async function sfLogin(email, password) {
   return sfGetToken(email, password);
 }
 
-// Obtener sucursalId UUID desde SimpleFactura (con cache)
-async function sfGetSucursalId(email, password, nombreSucursal) {
-  // Usar sucursalId cacheado si existe
-  const cached = sfTokenCache[email];
-  if (cached?.sucursalId) {
-    console.log(`[SF SUCURSAL] Usando sucursalId cacheado: ${cached.sucursalId}`);
-    return cached.sucursalId;
-  }
-
-  // Usar el token ya cacheado (puede ser API token o JWT de login)
+// Obtener sucursalId + emisorId desde SimpleFactura
+// rutEmisorSF: RUT del emisor SF (ej. "77859376-9") — clave para cuentas multi-RUT
+// Retorna { sucursalId, emisorId } y actualiza sfTokenCache[email]
+async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF) {
   const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
   try {
     const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
@@ -814,28 +808,46 @@ async function sfGetSucursalId(email, password, nombreSucursal) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
     });
     const raw = await resp.text();
-    console.log(`[SF SUCURSAL] GET /Sucursal/list/filter → HTTP ${resp.status}: ${raw.substring(0, 500)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${raw.substring(0, 200)}`);
     const body = JSON.parse(raw);
-
-    // La respuesta puede ser array directo o { data: [...] }
     const lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
-    console.log(`[SF SUCURSAL] Sucursales disponibles: ${lista.map(s => `"${s.nombre || s.Nombre}" → ${s.sucursalId || s.SucursalId}`).join(', ')}`);
 
-    // Buscar por nombre exacto (case-insensitive, sin espacios extra)
-    const nombreBuscar = (nombreSucursal || '').toLowerCase().trim();
-    console.log(`[SF SUCURSAL] Buscando "${nombreBuscar}" en lista de ${lista.length} sucursales`);
-    let match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
-    // Si no hay coincidencia exacta, tomar la primera sucursal activa
-    if (!match) match = lista.find(s => s.activa !== false) || lista[0];
+    console.log(`[SF SUCURSAL] ${lista.length} sucursales disponibles:`);
+    lista.forEach(s => console.log(`  "${s.nombre||s.Nombre}" | emisor: "${s.emisorNombre||s.EmisorNombre||''}" | rutEmisor: ${s.rutEmisor||s.RutEmisor||''} | emisorId: ${(s.emisorId||s.EmisorId||'').substring(0,8)}... | sucursalId: ${(s.sucursalId||s.SucursalId||'').substring(0,8)}...`));
+
+    let match = null;
+
+    // 1. Match por RUT del emisor SF (campo rut_emisor_sf en config)
+    if (rutEmisorSF) {
+      const rutLimpio = rutEmisorSF.replace(/[.\-]/g, '').toLowerCase();
+      match = lista.find(s => {
+        const rut = ((s.rutEmisor || s.RutEmisor || '').toString()).replace(/[.\-]/g, '').toLowerCase();
+        const nombre = (s.emisorNombre || s.EmisorNombre || '').toLowerCase();
+        return rut === rutLimpio || nombre.replace(/[.\-\s]/g,'').toLowerCase().includes(rutLimpio);
+      });
+      if (match) console.log(`[SF SUCURSAL] ✓ Match por RUT "${rutEmisorSF}" → emisor "${match.emisorNombre||match.EmisorNombre}"`);
+    }
+
+    // 2. Match por nombre de sucursal
+    if (!match && nombreSucursal) {
+      const nombreBuscar = nombreSucursal.toLowerCase().trim();
+      match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
+      if (match) console.log(`[SF SUCURSAL] ✓ Match por nombre sucursal "${nombreSucursal}"`);
+    }
+
+    // 3. Fallback: primera activa
+    if (!match) {
+      match = lista.find(s => s.activa !== false) || lista[0];
+      if (match) console.log(`[SF SUCURSAL] ⚠ Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
+    }
 
     if (!match) throw new Error('No se encontraron sucursales en SimpleFactura');
 
     const uuid     = match.sucursalId || match.SucursalId;
     const emisorId = match.emisorId   || match.EmisorId || null;
-    console.log(`[SF SUCURSAL] Usando sucursalId: ${uuid}, emisorId: ${emisorId} (nombre: "${match.nombre || match.Nombre}")`);
+    console.log(`[SF SUCURSAL] → sucursalId: ${uuid}, emisorId: ${emisorId}`);
 
-    // Cachear ambos junto al token
+    // Actualizar cache con los valores correctos para este emisor
     if (sfTokenCache[email]) {
       sfTokenCache[email].sucursalId = uuid;
       sfTokenCache[email].emisorId   = emisorId;
@@ -991,7 +1003,8 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
     // Obtener sucursalId UUID de SimpleFactura (se cachea tras primera llamada)
     const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
-    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal);
+    const rutEmisorSF    = (sfConfig.rut_emisor_sf || '').trim();
+    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal, rutEmisorSF || null);
 
     // Construir solicitudString usando UUID de sucursal (estructura correcta para la API)
     const buildSolicitudString = (tok) => {
@@ -1096,8 +1109,9 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
     const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
     const claims = sfDecodeJwt(token);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
+    const rutEmisorSF_test = (sfConf.rut_emisor_sf || '').trim() || null;
     // También obtener sucursalId UUID para diagnóstico
-    const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal);
+    const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_test);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     let solicitudObj;
     if (sucursalUUID) {
@@ -1160,7 +1174,8 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
   try {
     const token = await sfGetToken(email, sfConf.password);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
-    await sfGetSucursalId(email, sfConf.password, nombreSucursal);
+    const rutEmisorSF_diag = (sfConf.rut_emisor_sf || '').trim() || null;
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_diag);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 
@@ -1228,7 +1243,8 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
   try {
     const token = await sfGetToken(email, sfConf.password);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
-    await sfGetSucursalId(email, sfConf.password, nombreSucursal);
+    const rutEmisorSF_act = (sfConf.rut_emisor_sf || '').trim() || null;
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_act);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 
@@ -1291,6 +1307,36 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
     }
 
     res.json({ ok: true, emisorId, tiposGlobal: tiposGlobal.length, plantillasEmisor: plantillas.length, resultados });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Listar todos los emisores/sucursales disponibles en la cuenta SF (útil para cuentas multi-RUT)
+app.get('/api/facturacion/listar-emisores/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa  = empresas[req.params.empresa_id];
+  const sfConf   = empresa?.simplefactura || {};
+  if (!sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = sfConf.username;
+  try {
+    const token = await sfGetToken(email, sfConf.password);
+    const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const raw  = await resp.text();
+    const body = JSON.parse(raw);
+    const lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+    const sucursales = lista.map(s => ({
+      emisorNombre:   s.emisorNombre  || s.EmisorNombre  || s.nombre || s.Nombre || '',
+      rutEmisor:      s.rutEmisor     || s.RutEmisor     || '',
+      nombreSucursal: s.nombre        || s.Nombre        || '',
+      sucursalId:     s.sucursalId    || s.SucursalId    || '',
+      emisorId:       s.emisorId      || s.EmisorId      || '',
+      activa:         s.activa !== false
+    }));
+    res.json({ ok: true, sucursales, rawPrimer: lista[0] ? JSON.stringify(lista[0]).substring(0, 800) : '' });
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }

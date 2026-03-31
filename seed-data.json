@@ -1,7 +1,7 @@
 {
   "users": {
-    "admin": {
-      "passHash": "1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc",
+    "hturra": {
+      "passHash": "ded2a6c4e483cba4b180146c6055a087f021d5b5d6cc5ba91f3f068d7a686ccd",
       "role": "admin",
       "nombre": "Hernán Turra",
       "initials": "HT",

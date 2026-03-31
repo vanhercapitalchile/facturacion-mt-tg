@@ -158,16 +158,16 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
     const users = getAppData('users');
     if (!users) return;
     let changed = false;
-    // Renombrar hturra → admin si existe
-    if (users.hturra && !users.admin) {
-      users.admin = { ...users.hturra };
-      delete users.hturra;
+    // Revertir admin → hturra si se renombró por error
+    if (users.admin && !users.hturra) {
+      users.hturra = { ...users.admin };
+      delete users.admin;
       changed = true;
-      console.log('[MIGRATE] Renombrado usuario hturra → admin');
+      console.log('[MIGRATE] Revertido usuario admin → hturra');
     }
     // Actualizar hashes de contraseñas
     const newHashes = {
-      admin:     '1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc',
+      hturra:    'ded2a6c4e483cba4b180146c6055a087f021d5b5d6cc5ba91f3f068d7a686ccd',
       dbravo:    'f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69',
       strujillo: 'ff54329f276f7364be2e3d36a7c13bac328b13a43be274db933cb56985c3954d'
     };

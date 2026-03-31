@@ -919,14 +919,16 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 }
 
 // ── CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ───
+// Formato oficial SF: exactamente 39 columnas — NO agregar columnas extra aquí
+// (las 3 columnas de tracking ID Transferencia, Cartola, Id Compuesto se removieron;
+//  SF falla con "saving entity changes" si recibe columnas que no reconoce)
 const SF_CSV_HEADERS = [
   'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
   'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
   'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
   'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
   'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
-  'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
-  'ID Transferencia','Cartola','Id Compuesto'
+  'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo'
 ];
 
 function rutParaSF(rut) {
@@ -1006,10 +1008,7 @@ function buildSfCsvRows(movs, empresa) {
       1,                        // IndicadorExento=1 (tipos 34 y 41 son AMBOS exentos)
       m.monto_total || 0,       // TotalProducto
       '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
-      correoExtra,              // Correo (col 38)
-      m.id_transferencia || '',
-      m.banco_cartola || '',
-      m.id_compuesto || ''
+      correoExtra,              // Correo (col 39 — última columna oficial SF)
     ];
   });
 }

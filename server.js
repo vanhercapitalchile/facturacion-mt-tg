@@ -588,8 +588,8 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
 });
 
 // Helper: determinar tipo_dte según RUT y config de empresa
-// Personas naturales (RUT < 76M) → Boleta Exenta (41) por defecto
-// Personas jurídicas (RUT >= 76M) → Factura Exenta (34) por defecto
+// Default: 34 (Factura Exenta) para TODOS — tipo 41 solo si está explícitamente configurado
+// (SF requiere que el tipo 41 tenga plantilla activa configurada — si no existe usar 34)
 function getTipoDte(rutNormalizado, empresaConfig) {
   if (!rutNormalizado) return 34;
   const rutNum = parseInt(rutNormalizado.slice(0, -1));
@@ -598,8 +598,9 @@ function getTipoDte(rutNormalizado, empresaConfig) {
     // Empresa/Persona jurídica → Factura Exenta (34) por defecto
     return parseInt(sf.tipo_dte_empresas) || 34;
   } else {
-    // Persona natural → Boleta Exenta (41) por defecto
-    return parseInt(sf.tipo_dte_personas) || 41;
+    // Persona natural → usar config, pero default 34 (Factura Exenta) ya que tipo 41
+    // requiere plantilla activa en SF que puede no estar configurada
+    return parseInt(sf.tipo_dte_personas) || 34;
   }
 }
 
@@ -716,26 +717,17 @@ function sfTokenFromCache(email) {
   return null;
 }
 
-// Obtener token SF: prioridad API token estático > login con email/password
-async function sfGetToken(email, password, apiToken) {
-  // 1. API token estático (más estable, sin sesión, sin expiración prematura)
-  if (apiToken) {
-    console.log(`[SF TOKEN] Usando API token estático para ${email}`);
-    // Guardar en cache para que sfGetSucursalId lo pueda usar
-    if (!sfTokenCache[email]) sfTokenCache[email] = {};
-    sfTokenCache[email].token = apiToken;
-    sfTokenCache[email].expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
-    return apiToken;
-  }
-
-  // 2. Return cached token if still valid (login previo)
+// Obtener token SF usando login email/password (el "api_token" de SF Integraciones
+// es para webhooks salientes, NO para autenticar llamadas REST → se ignora aquí)
+async function sfGetToken(email, password, _apiTokenIgnored) {
+  // 1. Return cached token if still valid (login previo)
   const cached = sfTokenFromCache(email);
   if (cached) {
     console.log(`[SF TOKEN] Usando token en caché para ${email}`);
     return cached;
   }
 
-  // 3. Fresh login
+  // 2. Fresh login
   const doLogin = async () => {
     const r = await fetch(`${SF_BASE}/Authentication/login`, {
       method: 'POST',
@@ -830,8 +822,9 @@ async function sfGetSucursalId(email, password, nombreSucursal) {
     const lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
     console.log(`[SF SUCURSAL] Sucursales disponibles: ${lista.map(s => `"${s.nombre || s.Nombre}" → ${s.sucursalId || s.SucursalId}`).join(', ')}`);
 
-    // Buscar por nombre exacto (case-insensitive)
+    // Buscar por nombre exacto (case-insensitive, sin espacios extra)
     const nombreBuscar = (nombreSucursal || '').toLowerCase().trim();
+    console.log(`[SF SUCURSAL] Buscando "${nombreBuscar}" en lista de ${lista.length} sucursales`);
     let match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
     // Si no hay coincidencia exacta, tomar la primera sucursal activa
     if (!match) match = lista.find(s => s.activa !== false) || lista[0];
@@ -997,7 +990,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
     // Obtener sucursalId UUID de SimpleFactura (se cachea tras primera llamada)
-    const nombreSucursal = sfConfig.nombre_sucursal || 'Casa Matriz';
+    const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
     const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal);
 
     // Construir solicitudString usando UUID de sucursal (estructura correcta para la API)
@@ -1102,7 +1095,7 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   try {
     const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
     const claims = sfDecodeJwt(token);
-    const nombreSucursal = sfConf.nombre_sucursal || 'Casa Matriz';
+    const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
     // También obtener sucursalId UUID para diagnóstico
     const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal);
     const emisorId = sfTokenCache[email]?.emisorId || null;

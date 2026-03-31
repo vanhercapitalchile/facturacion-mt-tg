@@ -890,12 +890,13 @@ function buildSfCsvRows(movs, empresa) {
     const correoRecep = m.email_receptor || empresa.email_facturacion || '';
     // campo Correo (col 38): solo si el receptor tiene email propio
     const correoExtra = m.email_receptor || '';
-    // Campos del receptor — usar fallbacks para evitar "No se encontraron datos para el rut"
-    const razonSocial = (m.razon_social || m.nombre_origen || 'SIN RAZON SOCIAL').substring(0, 100);
-    const giro        = (m.giro || 'PARTICULAR').substring(0, 80);
+    // Campos del receptor — basados en el formato oficial de los CSVs de ejemplo
+    // GiroRecep, CiudadRecep pueden ir vacíos (SF los acepta); sólo RazonSocial y DirRecep requieren valor
+    const razonSocial = (m.razon_social || m.nombre_origen || '').substring(0, 100);
+    const giro        = (m.giro || '').substring(0, 80);
     const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
-    const comuna      = m.comuna || 'NO INFORMADO';
-    const ciudad      = m.ciudad || 'NO INFORMADO';
+    const comuna      = m.comuna || '';
+    const ciudad      = m.ciudad || '';
     // tipo_dte: siempre derivar desde config de empresa (ignora valor guardado en movimiento)
     // Esto permite que un cambio de config se aplique inmediatamente al re-emitir un lote
     const tipoDte = getTipoDte(m.rut_normalizado, empresa);

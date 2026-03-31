@@ -116,7 +116,7 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
 (function reclassifyMovimientos() {
   try {
     const empresas = getAppData('empresas') || {};
-    const movs = db.prepare("SELECT id, empresa_id, rut_normalizado, nombre_origen, estado, tipo_dte FROM movimientos WHERE estado NOT IN ('facturado','en_lote')").all();
+    const movs = db.prepare("SELECT id, empresa_id, rut_normalizado, nombre_origen, estado, tipo_dte FROM movimientos WHERE estado NOT IN ('facturado')").all();
     if (!movs.length) return;
     const upd = db.prepare("UPDATE movimientos SET tipo_dte=?, estado=?, razon_social=COALESCE(NULLIF(razon_social,''), nombre_origen, razon_social), updated_at=? WHERE id=?");
     const now = nowCL ? nowCL() : new Date().toISOString();
@@ -607,7 +607,8 @@ function getTipoDte(rutNormalizado, empresaConfig) {
 app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresas = getAppData('empresas') || {};
-  let sql = "SELECT id, empresa_id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE estado NOT IN ('facturado','en_lote')";
+  // Incluir 'en_lote' para poder reclasificar movimientos en lotes con error
+  let sql = "SELECT id, empresa_id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE estado NOT IN ('facturado')";
   const params = [];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
   const movs = db.prepare(sql).all(...params);
@@ -895,10 +896,13 @@ function buildSfCsvRows(movs, empresa) {
     const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
     const comuna      = m.comuna || 'NO INFORMADO';
     const ciudad      = m.ciudad || 'NO INFORMADO';
+    // tipo_dte: siempre derivar desde config de empresa (ignora valor guardado en movimiento)
+    // Esto permite que un cambio de config se aplique inmediatamente al re-emitir un lote
+    const tipoDte = getTipoDte(m.rut_normalizado, empresa);
 
     return [
       i + 1,
-      m.tipo_dte || 34,
+      tipoDte,
       1,                        // FmaPago: contado
       fecha,                    // FechaEmision DD-MM-YYYY
       fecha,                    // Vencimiento (igual a emisión)

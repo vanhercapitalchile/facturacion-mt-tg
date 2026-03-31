@@ -1716,6 +1716,7 @@ function renderConfig() {
         <div class="form-group"><label>Email facturación</label><input type="text" class="inline-input" id="cfg-email-${id}" value="${emp.email_facturacion || ''}"></div>
         <div class="form-group"><label>Email SimpleFactura (login)</label><input type="email" class="inline-input" id="cfg-sfuser-${id}" value="${emp.simplefactura?.username || ''}" placeholder="correo@ejemplo.com"></div>
         <div class="form-group"><label>Contraseña SimpleFactura</label><input type="password" class="inline-input" id="cfg-sfpass-${id}" value="${emp.simplefactura?.password || ''}"></div>
+        <div class="form-group"><label>Nombre sucursal SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfsuc-${id}" value="${emp.simplefactura?.nombre_sucursal || 'Casa Matriz'}" placeholder="Casa Matriz"></div>
       </div>
       <div style="margin-top:10px;">
         <button class="btn btn-secondary btn-sm" onclick="testSF('${id}')">🔌 Probar conexión SimpleFactura</button>
@@ -1732,7 +1733,8 @@ async function saveConfig() {
       ...empresas[id].simplefactura,
       rut_emisor: document.getElementById(`cfg-rut-${id}`)?.value || '',
       username: document.getElementById(`cfg-sfuser-${id}`)?.value || '',
-      password: document.getElementById(`cfg-sfpass-${id}`)?.value || ''
+      password: document.getElementById(`cfg-sfpass-${id}`)?.value || '',
+      nombre_sucursal: document.getElementById(`cfg-sfsuc-${id}`)?.value || 'Casa Matriz'
     };
     empresas[id].email_facturacion = document.getElementById(`cfg-email-${id}`)?.value || '';
   }

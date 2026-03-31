@@ -768,9 +768,22 @@ const SF_CSV_HEADERS = [
 ];
 
 function rutParaSF(rut) {
-  // Formato SimpleFactura: sin puntos, con guión (ej: 77653656-3)
+  // Formato SimpleFactura CSV: sin puntos, con guión (ej: 77653656-3)
   if (!rut) return '';
   return rut.replace(/\./g, ''); // quitar puntos, mantener guión
+}
+
+// Formato RUT con puntos para Credenciales (registro interno SimpleFactura: "77.859.376-9")
+function rutConPuntos(rut) {
+  if (!rut) return '';
+  const clean = rut.replace(/\./g, ''); // asegurar sin puntos primero
+  const dash = clean.lastIndexOf('-');
+  if (dash < 0) return rut; // sin guión, devolver tal cual
+  const num = clean.substring(0, dash);
+  const dv  = clean.substring(dash + 1);
+  // insertar punto cada 3 dígitos desde la derecha
+  const formatted = num.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${formatted}-${dv}`;
 }
 
 function fechaParaSF(fechaISO) {
@@ -883,17 +896,17 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
         || claims.emisorId || claims.IdEmpresa || claims.idEmpresa || null;
 
       // 2ª opción: estructura Credenciales con RUT (formato SDK SimpleFactura)
-      const rutRaw   = sfConfig.rut_emisor || '';
-      const rutSf    = rutParaSF(rutRaw);   // sin puntos, con guión: "76123456-7"
-      const nmbEmisor = empresa.nombre || 'Casa Matriz';
+      // SimpleFactura almacena el RUT CON puntos en su BD: "77.859.376-9"
+      const rutRaw    = sfConfig.rut_emisor || '';
+      const rutCreds  = rutConPuntos(rutRaw);  // con puntos y guión: "77.859.376-9"
+      // NmbEmisor = nombre de la sucursal en SimpleFactura (por defecto "Casa Matriz")
+      const nmbEmisor = sfConfig.nombre_sucursal || 'Casa Matriz';
 
       let obj;
       if (idEmisor) {
-        // Enviamos IdEmisor Y Credenciales para máxima compatibilidad
-        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutSf, NmbEmisor: nmbEmisor } };
+        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutCreds, NmbEmisor: nmbEmisor } };
       } else {
-        // Sin IdEmisor en JWT → solo Credenciales
-        obj = { Credenciales: { RutEmisor: rutSf, NmbEmisor: nmbEmisor } };
+        obj = { Credenciales: { RutEmisor: rutCreds, NmbEmisor: nmbEmisor } };
       }
 
       const ss = JSON.stringify(obj);

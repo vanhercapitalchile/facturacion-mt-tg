@@ -588,14 +588,18 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
 });
 
 // Helper: determinar tipo_dte según RUT y config de empresa
+// Personas naturales (RUT < 76M) → Boleta Exenta (41) por defecto
+// Personas jurídicas (RUT >= 76M) → Factura Exenta (34) por defecto
 function getTipoDte(rutNormalizado, empresaConfig) {
   if (!rutNormalizado) return 34;
   const rutNum = parseInt(rutNormalizado.slice(0, -1));
   const sf = empresaConfig?.simplefactura || {};
   if (rutNum >= 76000000) {
+    // Empresa/Persona jurídica → Factura Exenta (34) por defecto
     return parseInt(sf.tipo_dte_empresas) || 34;
   } else {
-    return parseInt(sf.tipo_dte_personas) || 34;
+    // Persona natural → Boleta Exenta (41) por defecto
+    return parseInt(sf.tipo_dte_personas) || 41;
   }
 }
 

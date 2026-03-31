@@ -1719,15 +1719,15 @@ function renderConfig() {
         <div class="form-group"><label>Nombre sucursal SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfsuc-${id}" value="${emp.simplefactura?.nombre_sucursal || 'Casa Matriz'}" placeholder="Casa Matriz"></div>
         <div class="form-group"><label>Tipo DTE personas naturales</label>
           <select class="inline-input" id="cfg-dtepers-${id}">
-            <option value="34" ${(emp.simplefactura?.tipo_dte_personas ?? 34) == 34 ? 'selected' : ''}>34 - Factura exenta (recomendado)</option>
-            <option value="41" ${(emp.simplefactura?.tipo_dte_personas ?? 34) == 41 ? 'selected' : ''}>41 - Boleta electrónica</option>
-            <option value="39" ${(emp.simplefactura?.tipo_dte_personas ?? 34) == 39 ? 'selected' : ''}>39 - Boleta afecta</option>
+            <option value="41" ${(emp.simplefactura?.tipo_dte_personas ?? 41) == 41 ? 'selected' : ''}>41 - Boleta Exenta (por defecto)</option>
+            <option value="39" ${(emp.simplefactura?.tipo_dte_personas ?? 41) == 39 ? 'selected' : ''}>39 - Boleta Afecta</option>
+            <option value="34" ${(emp.simplefactura?.tipo_dte_personas ?? 41) == 34 ? 'selected' : ''}>34 - Factura Exenta</option>
           </select>
         </div>
         <div class="form-group"><label>Tipo DTE empresas (RUT &gt; 76M)</label>
           <select class="inline-input" id="cfg-dteempr-${id}">
-            <option value="34" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 34 ? 'selected' : ''}>34 - Factura exenta</option>
-            <option value="33" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 33 ? 'selected' : ''}>33 - Factura afecta (con IVA)</option>
+            <option value="34" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 34 ? 'selected' : ''}>34 - Factura Exenta (por defecto)</option>
+            <option value="33" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 33 ? 'selected' : ''}>33 - Factura Afecta (con IVA)</option>
           </select>
         </div>
       </div>
@@ -1748,7 +1748,7 @@ async function saveConfig() {
       username: document.getElementById(`cfg-sfuser-${id}`)?.value || '',
       password: document.getElementById(`cfg-sfpass-${id}`)?.value || '',
       nombre_sucursal: document.getElementById(`cfg-sfsuc-${id}`)?.value || 'Casa Matriz',
-      tipo_dte_personas: parseInt(document.getElementById(`cfg-dtepers-${id}`)?.value || '34'),
+      tipo_dte_personas: parseInt(document.getElementById(`cfg-dtepers-${id}`)?.value || '41'),
       tipo_dte_empresas: parseInt(document.getElementById(`cfg-dteempr-${id}`)?.value || '34')
     };
     empresas[id].email_facturacion = document.getElementById(`cfg-email-${id}`)?.value || '';

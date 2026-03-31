@@ -647,6 +647,28 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
 // ── SimpleFactura helpers ─────────────────────────────────────────────────────
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
+// Construye un cuerpo multipart/form-data manualmente como Buffer (más confiable
+// que el FormData nativo de Node.js que puede fallar con Blob en fetch)
+function buildMultipartBody(fileBuffer, fieldName, filename, mimeType, extraFields = {}) {
+  const boundary = 'FacturaBoundary' + Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
+  const CRLF = '\r\n';
+  const parts = [];
+
+  // Campos de texto adicionales (p. ej. solicitudString)
+  for (const [name, value] of Object.entries(extraFields)) {
+    parts.push(Buffer.from(`--${boundary}${CRLF}Content-Disposition: form-data; name="${name}"${CRLF}${CRLF}${value}${CRLF}`, 'utf8'));
+  }
+
+  // Archivo
+  const fileHeader = `--${boundary}${CRLF}Content-Disposition: form-data; name="${fieldName}"; filename="${filename}"${CRLF}Content-Type: ${mimeType}${CRLF}${CRLF}`;
+  parts.push(Buffer.from(fileHeader, 'utf8'));
+  parts.push(fileBuffer);
+  parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`, 'utf8'));
+
+  const body = Buffer.concat(parts);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
 // Cache de tokens por empresa (email → { token, expiresAt })
 const sfTokenCache = {};
 
@@ -838,21 +860,34 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     // 2. Generar CSV en formato SimpleFactura
     const csvContent = buildSfCsv(movs, empresa);
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
+    const csvBuffer = Buffer.from(csvContent, 'utf8');
 
-    // 3. Subir CSV — URL correcta según Swagger: /api/FacturacionMasiva/importacion/facturarcsv
-    const formData = new FormData();
-    formData.append('file', new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), csvFilename);
+    // 3. Subir CSV — multipart manual (evita bugs de FormData+Blob en Node.js)
+    const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
-    const uploadResp = await fetch(`${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
+    const doUpload = async (tok) => {
+      const { body: mpBody, contentType: mpCT } = buildMultipartBody(csvBuffer, 'file', csvFilename, 'text/csv');
+      return fetch(SF_UPLOAD_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': mpCT },
+        body: mpBody
+      });
+    };
+
+    let uploadResp = await doUpload(token);
+
+    // Si 401, el token puede haber expirado → refrescar y reintentar una vez
+    if (uploadResp.status === 401) {
+      console.log('[SF UPLOAD] Token rechazado (401) — refrescando y reintentando...');
+      delete sfTokenCache[sfConfig.username];
+      const newToken = await sfGetToken(sfConfig.username, sfConfig.password);
+      uploadResp = await doUpload(newToken);
+    }
 
     const rawText = await uploadResp.text();
-    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 600)}`);
+    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 800)}`);
     let data;
-    try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText }; }
+    try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, httpStatus: uploadResp.status }; }
 
     // Éxito: HTTP 2xx Y (sin errores en respuesta O tieneErrores===false)
     const tieneErrores = data?.data?.tieneErrores;
@@ -865,7 +900,12 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       if (d.tieneErrores) mensaje += ' (con errores — revisar en SimpleFactura)';
     } else {
       const errs = data?.errors;
-      mensaje = Array.isArray(errs) ? errs.join('. ') : (typeof errs === 'object' ? JSON.stringify(errs) : errs) || data?.message || data?.raw || JSON.stringify(data);
+      const errBody = Array.isArray(errs) ? errs.join('. ')
+        : (typeof errs === 'object' && errs !== null ? JSON.stringify(errs) : errs)
+        || data?.message || data?.title
+        || (data?.raw !== undefined ? `Respuesta vacía del servidor` : null)
+        || JSON.stringify(data);
+      mensaje = `HTTP ${uploadResp.status}: ${errBody}`;
     }
 
     // 4. Si exitoso, marcar movimientos como facturados

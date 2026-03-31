@@ -904,9 +904,9 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
       let obj;
       if (idEmisor) {
-        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutCreds, NmbEmisor: nmbEmisor } };
+        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
       } else {
-        obj = { Credenciales: { RutEmisor: rutCreds, NmbEmisor: nmbEmisor } };
+        obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
       }
 
       const ss = JSON.stringify(obj);

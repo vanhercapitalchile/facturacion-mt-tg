@@ -598,9 +598,9 @@ function getTipoDte(rutNormalizado, empresaConfig) {
     // Empresa/Persona jurídica → Factura Exenta (34) por defecto
     return parseInt(sf.tipo_dte_empresas) || 34;
   } else {
-    // Persona natural → usar config, pero default 34 (Factura Exenta) ya que tipo 41
-    // requiere plantilla activa en SF que puede no estar configurada
-    return parseInt(sf.tipo_dte_personas) || 34;
+    // Persona natural → default 41 (Boleta Exenta), configurable por empresa
+    // IMPORTANTE: TG usa DTE 41, MT puede usar DTE 34 — configurar en cada empresa
+    return parseInt(sf.tipo_dte_personas) || 41;
   }
 }
 

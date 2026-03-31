@@ -109,6 +109,33 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_estado ON movimientos(estado)'
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_rut ON clientes(rut_normalizado, empresa_id)'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)'); } catch(e){}
 
+// ── Schema migrations ─────────────────────────────────────────────────────────
+try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
+
+// ── Re-classify existing movements with wrong tipo_dte ────────────────────────
+// Fix: RUT comparison must exclude check digit (last char of rut_normalizado)
+(function reclassifyMovimientos() {
+  const movs = db.prepare("SELECT id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE tipo_dte IS NOT NULL AND estado NOT IN ('facturado','en_lote')").all();
+  if (!movs.length) return;
+  const upd = db.prepare("UPDATE movimientos SET tipo_dte=?, estado=?, razon_social=CASE WHEN ?=41 AND (razon_social IS NULL OR razon_social='') THEN nombre_origen ELSE razon_social END, updated_at=? WHERE id=?");
+  const now = nowCL ? nowCL() : new Date().toISOString();
+  let fixed = 0;
+  db.transaction(() => {
+    for (const m of movs) {
+      if (!m.rut_normalizado) continue;
+      const rutNum = parseInt(m.rut_normalizado.slice(0, -1));
+      const correcto = rutNum >= 76000000 ? 34 : 41;
+      const actual = db.prepare('SELECT tipo_dte FROM movimientos WHERE id=?').get(m.id)?.tipo_dte;
+      if (actual !== correcto) {
+        const nuevoEstado = correcto === 41 ? 'listo' : m.estado;
+        upd.run(correcto, nuevoEstado, correcto, now, m.id);
+        fixed++;
+      }
+    }
+  })();
+  if (fixed > 0) console.log(`[MIGRATE] Re-clasificados ${fixed} movimientos con tipo_dte incorrecto`);
+})();
+
 // ── Seed ─────────────────────────────────────────────────────────────────────
 (function seedIfEmpty() {
   if (db.prepare('SELECT value FROM app_data WHERE key = ?').get('users')) return;
@@ -423,10 +450,13 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
   let nuevos = 0, duplicados = 0, errores = 0;
   const results = [];
 
+  // Generate unique ID for this cartola upload batch
+  const loteCargaId = `${empresaId}-${banco_cartola}-${Date.now()}`.toLowerCase().replace(/\s/g,'-');
+
   const checkDup = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
   const insertMov = db.prepare(`
-    INSERT INTO movimientos (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado, nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto, estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor, nombre_item, descripcion_item, precio, monto_exento, monto_total, fecha_carga, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO movimientos (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado, nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto, estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor, nombre_item, descripcion_item, precio, monto_exento, monto_total, fecha_carga, created_at, updated_at, lote_carga_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
 
   // Load clientes for matching
@@ -457,8 +487,9 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
         // Determine DTE type by RUT: RUT >= 76M → Factura Exenta (34), RUT < 76M → Boleta Exenta (41)
+        // rutNorm includes check digit (e.g. "273657460") → slice last char to get pure number
         if (rutNorm) {
-          const rutNum = parseInt(rutNorm);
+          const rutNum = parseInt(rutNorm.slice(0, -1));
           tipoDte = rutNum >= 76000000 ? 34 : 41;
 
           const cliente = clienteMap.get(rutNorm);
@@ -492,7 +523,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
           comuna, ciudad, emailReceptor,
           nombreItem, descripcionItem,
           monto, tipoDte ? monto : 0, monto,  // ambos tipo 34 y 41 son exentos
-          now, now, now
+          now, now, now, loteCargaId
         );
         nuevos++;
         results.push({ id_compuesto: idCompuesto, status: estado, rut: rutNorm });
@@ -526,6 +557,52 @@ app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
     for (const id of ids) stmt.run(estado, now, id);
   })();
   res.json({ ok: true, updated: ids.length });
+});
+
+// ── Historial de cargas de cartola ───────────────────────────────────────────
+app.get('/api/cartolas/historial', requireAuth, (req, res) => {
+  const empresaId = filterByEmpresa(req);
+  let sql = `SELECT lote_carga_id, empresa_id, banco_cartola, fecha_carga,
+    COUNT(*) as cantidad, SUM(monto) as monto_total
+    FROM movimientos WHERE lote_carga_id IS NOT NULL AND lote_carga_id != ''`;
+  const params = [];
+  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
+  sql += ' GROUP BY lote_carga_id ORDER BY fecha_carga DESC LIMIT 50';
+  res.json(db.prepare(sql).all(...params));
+});
+
+app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
+  const { lote_carga_id } = req.params;
+  const empresaId = filterByEmpresa(req);
+  // Only allow deletion of movements not yet in a facturación lote
+  let sql = "DELETE FROM movimientos WHERE lote_carga_id = ? AND estado NOT IN ('facturado','en_lote')";
+  const params = [lote_carga_id];
+  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
+  const result = db.prepare(sql).run(...params);
+  res.json({ ok: true, eliminados: result.changes });
+});
+
+// ── Re-classify all pending movements (manual trigger) ───────────────────────
+app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
+  const empresaId = filterByEmpresa(req);
+  let sql = "SELECT id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE tipo_dte IS NOT NULL AND estado NOT IN ('facturado','en_lote')";
+  const params = [];
+  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
+  const movs = db.prepare(sql).all(...params);
+  const now = nowCL();
+  let fixed = 0;
+  db.transaction(() => {
+    for (const m of movs) {
+      if (!m.rut_normalizado) continue;
+      const rutNum = parseInt(m.rut_normalizado.slice(0, -1));
+      const correcto = rutNum >= 76000000 ? 34 : 41;
+      const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
+      db.prepare('UPDATE movimientos SET tipo_dte=?, estado=?, updated_at=? WHERE id=?')
+        .run(correcto, nuevoEstado, now, m.id);
+      fixed++;
+    }
+  })();
+  res.json({ ok: true, reclasificados: fixed });
 });
 
 // ── Facturación (crear lote + enviar a SimpleFactura) ────────────────────────
@@ -606,7 +683,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       QtyItem: 1,
       PrcItem: m.monto_total,
       MontoItem: m.monto_total,
-      IndExe: m.tipo_dte === 34 ? 1 : 0
+      IndExe: 1  // tipos 34 y 41 son ambos exentos
     }],
     _movimiento_id: m.id
   }));
@@ -614,24 +691,30 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   try {
     // Authenticate with SimpleFactura
     const authHeader = 'Basic ' + Buffer.from(`${sfConfig.username}:${sfConfig.password}`).toString('base64');
+    const endpoint = `${baseUrl}/invoices`;
 
     const results = [];
     for (const dte of dtes) {
       const movId = dte._movimiento_id;
       delete dte._movimiento_id;
       try {
-        const response = await fetch(`${baseUrl}/invoices`, {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
           body: JSON.stringify(dte)
         });
-        const data = await response.json();
-        if (response.ok) {
+        // Read raw text first to avoid JSON parse errors on empty/HTML responses
+        const rawText = await response.text();
+        console.log(`[SF] HTTP ${response.status} → ${rawText.substring(0, 300)}`);
+        let data = {};
+        try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, parseError: e.message }; }
+        if (response.ok && !data.raw) {
           db.prepare("UPDATE movimientos SET estado = 'facturado', folio_dte = ?, fecha_facturacion = ?, updated_at = ? WHERE id = ?")
-            .run(data.folio || data.Folio || '', now, now, movId);
-          results.push({ id: movId, status: 'ok', folio: data.folio || data.Folio });
+            .run(data.folio || data.Folio || data.FolioDoc || '', now, now, movId);
+          results.push({ id: movId, status: 'ok', folio: data.folio || data.Folio || data.FolioDoc });
         } else {
-          results.push({ id: movId, status: 'error', error: data.message || JSON.stringify(data) });
+          results.push({ id: movId, status: 'error', httpStatus: response.status,
+            error: data.message || data.error || data.Message || data.raw || JSON.stringify(data) });
         }
       } catch (err) {
         results.push({ id: movId, status: 'error', error: err.message });
@@ -649,6 +732,24 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[SIMPLEFACTURA ERROR]', err);
     res.status(500).json({ error: 'Error al conectar con SimpleFactura: ' + err.message });
+  }
+});
+
+// Test SimpleFactura connectivity
+app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa = empresas[req.params.empresa_id];
+  if (!empresa?.simplefactura?.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const { username, password } = empresa.simplefactura;
+  const baseUrl = getAppData('config').simplefactura_base_url || 'https://api.simplefactura.cl';
+  try {
+    const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+    // Try a GET to the base endpoint to check connectivity
+    const r = await fetch(`${baseUrl}/health`, { headers: { 'Authorization': authHeader } });
+    const raw = await r.text();
+    res.json({ httpStatus: r.status, response: raw.substring(0, 500), endpoint: baseUrl });
+  } catch(e) {
+    res.json({ error: e.message, endpoint: baseUrl });
   }
 });
 

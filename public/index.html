@@ -313,6 +313,17 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           </div>
           <div id="cartola-result" style="margin-top:20px;display:none;"></div>
         </div>
+
+        <!-- Historial de cargas -->
+        <div class="card" style="margin-top:20px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Historial de Cargas</h3>
+            <button class="btn btn-sm" onclick="loadHistorialCartolas()" style="font-size:12px;">&#x21BB; Actualizar</button>
+          </div>
+          <div id="historial-cartolas-list">
+            <p style="color:var(--txt2);font-size:13px;padding:12px 0;">Cargando historial...</p>
+          </div>
+        </div>
       </div>
 
       <!-- MOVIMIENTOS VIEW -->
@@ -739,6 +750,7 @@ function adminNav(view) {
   else if (view === 'clientes') loadClientes();
   else if (view === 'config') renderConfig();
   else if (view === 'usuarios') renderUsuarios();
+  else if (view === 'cartolas') loadHistorialCartolas();
 }
 
 function empNav(view) {
@@ -1052,6 +1064,54 @@ async function procesarCartola() {
   if (!PARSED_CARTOLA) return showToast('No hay cartola cargada', 'error');
   const empresaId = document.getElementById('cartola-empresa').value;
   await enviarMovimientos(empresaId, PARSED_CARTOLA.banco, PARSED_CARTOLA.movimientos, 'cartola-result');
+  loadHistorialCartolas();
+}
+
+async function loadHistorialCartolas() {
+  const el = document.getElementById('historial-cartolas-list');
+  if (!el) return;
+  try {
+    const data = await apiFetch('/api/cartolas/historial');
+    if (!data.length) {
+      el.innerHTML = '<p style="color:var(--txt2);font-size:13px;padding:8px 0;">No hay cargas registradas.</p>';
+      return;
+    }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="color:var(--txt2);border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:8px 4px;">Empresa</th>
+        <th style="text-align:left;padding:8px 4px;">Banco</th>
+        <th style="text-align:left;padding:8px 4px;">Fecha carga</th>
+        <th style="text-align:right;padding:8px 4px;">Movs.</th>
+        <th style="text-align:right;padding:8px 4px;">Monto total</th>
+        <th style="text-align:center;padding:8px 4px;">Acción</th>
+      </tr></thead>
+      <tbody>${data.map(r => `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:8px 4px;">${r.empresa_id}</td>
+        <td style="padding:8px 4px;">${r.banco_cartola}</td>
+        <td style="padding:8px 4px;">${(r.fecha_carga||'').substring(0,16)}</td>
+        <td style="text-align:right;padding:8px 4px;">${r.cantidad}</td>
+        <td style="text-align:right;padding:8px 4px;">$${Number(r.monto_total||0).toLocaleString('es-CL')}</td>
+        <td style="text-align:center;padding:8px 4px;">
+          <button class="btn btn-sm" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 10px;"
+            onclick="eliminarCarga('${r.lote_carga_id}', ${r.cantidad})">🗑 Eliminar</button>
+        </td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } catch(e) {
+    el.innerHTML = '<p style="color:#e74c3c;font-size:13px;">Error cargando historial</p>';
+  }
+}
+
+async function eliminarCarga(loteCargaId, cantidad) {
+  if (!confirm(`¿Eliminar esta carga (${cantidad} movimientos)? Solo se eliminan los que no estén en lotes de facturación.`)) return;
+  try {
+    const r = await apiFetch(`/api/cartolas/${encodeURIComponent(loteCargaId)}`, { method: 'DELETE' });
+    showToast(`${r.eliminados} movimientos eliminados`, 'success');
+    loadHistorialCartolas();
+    if (typeof loadMovimientos === 'function') loadMovimientos();
+  } catch(e) {
+    showToast('Error al eliminar: ' + e.message, 'error');
+  }
 }
 
 async function procesarCartolaEmp() {

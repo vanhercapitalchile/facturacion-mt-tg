@@ -872,27 +872,40 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     // 3. Subir CSV — multipart manual (evita bugs de FormData+Blob en Node.js)
     const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
-    // Construir solicitudString desde el JWT (IdEmisor) o RUT de config
+    // Construir solicitudString — estructura Credenciales según SDK oficial de SimpleFactura.
+    // El JWT puede tener el IdEmisor como claim extra; si no, usamos el RUT configurado.
     const buildSolicitudString = (tok) => {
       const claims = sfDecodeJwt(tok);
       console.log('[SF UPLOAD] JWT claims:', JSON.stringify(claims));
-      // SimpleFactura embebe el IdEmisor en el JWT bajo distintos nombres posibles
+
+      // 1ª opción: IdEmisor UUID en el JWT (el más confiable si está presente)
       const idEmisor = claims.IdEmisor || claims.idEmisor || claims.EmisorId
         || claims.emisorId || claims.IdEmpresa || claims.idEmpresa || null;
+
+      // 2ª opción: estructura Credenciales con RUT (formato SDK SimpleFactura)
+      const rutRaw   = sfConfig.rut_emisor || '';
+      const rutSf    = rutParaSF(rutRaw);   // sin puntos, con guión: "76123456-7"
+      const nmbEmisor = empresa.nombre || 'Casa Matriz';
+
+      let obj;
       if (idEmisor) {
-        console.log('[SF UPLOAD] solicitudString via JWT IdEmisor:', idEmisor);
-        return JSON.stringify({ IdEmisor: idEmisor });
+        // Enviamos IdEmisor Y Credenciales para máxima compatibilidad
+        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutSf, NmbEmisor: nmbEmisor } };
+      } else {
+        // Sin IdEmisor en JWT → solo Credenciales
+        obj = { Credenciales: { RutEmisor: rutSf, NmbEmisor: nmbEmisor } };
       }
-      // Fallback: usar RUT del emisor configurado
-      const rut = rutParaSF(sfConfig.rut_emisor || '');
-      console.log('[SF UPLOAD] solicitudString via RUT emisor:', rut);
-      return JSON.stringify({ Rut: rut });
+
+      const ss = JSON.stringify(obj);
+      console.log('[SF UPLOAD] solicitudString:', ss);
+      return ss;
     };
 
+    let lastSolicitudString = '';
     const doUpload = async (tok) => {
-      const solicitudString = buildSolicitudString(tok);
+      lastSolicitudString = buildSolicitudString(tok);
       const { body: mpBody, contentType: mpCT } = buildMultipartBody(
-        csvBuffer, 'file', csvFilename, 'text/csv', { solicitudString }
+        csvBuffer, 'file', csvFilename, 'text/csv', { solicitudString: lastSolicitudString }
       );
       return fetch(SF_UPLOAD_URL, {
         method: 'POST',
@@ -932,7 +945,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
         || data?.message || data?.title
         || (data?.raw !== undefined ? `Respuesta vacía del servidor` : null)
         || JSON.stringify(data);
-      mensaje = `HTTP ${uploadResp.status}: ${errBody}`;
+      mensaje = `HTTP ${uploadResp.status}: ${errBody} [solicitud enviada: ${lastSolicitudString}]`;
     }
 
     // 4. Si exitoso, marcar movimientos como facturados

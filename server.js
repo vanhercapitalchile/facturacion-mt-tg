@@ -668,6 +668,9 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
 });
 
 // ── SimpleFactura helpers ─────────────────────────────────────────────────────
+// API pública documentada: https://documentacion.simplefactura.cl/
+const SF_API  = 'https://api.simplefactura.cl';
+// API backend (endpoints internos que no están en la doc pública pero aún funcionan)
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
 // Construye un cuerpo multipart/form-data manualmente como Buffer (más confiable
@@ -727,15 +730,16 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
     return cached;
   }
 
-  // 2. Fresh login
+  // 2. Fresh login — usar API pública documentada: POST /token con {email, password}
   const doLogin = async () => {
-    const r = await fetch(`${SF_BASE}/Authentication/login`, {
+    console.log(`[SF LOGIN] POST ${SF_API}/token para ${email}`);
+    const r = await fetch(`${SF_API}/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifiers: { email }, password })
+      body: JSON.stringify({ email, password })
     });
     const raw = await r.text();
-    console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 300)}`);
+    console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 400)}`);
     let data;
     try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
     return { ok: r.ok, data, status: r.status };
@@ -743,53 +747,27 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
 
   let { ok, data, status } = await doLogin();
 
-  // Si hay sesión activa, el token del caché expiró pero SF aún tiene la sesión.
-  // Intentar logout con el token viejo (si lo tenemos) o sin token, y reintentar.
-  // Verificamos el JSON completo para capturar "activa" en cualquier campo
-  const rawLoginStr = JSON.stringify(data || '');
-  if (!ok && rawLoginStr.toLowerCase().includes('activa')) {
-    console.log('[SF LOGIN] Sesión activa en SF, cerrando sesión previa...');
-    const oldToken = sfTokenCache[email]?.token;
-    delete sfTokenCache[email];
-
-    // Intento 1: logout con token cacheado (si existe y es válido)
-    if (oldToken) {
-      try {
-        await fetch(`${SF_BASE}/Authentication/logout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${oldToken}` },
-          body: JSON.stringify({})
-        });
-        console.log('[SF LOGIN] Logout con token cacheado enviado');
-      } catch(e) { /* ignorar */ }
-      await new Promise(r => setTimeout(r, 1500));
-    }
-
-    // Intento 2: logout sin token (cierra sesión activa sin importar el dispositivo)
-    try {
-      await fetch(`${SF_BASE}/Authentication/logout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      console.log('[SF LOGIN] Logout sin token enviado');
-    } catch(e) { /* ignorar */ }
-
-    await new Promise(r => setTimeout(r, 2000));
+  // La API pública /token no tiene el problema de "sesión activa" del backend viejo,
+  // pero manejamos errores generales de todas formas
+  if (!ok && JSON.stringify(data || '').toLowerCase().includes('activa')) {
+    console.log('[SF LOGIN] Sesión activa detectada, reintentando en 3s...');
+    await new Promise(r => setTimeout(r, 3000));
     ({ ok, data, status } = await doLogin());
   }
 
-  if (!ok || !data?.token) {
+  // La API pública devuelve access_token; el backend viejo devolvía token
+  const accessToken = data?.access_token || data?.token;
+  if (!ok || !accessToken) {
     const errors = data?.errors;
     const errDetail = Array.isArray(errors) ? errors.join('. ') : (typeof errors === 'object' ? JSON.stringify(errors) : errors);
     const errMsg = errDetail || data?.message || data?.data || JSON.stringify(data);
     throw new Error(`Login fallido (HTTP ${status}): ${errMsg}`);
   }
 
-  // Guardar en caché (23h por defecto)
-  sfTokenCache[email] = { token: data.token, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
-  console.log(`[SF TOKEN] Nuevo token guardado en caché para ${email}`);
-  return data.token;
+  // Guardar en caché (token dura 24h según docs, cacheamos 23h)
+  sfTokenCache[email] = { token: accessToken, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
+  console.log(`[SF TOKEN] Nuevo token guardado en caché para ${email} (${accessToken.substring(0,20)}...)`);
+  return accessToken;
 }
 
 // Mantener compatibilidad con código existente
@@ -920,15 +898,16 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 
 // ── CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ───
 // Formato oficial SF: exactamente 39 columnas — NO agregar columnas extra aquí
-// (las 3 columnas de tracking ID Transferencia, Cartola, Id Compuesto se removieron;
-//  SF falla con "saving entity changes" si recibe columnas que no reconoce)
+// Formato CSV de ejemplo descargado desde app.simplefactura.cl → Ventas → Factura Masiva → Ejemplos CSV
+// 39 columnas oficiales + 3 columnas de tracking interno (ID Transferencia, Cartola, Id Compuesto)
 const SF_CSV_HEADERS = [
   'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
   'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
   'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
   'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
   'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
-  'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo'
+  'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
+  'ID Transferencia','Cartola','Id Compuesto'
 ];
 
 function rutParaSF(rut) {
@@ -1008,7 +987,10 @@ function buildSfCsvRows(movs, empresa) {
       1,                        // IndicadorExento=1 (tipos 34 y 41 son AMBOS exentos)
       m.monto_total || 0,       // TotalProducto
       '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
-      correoExtra,              // Correo (col 39 — última columna oficial SF)
+      correoExtra,              // Correo (col 39)
+      m.id_transferencia || '', // ID Transferencia (col 40 — tracking)
+      m.banco_cartola || '',    // Cartola (col 41 — tracking)
+      m.id_compuesto || ''      // Id Compuesto (col 42 — tracking)
     ];
   });
 }
@@ -1079,47 +1061,28 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
     const csvBuffer = Buffer.from(csvContent, 'utf8');
 
-    // 3. Subir CSV — multipart manual (evita bugs de FormData+Blob en Node.js)
-    const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
+    // 3. Subir CSV — API pública documentada: POST https://api.simplefactura.cl/massiveInvoice
+    //    Docs: https://documentacion.simplefactura.cl/#aa06de6b-dd1d-4b63-812e-e08f703c9c58
+    //    Form fields: "data" (JSON con rutEmisor+nombreSucursal) + "input" (archivo CSV)
+    const SF_UPLOAD_URL = `${SF_API}/massiveInvoice`;
 
-    // Obtener sucursalId UUID de SimpleFactura (se cachea tras primera llamada)
-    const nombreSucursal  = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
-    const rutEmisorSF     = (sfConfig.rut_emisor_sf || '').trim();
-    const manualSucursalId = (sfConfig.sucursal_id_sf || '').trim() || null;
-    const manualEmisorId   = (sfConfig.emisor_id_sf  || '').trim() || null;
-    console.log(`[SF EMITIR] IDs manuales: sucursalId=${manualSucursalId||'(auto)'}, emisorId=${manualEmisorId||'(auto)'}`);
-    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal, rutEmisorSF || null, manualSucursalId, manualEmisorId);
+    const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
+    const rutEmisor      = rutParaSF(sfConfig.rut_emisor || empresa.rut || '');
 
-    // Construir solicitudString usando UUID de sucursal (estructura correcta para la API)
-    const buildSolicitudString = (tok) => {
-      const claims = sfDecodeJwt(tok);
-      console.log('[SF UPLOAD] JWT claims:', JSON.stringify(claims));
+    // Construir campo "data" según documentación oficial SF
+    const dataJson = JSON.stringify({
+      rutEmisor: rutEmisor,
+      nombreSucursal: nombreSucursal
+    });
+    console.log(`[SF UPLOAD] URL: ${SF_UPLOAD_URL}`);
+    console.log(`[SF UPLOAD] data: ${dataJson}`);
+    console.log(`[SF UPLOAD] CSV: ${csvFilename} (${csvBuffer.length} bytes, ${movs.length} movimientos)`);
 
-      let obj;
-      if (sucursalUUID) {
-        // Incluir idEmisor si está disponible — SF lo necesita para encontrar las plantillas activas
-        const emisorId = sfTokenCache[sfConfig.username]?.emisorId || null;
-        obj = { sucursalId: sucursalUUID };
-        if (emisorId) obj.idEmisor = emisorId;
-        console.log('[SF UPLOAD] solicitudString obj:', JSON.stringify(obj));
-      } else {
-        // Fallback: Credenciales con RUT
-        const rutRaw   = sfConfig.rut_emisor || '';
-        const rutCreds = rutParaSF(rutRaw);
-        obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nombreSucursal } };
-        console.log('[SF UPLOAD] Fallback a Credenciales (UUID no disponible)');
-      }
-
-      const ss = JSON.stringify(obj);
-      console.log('[SF UPLOAD] solicitudString:', ss);
-      return ss;
-    };
-
-    let lastSolicitudString = '';
+    let lastDataJson = dataJson;
     const doUpload = async (tok) => {
-      lastSolicitudString = buildSolicitudString(tok);
+      // Campos multipart: "data" = JSON credenciales, "input" = archivo CSV
       const { body: mpBody, contentType: mpCT } = buildMultipartBody(
-        csvBuffer, 'file', csvFilename, 'text/csv', { solicitudString: lastSolicitudString }
+        csvBuffer, 'input', csvFilename, 'text/csv', { data: dataJson }
       );
       return fetch(SF_UPLOAD_URL, {
         method: 'POST',
@@ -1143,15 +1106,27 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     let data;
     try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, httpStatus: uploadResp.status }; }
 
-    // Éxito: HTTP 2xx Y (sin errores en respuesta O tieneErrores===false)
+    // Respuesta exitosa según docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
+    const isSuccess = uploadResp.ok && data?.status === 200 && !data?.errors;
+    // También aceptar formato antiguo por compatibilidad
     const tieneErrores = data?.data?.tieneErrores;
-    const loteEstado = uploadResp.ok && tieneErrores !== true ? 'emitido' : 'error';
+    const loteEstado = (isSuccess || (uploadResp.ok && tieneErrores !== true)) ? 'emitido' : 'error';
+
     // Mensaje legible
     let mensaje;
-    if (uploadResp.ok && data?.data) {
-      const d = data.data;
-      mensaje = `Procesado: ${d.cantidadDte || 0} DTEs, ${d.cantidadRegistros || 0} registros, $${(d.montoTotal || 0).toLocaleString('es-CL')}`;
-      if (d.tieneErrores) mensaje += ' (con errores — revisar en SimpleFactura)';
+    if (loteEstado === 'emitido') {
+      if (data?.message) {
+        mensaje = data.message;
+        // Agregar folios si disponibles
+        if (Array.isArray(data.data)) {
+          const folios = data.data.map(d => d.folio).filter(Boolean);
+          if (folios.length) mensaje += ` | Folios: ${folios.join(', ')}`;
+        }
+      } else {
+        const d = data.data || {};
+        mensaje = `Procesado: ${d.cantidadDte || movs.length} DTEs`;
+        if (d.montoTotal) mensaje += `, $${d.montoTotal.toLocaleString('es-CL')}`;
+      }
     } else {
       const errs = data?.errors;
       const errBody = Array.isArray(errs) ? errs.join('. ')
@@ -1159,7 +1134,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
         || data?.message || data?.title
         || (data?.raw !== undefined ? `Respuesta vacía del servidor` : null)
         || JSON.stringify(data);
-      mensaje = `HTTP ${uploadResp.status}: ${errBody} [solicitud enviada: ${lastSolicitudString}]`;
+      mensaje = `HTTP ${uploadResp.status}: ${errBody} [data enviada: ${lastDataJson}]`;
     }
 
     // 4. Si exitoso, marcar movimientos como facturados

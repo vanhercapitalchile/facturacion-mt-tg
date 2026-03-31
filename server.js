@@ -807,11 +807,13 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF) {
   // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueño de la cuenta.
   const jwtClaims = sfDecodeJwt(token);
   // SF puede usar distintos nombres de campo según la versión de la API
+  // IMPORTANTE: SF usa "nameid" (claim estándar .NET) como el EmisorId del emisor autenticado
   const jwtEmisorId = jwtClaims?.EmisorId || jwtClaims?.emisorId
     || jwtClaims?.Emisor_Id || jwtClaims?.emisor_id
-    || jwtClaims?.IdEmisor  || jwtClaims?.id_emisor || null;
+    || jwtClaims?.IdEmisor  || jwtClaims?.id_emisor
+    || jwtClaims?.nameid    || null;  // <-- nameid es el emisorId en JWT de SimpleFactura
   console.log(`[SF JWT] claims keys: ${Object.keys(jwtClaims).join(', ')}`);
-  if (jwtEmisorId) console.log(`[SF JWT] emisorId en JWT: ${jwtEmisorId}`);
+  console.log(`[SF JWT] nameid: ${jwtClaims?.nameid}, jwtEmisorId resuelto: ${jwtEmisorId}`);
 
   try {
     // ── Paso 1: Intentar obtener las sucursales del emisor del JWT primero ─────

@@ -802,18 +802,52 @@ async function sfLogin(email, password) {
 // Retorna { sucursalId, emisorId } y actualiza sfTokenCache[email]
 async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF) {
   const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
-  try {
-    const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    });
-    const raw = await resp.text();
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${raw.substring(0, 200)}`);
-    const body = JSON.parse(raw);
-    const lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
 
-    console.log(`[SF SUCURSAL] ${lista.length} sucursales disponibles:`);
-    lista.forEach(s => console.log(`  "${s.nombre||s.Nombre}" | emisor: "${s.emisorNombre||s.EmisorNombre||''}" | rutEmisor: ${s.rutEmisor||s.RutEmisor||''} | emisorId: ${(s.emisorId||s.EmisorId||'').substring(0,8)}... | sucursalId: ${(s.sucursalId||s.SucursalId||'').substring(0,8)}...`));
+  // ── Paso 0: Extraer emisorId directamente desde los claims del JWT ──────────
+  // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueño de la cuenta.
+  const jwtClaims = sfDecodeJwt(token);
+  // SF puede usar distintos nombres de campo según la versión de la API
+  const jwtEmisorId = jwtClaims?.EmisorId || jwtClaims?.emisorId
+    || jwtClaims?.Emisor_Id || jwtClaims?.emisor_id
+    || jwtClaims?.IdEmisor  || jwtClaims?.id_emisor || null;
+  console.log(`[SF JWT] claims keys: ${Object.keys(jwtClaims).join(', ')}`);
+  if (jwtEmisorId) console.log(`[SF JWT] emisorId en JWT: ${jwtEmisorId}`);
+
+  try {
+    // ── Paso 1: Intentar obtener las sucursales del emisor del JWT primero ─────
+    // Esto es clave para cuentas directas donde el dueño NO aparece en la lista general.
+    let lista = [];
+
+    if (jwtEmisorId) {
+      const respJwt = await fetch(`${SF_BASE}/Sucursal/list/filter?EmisorId=${jwtEmisorId}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (respJwt.ok) {
+        const rawJwt = await respJwt.text();
+        const bodyJwt = JSON.parse(rawJwt);
+        const listaJwt = Array.isArray(bodyJwt) ? bodyJwt : (Array.isArray(bodyJwt?.data) ? bodyJwt.data : []);
+        if (listaJwt.length > 0) {
+          console.log(`[SF SUCURSAL] ${listaJwt.length} sucursales del emisor JWT (EmisorId=${jwtEmisorId.substring(0,8)}...):`);
+          listaJwt.forEach(s => console.log(`  "${s.nombre||s.Nombre}" | rutEmisor: ${s.rutEmisor||s.RutEmisor||''} | sucursalId: ${(s.sucursalId||s.SucursalId||'').substring(0,8)}...`));
+          lista = listaJwt;
+        }
+      }
+    }
+
+    // ── Paso 2: Si no encontramos nada con el JWT, buscar en la lista general ──
+    if (lista.length === 0) {
+      const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      const raw = await resp.text();
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${raw.substring(0, 200)}`);
+      const body = JSON.parse(raw);
+      lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+      console.log(`[SF SUCURSAL] ${lista.length} sucursales en lista general:`);
+      lista.forEach(s => console.log(`  "${s.nombre||s.Nombre}" | emisor: "${s.emisorNombre||s.EmisorNombre||''}" | rutEmisor: ${s.rutEmisor||s.RutEmisor||''} | emisorId: ${(s.emisorId||s.EmisorId||'').substring(0,8)}... | sucursalId: ${(s.sucursalId||s.SucursalId||'').substring(0,8)}...`));
+    }
 
     let match = null;
 
@@ -828,24 +862,34 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF) {
       if (match) console.log(`[SF SUCURSAL] ✓ Match por RUT "${rutEmisorSF}" → emisor "${match.emisorNombre||match.EmisorNombre}"`);
     }
 
-    // 2. Match por nombre de sucursal
+    // 2. Match por emisorId del JWT en la lista general (para cuentas directas)
+    if (!match && jwtEmisorId) {
+      match = lista.find(s => (s.emisorId || s.EmisorId || '') === jwtEmisorId);
+      if (match) console.log(`[SF SUCURSAL] ✓ Match por JWT emisorId en lista general`);
+    }
+
+    // 3. Match por nombre de sucursal
     if (!match && nombreSucursal) {
       const nombreBuscar = nombreSucursal.toLowerCase().trim();
       match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
       if (match) console.log(`[SF SUCURSAL] ✓ Match por nombre sucursal "${nombreSucursal}"`);
     }
 
-    // 3. Fallback: primera activa
+    // 4. Fallback: primera activa
     if (!match) {
-      match = lista.find(s => s.activa !== false) || lista[0];
+      match = lista.find(s => s.activa !== false) || lista[0] || null;
       if (match) console.log(`[SF SUCURSAL] ⚠ Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
     }
 
-    if (!match) throw new Error('No se encontraron sucursales en SimpleFactura');
+    if (!match && !jwtEmisorId) throw new Error('No se encontraron sucursales en SimpleFactura');
 
-    const uuid     = match.sucursalId || match.SucursalId;
-    const emisorId = match.emisorId   || match.EmisorId || null;
-    console.log(`[SF SUCURSAL] → sucursalId: ${uuid}, emisorId: ${emisorId}`);
+    const uuid = match
+      ? (match.sucursalId || match.SucursalId)
+      : null;
+
+    // Prioridad emisorId: 1) desde match en lista, 2) desde JWT claims
+    const emisorId = (match ? (match.emisorId || match.EmisorId || null) : null) || jwtEmisorId || null;
+    console.log(`[SF SUCURSAL] → sucursalId: ${uuid}, emisorId: ${emisorId} (fuente: ${match ? 'lista' : 'JWT'})`);
 
     // Actualizar cache con los valores correctos para este emisor
     if (sfTokenCache[email]) {
@@ -982,8 +1026,13 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseña)' });
   }
 
+  // Al re-intentar, los movimientos pueden estar en estado 'error' → resetearlos a 'en_lote'
+  const nowReset = nowCL();
+  const resetResult = db.prepare("UPDATE movimientos SET estado='en_lote', updated_at=? WHERE lote_id=? AND estado IN ('error','listo')").run(nowReset, loteId);
+  if (resetResult.changes > 0) console.log(`[EMITIR] ${resetResult.changes} movimientos reseteados a 'en_lote' para reintento`);
+
   const movs = db.prepare("SELECT * FROM movimientos WHERE lote_id = ? AND estado = 'en_lote'").all(loteId);
-  if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos en este lote' });
+  if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos en este lote (verifique que el lote tenga movimientos asignados)' });
 
   const now = nowCL();
   const sfConfig = empresa.simplefactura;

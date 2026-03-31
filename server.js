@@ -772,6 +772,51 @@ async function sfLogin(email, password) {
   return sfGetToken(email, password);
 }
 
+// Obtener sucursalId UUID desde SimpleFactura (con cache)
+async function sfGetSucursalId(email, password, nombreSucursal) {
+  // Usar sucursalId cacheado si existe
+  const cached = sfTokenCache[email];
+  if (cached?.sucursalId) {
+    console.log(`[SF SUCURSAL] Usando sucursalId cacheado: ${cached.sucursalId}`);
+    return cached.sucursalId;
+  }
+
+  const token = await sfGetToken(email, password);
+  try {
+    const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const raw = await resp.text();
+    console.log(`[SF SUCURSAL] GET /Sucursal/list/filter → HTTP ${resp.status}: ${raw.substring(0, 500)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${raw.substring(0, 200)}`);
+    const body = JSON.parse(raw);
+
+    // La respuesta puede ser array directo o { data: [...] }
+    const lista = Array.isArray(body) ? body : (Array.isArray(body?.data) ? body.data : []);
+    console.log(`[SF SUCURSAL] Sucursales disponibles: ${lista.map(s => `"${s.nombre || s.Nombre}" → ${s.sucursalId || s.SucursalId}`).join(', ')}`);
+
+    // Buscar por nombre exacto (case-insensitive)
+    const nombreBuscar = (nombreSucursal || '').toLowerCase().trim();
+    let match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
+    // Si no hay coincidencia exacta, tomar la primera sucursal activa
+    if (!match) match = lista.find(s => s.activa !== false) || lista[0];
+
+    if (!match) throw new Error('No se encontraron sucursales en SimpleFactura');
+
+    const uuid = match.sucursalId || match.SucursalId;
+    console.log(`[SF SUCURSAL] Usando sucursalId: ${uuid} (nombre: "${match.nombre || match.Nombre}")`);
+
+    // Cachear junto al token
+    if (sfTokenCache[email]) sfTokenCache[email].sucursalId = uuid;
+
+    return uuid;
+  } catch (err) {
+    console.error('[SF SUCURSAL] Error al obtener sucursalId:', err.message);
+    return null;
+  }
+}
+
 // ── CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ───
 const SF_CSV_HEADERS = [
   'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
@@ -901,25 +946,27 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     // 3. Subir CSV — multipart manual (evita bugs de FormData+Blob en Node.js)
     const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
-    // Construir solicitudString — estructura Credenciales según SDK oficial de SimpleFactura.
-    // El JWT puede tener el IdEmisor como claim extra; si no, usamos el RUT configurado.
+    // Obtener sucursalId UUID de SimpleFactura (se cachea tras primera llamada)
+    const nombreSucursal = sfConfig.nombre_sucursal || 'Casa Matriz';
+    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal);
+
+    // Construir solicitudString usando UUID de sucursal (estructura correcta para la API)
     const buildSolicitudString = (tok) => {
       const claims = sfDecodeJwt(tok);
       console.log('[SF UPLOAD] JWT claims:', JSON.stringify(claims));
 
-      // 1ª opción: IdEmisor UUID en el JWT (sub, IdEmisor, EmisorId, etc.)
-      const idEmisor = claims.IdEmisor || claims.idEmisor || claims.EmisorId
-        || claims.emisorId || claims.IdEmpresa || claims.idEmpresa
-        || claims.sub || null;
-
-      // 2ª opción: estructura Credenciales con RUT sin puntos (formato SDK oficial)
-      // El SDK de ejemplo usa '76269769-6' — sin puntos, con guión
-      const rutRaw    = sfConfig.rut_emisor || '';
-      const rutCreds  = rutParaSF(rutRaw);  // sin puntos, con guión: "77859376-9"
-      const nmbEmisor = sfConfig.nombre_sucursal || 'Casa Matriz';
-
-      // Construir objeto base (solo Credenciales, sin IdEmisor — el JWT sub suele ser el user ID)
-      let obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
+      let obj;
+      if (sucursalUUID) {
+        // Estructura correcta: sucursalId UUID (descubierto via /api/Sucursal/list/filter)
+        obj = { sucursalId: sucursalUUID };
+        console.log('[SF UPLOAD] Usando sucursalId UUID:', sucursalUUID);
+      } else {
+        // Fallback: Credenciales con RUT (puede fallar si SF usa lookup por UUID)
+        const rutRaw   = sfConfig.rut_emisor || '';
+        const rutCreds = rutParaSF(rutRaw);
+        obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nombreSucursal } };
+        console.log('[SF UPLOAD] Fallback a Credenciales (UUID no disponible)');
+      }
 
       const ss = JSON.stringify(obj);
       console.log('[SF UPLOAD] solicitudString:', ss);
@@ -1002,13 +1049,18 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   try {
     const token = await sfGetToken(email, empresa.simplefactura.password);
     const claims = sfDecodeJwt(token);
-    const rutCreds = rutParaSF(empresa.simplefactura?.rut_emisor || '');
-    const sucursal = empresa.simplefactura?.nombre_sucursal || 'Casa Matriz';
+    const nombreSucursal = empresa.simplefactura?.nombre_sucursal || 'Casa Matriz';
+    // También obtener sucursalId UUID para diagnóstico
+    const sucursalUUID = await sfGetSucursalId(email, empresa.simplefactura.password, nombreSucursal);
+    const solicitudString = sucursalUUID
+      ? JSON.stringify({ sucursalId: sucursalUUID })
+      : JSON.stringify({ Credenciales: { RutEmisor: rutParaSF(empresa.simplefactura?.rut_emisor || ''), NombreSucursal: nombreSucursal } });
     res.json({
       ok: true,
       mensaje: `Login exitoso para ${email}`,
       jwtClaims: claims,
-      solicitudStringQueSeEnviara: JSON.stringify({ Credenciales: { RutEmisor: rutCreds, NombreSucursal: sucursal } })
+      sucursalUUID: sucursalUUID || 'no encontrado',
+      solicitudStringQueSeEnviara: solicitudString
     });
   } catch(e) {
     res.json({ ok: false, error: e.message });

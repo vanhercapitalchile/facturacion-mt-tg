@@ -720,20 +720,36 @@ async function sfGetToken(email, password) {
 
   // Si hay sesión activa, el token del caché expiró pero SF aún tiene la sesión.
   // Intentar logout con el token viejo (si lo tenemos) o sin token, y reintentar.
-  if (!ok && (data?.data === 'Sesión activa' || JSON.stringify(data?.errors || '').includes('activa'))) {
+  // Verificamos el JSON completo para capturar "activa" en cualquier campo
+  const rawLoginStr = JSON.stringify(data || '');
+  if (!ok && rawLoginStr.toLowerCase().includes('activa')) {
     console.log('[SF LOGIN] Sesión activa en SF, cerrando sesión previa...');
     const oldToken = sfTokenCache[email]?.token;
     delete sfTokenCache[email];
+
+    // Intento 1: logout con token cacheado (si existe y es válido)
+    if (oldToken) {
+      try {
+        await fetch(`${SF_BASE}/Authentication/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${oldToken}` },
+          body: JSON.stringify({})
+        });
+        console.log('[SF LOGIN] Logout con token cacheado enviado');
+      } catch(e) { /* ignorar */ }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    // Intento 2: logout sin token (cierra sesión activa sin importar el dispositivo)
     try {
       await fetch(`${SF_BASE}/Authentication/logout`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(oldToken ? { 'Authorization': `Bearer ${oldToken}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       });
+      console.log('[SF LOGIN] Logout sin token enviado');
     } catch(e) { /* ignorar */ }
+
     await new Promise(r => setTimeout(r, 2000));
     ({ ok, data, status } = await doLogin());
   }

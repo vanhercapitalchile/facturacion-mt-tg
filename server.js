@@ -645,12 +645,33 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
 // ── SimpleFactura helpers ─────────────────────────────────────────────────────
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
-async function sfLogin(email, password) {
-  // Swagger: POST /api/Authentication/login
-  // Body: { identifiers: { email }, password }
-  // Response: { token: "JWT...", firstName, lastName, ... }
-  // Note: SimpleFactura blocks concurrent sessions. If "Sesión activa" error,
-  // we attempt a blind logout first using email as identifier, then retry.
+// Cache de tokens por empresa (email → { token, expiresAt })
+const sfTokenCache = {};
+
+function sfTokenFromCache(email) {
+  const cached = sfTokenCache[email];
+  if (!cached) return null;
+  // JWT exp claim: decode payload to check expiry (subtract 5 min margin)
+  try {
+    const payload = JSON.parse(Buffer.from(cached.token.split('.')[1], 'base64').toString());
+    if (payload.exp && Date.now() / 1000 < payload.exp - 300) return cached.token;
+  } catch(e) {
+    // If can't decode, use time-based cache (23h)
+    if (Date.now() < cached.expiresAt) return cached.token;
+  }
+  delete sfTokenCache[email];
+  return null;
+}
+
+async function sfGetToken(email, password) {
+  // Return cached token if still valid
+  const cached = sfTokenFromCache(email);
+  if (cached) {
+    console.log(`[SF TOKEN] Usando token en caché para ${email}`);
+    return cached;
+  }
+
+  // Fresh login
   const doLogin = async () => {
     const r = await fetch(`${SF_BASE}/Authentication/login`, {
       method: 'POST',
@@ -666,18 +687,23 @@ async function sfLogin(email, password) {
 
   let { ok, data, status } = await doLogin();
 
-  // Si hay sesión activa, intentar logout forzado y reintentar
+  // Si hay sesión activa, el token del caché expiró pero SF aún tiene la sesión.
+  // Intentar logout con el token viejo (si lo tenemos) o sin token, y reintentar.
   if (!ok && (data?.data === 'Sesión activa' || JSON.stringify(data?.errors || '').includes('activa'))) {
-    console.log('[SF LOGIN] Sesión activa detectada, intentando logout forzado...');
+    console.log('[SF LOGIN] Sesión activa en SF, cerrando sesión previa...');
+    const oldToken = sfTokenCache[email]?.token;
+    delete sfTokenCache[email];
     try {
       await fetch(`${SF_BASE}/Authentication/logout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifiers: { email } })
+        headers: {
+          'Content-Type': 'application/json',
+          ...(oldToken ? { 'Authorization': `Bearer ${oldToken}` } : {})
+        },
+        body: JSON.stringify({})
       });
-    } catch(e) { /* ignorar errores de logout */ }
-    // Esperar un momento y reintentar
-    await new Promise(r => setTimeout(r, 1500));
+    } catch(e) { /* ignorar */ }
+    await new Promise(r => setTimeout(r, 2000));
     ({ ok, data, status } = await doLogin());
   }
 
@@ -687,7 +713,16 @@ async function sfLogin(email, password) {
     const errMsg = errDetail || data?.message || data?.data || JSON.stringify(data);
     throw new Error(`Login fallido (HTTP ${status}): ${errMsg}`);
   }
+
+  // Guardar en caché (23h por defecto)
+  sfTokenCache[email] = { token: data.token, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
+  console.log(`[SF TOKEN] Nuevo token guardado en caché para ${email}`);
   return data.token;
+}
+
+// Mantener compatibilidad con código existente
+async function sfLogin(email, password) {
+  return sfGetToken(email, password);
 }
 
 function buildSfCsv(movs, empresa) {
@@ -792,9 +827,12 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
   if (!empresa?.simplefactura?.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = empresa.simplefactura.username;
+  // Invalidar caché para forzar login fresco en el test
+  delete sfTokenCache[email];
   try {
-    const token = await sfLogin(empresa.simplefactura.username, empresa.simplefactura.password);
-    res.json({ ok: true, mensaje: 'Login exitoso con SimpleFactura', token: token.substring(0, 20) + '...' });
+    const token = await sfGetToken(email, empresa.simplefactura.password);
+    res.json({ ok: true, mensaje: `Login exitoso — token activo y en caché para ${email}` });
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }

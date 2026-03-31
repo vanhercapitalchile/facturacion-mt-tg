@@ -1026,6 +1026,25 @@ function buildSfCsv(movs, empresa) {
   return buildSfCsvContent(movs, empresa);
 }
 
+// ── Debug: descargar el CSV que se enviaría a SF sin emitirlo ─────────────────
+app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
+  const loteId = req.params.lote_id;
+  const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  const empresas = getAppData('empresas');
+  const empresa = empresas[lote.empresa_id];
+  if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+  const movs = db.prepare(`SELECT * FROM movimientos WHERE lote_id = ? AND estado IN ('en_lote','error')`).all(loteId);
+  if (!movs.length) return res.status(400).json({ error: 'Sin movimientos en lote' });
+  const csv = buildSfCsvContent(movs, empresa);
+  const rows = buildSfCsvRows(movs, empresa);
+  console.log(`[CSV PREVIEW] lote=${loteId} cols_header=${SF_CSV_HEADERS.length} cols_row=${rows[0]?.length} movs=${movs.length}`);
+  console.log(`[CSV PREVIEW] Primera fila: ${JSON.stringify(rows[0])}`);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${loteId}.csv"`);
+  res.send(csv);
+});
+
 // Emit via SimpleFactura API (CSV upload)
 app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const loteId = req.params.lote_id;

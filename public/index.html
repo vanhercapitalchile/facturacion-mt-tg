@@ -1846,6 +1846,14 @@ function renderConfig() {
           <input type="text" class="inline-input" id="cfg-sfrutemis-${id}" value="${emp.simplefactura?.rut_emisor_sf || ''}" placeholder="Ej: 77859376-9">
           <small style="color:var(--txt3);margin-top:4px;display:block;">RUT de la empresa emisora en SimpleFactura. Usa el botón "Ver Emisores" para ver los disponibles.</small>
         </div>
+        <div class="form-group"><label>🔧 Sucursal ID (UUID) <small style="color:var(--green);font-weight:600;">(recomendado — evita búsqueda automática)</small></label>
+          <input type="text" class="inline-input" id="cfg-sfsucid-${id}" value="${emp.simplefactura?.sucursal_id_sf || ''}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family:monospace;font-size:12px;">
+          <small style="color:var(--txt3);margin-top:4px;display:block;">UUID de la sucursal. Cópialo desde app.simplefactura.cl → Configuración → Sucursales. Si se configura junto con Emisor ID, se omite la búsqueda automática.</small>
+        </div>
+        <div class="form-group"><label>🔧 Emisor ID (UUID) <small style="color:var(--green);font-weight:600;">(recomendado — evita búsqueda automática)</small></label>
+          <input type="text" class="inline-input" id="cfg-sfemisid-${id}" value="${emp.simplefactura?.emisor_id_sf || ''}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family:monospace;font-size:12px;">
+          <small style="color:var(--txt3);margin-top:4px;display:block;">UUID del emisor (empresa). Cópialo desde app.simplefactura.cl → Configuración → Empresa. Si se configura junto con Sucursal ID, se omite la búsqueda automática.</small>
+        </div>
         <div class="form-group"><label>Tipo DTE personas naturales</label>
           <select class="inline-input" id="cfg-dtepers-${id}">
             <option value="41" ${(emp.simplefactura?.tipo_dte_personas ?? 41) == 41 ? 'selected' : ''}>41 - Boleta Exenta (por defecto)</option>
@@ -1885,6 +1893,8 @@ async function saveConfig() {
       api_token: document.getElementById(`cfg-sftoken-${id}`)?.value.trim() || '',
       nombre_sucursal: document.getElementById(`cfg-sfsuc-${id}`)?.value || 'Casa Matriz',
       rut_emisor_sf: document.getElementById(`cfg-sfrutemis-${id}`)?.value.trim() || '',
+      sucursal_id_sf: document.getElementById(`cfg-sfsucid-${id}`)?.value.trim() || '',
+      emisor_id_sf: document.getElementById(`cfg-sfemisid-${id}`)?.value.trim() || '',
       tipo_dte_personas: parseInt(document.getElementById(`cfg-dtepers-${id}`)?.value || '41'),
       tipo_dte_empresas: parseInt(document.getElementById(`cfg-dteempr-${id}`)?.value || '34')
     };

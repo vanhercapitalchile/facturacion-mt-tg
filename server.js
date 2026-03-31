@@ -799,8 +799,20 @@ async function sfLogin(email, password) {
 
 // Obtener sucursalId + emisorId desde SimpleFactura
 // rutEmisorSF: RUT del emisor SF (ej. "77859376-9") — clave para cuentas multi-RUT
+// manualSucursalId / manualEmisorId: IDs manuales configurados en la UI (bypass del lookup automático)
 // Retorna { sucursalId, emisorId } y actualiza sfTokenCache[email]
-async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF) {
+async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, manualSucursalId, manualEmisorId) {
+  // ── Atajo: IDs manuales configurados → usarlos directamente sin llamar a la API ──────────
+  if (manualSucursalId && manualEmisorId) {
+    console.log(`[SF SUCURSAL] ✓ Usando IDs manuales configurados: sucursalId=${manualSucursalId.substring(0,8)}..., emisorId=${manualEmisorId.substring(0,8)}...`);
+    const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
+    if (sfTokenCache[email]) {
+      sfTokenCache[email].sucursalId = manualSucursalId;
+      sfTokenCache[email].emisorId   = manualEmisorId;
+    }
+    return manualSucursalId;
+  }
+
   const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
 
   // ── Paso 0: Extraer emisorId directamente desde los claims del JWT ──────────
@@ -1053,9 +1065,12 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
     // Obtener sucursalId UUID de SimpleFactura (se cachea tras primera llamada)
-    const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
-    const rutEmisorSF    = (sfConfig.rut_emisor_sf || '').trim();
-    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal, rutEmisorSF || null);
+    const nombreSucursal  = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
+    const rutEmisorSF     = (sfConfig.rut_emisor_sf || '').trim();
+    const manualSucursalId = (sfConfig.sucursal_id_sf || '').trim() || null;
+    const manualEmisorId   = (sfConfig.emisor_id_sf  || '').trim() || null;
+    console.log(`[SF EMITIR] IDs manuales: sucursalId=${manualSucursalId||'(auto)'}, emisorId=${manualEmisorId||'(auto)'}`);
+    const sucursalUUID = await sfGetSucursalId(sfConfig.username, sfConfig.password, nombreSucursal, rutEmisorSF || null, manualSucursalId, manualEmisorId);
 
     // Construir solicitudString usando UUID de sucursal (estructura correcta para la API)
     const buildSolicitudString = (tok) => {
@@ -1161,8 +1176,10 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
     const claims = sfDecodeJwt(token);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
     const rutEmisorSF_test = (sfConf.rut_emisor_sf || '').trim() || null;
+    const manualSucId = (sfConf.sucursal_id_sf || '').trim() || null;
+    const manualEmId  = (sfConf.emisor_id_sf  || '').trim() || null;
     // También obtener sucursalId UUID para diagnóstico
-    const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_test);
+    const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_test, manualSucId, manualEmId);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     let solicitudObj;
     if (sucursalUUID) {
@@ -1226,7 +1243,9 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
     const token = await sfGetToken(email, sfConf.password);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
     const rutEmisorSF_diag = (sfConf.rut_emisor_sf || '').trim() || null;
-    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_diag);
+    const manualSucId_diag = (sfConf.sucursal_id_sf || '').trim() || null;
+    const manualEmId_diag  = (sfConf.emisor_id_sf  || '').trim() || null;
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_diag, manualSucId_diag, manualEmId_diag);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 
@@ -1295,7 +1314,9 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
     const token = await sfGetToken(email, sfConf.password);
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
     const rutEmisorSF_act = (sfConf.rut_emisor_sf || '').trim() || null;
-    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_act);
+    const manualSucId_act = (sfConf.sucursal_id_sf || '').trim() || null;
+    const manualEmId_act  = (sfConf.emisor_id_sf  || '').trim() || null;
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_act, manualSucId_act, manualEmId_act);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 

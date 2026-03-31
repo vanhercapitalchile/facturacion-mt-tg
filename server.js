@@ -642,7 +642,60 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
-// Emit via SimpleFactura API
+// ── SimpleFactura helpers ─────────────────────────────────────────────────────
+const SF_BASE = 'https://backend.simplefactura.cl/api';
+
+async function sfLogin(email, password) {
+  const r = await fetch(`${SF_BASE}/authentication/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  const raw = await r.text();
+  console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 200)}`);
+  let data;
+  try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
+  if (!r.ok || !data?.data?.token) {
+    throw new Error(`Login fallido (HTTP ${r.status}): ${data?.message || data?.errors || raw.substring(0, 200)}`);
+  }
+  return data.data.token;
+}
+
+function buildSfCsv(movs, empresa) {
+  const headers = [
+    'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
+    'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
+    'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
+    'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
+    'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
+    'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
+    'ID Transferencia','Cartola','Id Compuesto'
+  ];
+  const today = todayCL().split('-').reverse().join('-'); // DD-MM-YYYY
+  const rows = movs.map((m, i) => {
+    const fechaEmision = m.fecha_emision || today;
+    return [
+      i + 1, m.tipo_dte || 34, 1, fechaEmision, fechaEmision,
+      normalizeRut(m.rut), (m.giro || '').substring(0, 80), 'NO INFORMADO',
+      m.email_receptor || empresa.email_facturacion || '',
+      (m.direccion || '').substring(0, 100), m.comuna || '', m.ciudad || '',
+      m.razon_social || '', '', '', '',
+      '', '', '', '', '',
+      '', m.nombre_item || 'Venta paquete activo digital',
+      m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
+      1, m.monto_total || 0, 'UNID', 0, 0, 0,
+      1, m.monto_total || 0,  // IndicadorExento=1 para tipos 34 y 41 (ambos exentos)
+      '', '', '', '', '', '',
+      m.email_receptor || '',
+      m.id_transferencia || '', m.banco_cartola || '', m.id_compuesto || ''
+    ];
+  });
+  let csv = headers.join(';') + '\n';
+  for (const row of rows) csv += row.join(';') + '\n';
+  return '\uFEFF' + csv; // BOM para compatibilidad
+}
+
+// Emit via SimpleFactura API (CSV upload)
 app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const loteId = req.params.lote_id;
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
@@ -659,78 +712,48 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
   const now = nowCL();
   const sfConfig = empresa.simplefactura;
-  const baseUrl = getAppData('config').simplefactura_base_url || 'https://api.simplefactura.cl';
-
-  // Build DTEs for SimpleFactura
-  const dtes = movs.map(m => ({
-    Encabezado: {
-      IdDoc: { TipoDTE: m.tipo_dte, FchEmis: todayCL() },
-      Emisor: { RUTEmisor: sfConfig.rut_emisor },
-      Receptor: {
-        RUTRecep: normalizeRut(m.rut),
-        RznSocRecep: m.razon_social,
-        GiroRecep: (m.giro || '').substring(0, 80),
-        DirRecep: (m.direccion || '').substring(0, 100),
-        CmnaRecep: m.comuna || '',
-        CiudadRecep: m.ciudad || '',
-        ContactoRecep: 'NO INFORMADO',
-        CorreoRecep: m.email_receptor || empresa.email_facturacion
-      }
-    },
-    Detalle: [{
-      NmbItem: m.nombre_item || 'Venta paquete activo digital',
-      DscItem: m.descripcion_item || '',
-      QtyItem: 1,
-      PrcItem: m.monto_total,
-      MontoItem: m.monto_total,
-      IndExe: 1  // tipos 34 y 41 son ambos exentos
-    }],
-    _movimiento_id: m.id
-  }));
 
   try {
-    // Authenticate with SimpleFactura
-    const authHeader = 'Basic ' + Buffer.from(`${sfConfig.username}:${sfConfig.password}`).toString('base64');
-    const endpoint = `${baseUrl}/invoices`;
+    // 1. Autenticar con SimpleFactura para obtener JWT
+    const token = await sfLogin(sfConfig.username, sfConfig.password);
+    console.log(`[SF] Login exitoso para ${lote.empresa_id}`);
 
-    const results = [];
-    for (const dte of dtes) {
-      const movId = dte._movimiento_id;
-      delete dte._movimiento_id;
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-          body: JSON.stringify(dte)
-        });
-        // Read raw text first to avoid JSON parse errors on empty/HTML responses
-        const rawText = await response.text();
-        console.log(`[SF] HTTP ${response.status} → ${rawText.substring(0, 300)}`);
-        let data = {};
-        try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, parseError: e.message }; }
-        if (response.ok && !data.raw) {
-          db.prepare("UPDATE movimientos SET estado = 'facturado', folio_dte = ?, fecha_facturacion = ?, updated_at = ? WHERE id = ?")
-            .run(data.folio || data.Folio || data.FolioDoc || '', now, now, movId);
-          results.push({ id: movId, status: 'ok', folio: data.folio || data.Folio || data.FolioDoc });
-        } else {
-          results.push({ id: movId, status: 'error', httpStatus: response.status,
-            error: data.message || data.error || data.Message || data.raw || JSON.stringify(data) });
-        }
-      } catch (err) {
-        results.push({ id: movId, status: 'error', error: err.message });
-      }
+    // 2. Generar CSV en formato SimpleFactura
+    const csvContent = buildSfCsv(movs, empresa);
+    const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
+
+    // 3. Subir CSV a /importacion/facturarcsv como multipart form-data
+    const formData = new FormData();
+    formData.append('file', new Blob([csvContent], { type: 'text/csv' }), csvFilename);
+
+    const uploadResp = await fetch(`${SF_BASE}/importacion/facturarcsv`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+
+    const rawText = await uploadResp.text();
+    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 400)}`);
+    let data;
+    try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText }; }
+
+    const loteEstado = (uploadResp.ok && data?.status === 200) ? 'emitido' : 'error';
+    const mensaje = data?.message || data?.errors || data?.raw || JSON.stringify(data);
+
+    // 4. Si exitoso, marcar movimientos como facturados
+    if (loteEstado === 'emitido') {
+      const updStmt = db.prepare("UPDATE movimientos SET estado = 'facturado', fecha_facturacion = ?, updated_at = ? WHERE id = ?");
+      db.transaction(() => { for (const m of movs) updStmt.run(now, now, m.id); })();
     }
 
-    const exitosos = results.filter(r => r.status === 'ok').length;
-    const fallidos = results.filter(r => r.status === 'error').length;
-    const loteEstado = fallidos === 0 ? 'emitido' : (exitosos > 0 ? 'parcial' : 'error');
-
     db.prepare('UPDATE lotes_facturacion SET estado = ?, response_api = ?, updated_at = ? WHERE lote_id = ?')
-      .run(loteEstado, JSON.stringify(results), now, loteId);
+      .run(loteEstado, JSON.stringify({ httpStatus: uploadResp.status, message: mensaje, data: data?.data }), now, loteId);
 
-    res.json({ ok: true, exitosos, fallidos, results });
+    res.json({ ok: loteEstado === 'emitido', estado: loteEstado, mensaje, httpStatus: uploadResp.status });
   } catch (err) {
     console.error('[SIMPLEFACTURA ERROR]', err);
+    db.prepare('UPDATE lotes_facturacion SET estado = ?, response_api = ?, updated_at = ? WHERE lote_id = ?')
+      .run('error', JSON.stringify({ error: err.message }), now, loteId);
     res.status(500).json({ error: 'Error al conectar con SimpleFactura: ' + err.message });
   }
 });
@@ -740,16 +763,11 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
   if (!empresa?.simplefactura?.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
-  const { username, password } = empresa.simplefactura;
-  const baseUrl = getAppData('config').simplefactura_base_url || 'https://api.simplefactura.cl';
   try {
-    const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
-    // Try a GET to the base endpoint to check connectivity
-    const r = await fetch(`${baseUrl}/health`, { headers: { 'Authorization': authHeader } });
-    const raw = await r.text();
-    res.json({ httpStatus: r.status, response: raw.substring(0, 500), endpoint: baseUrl });
+    const token = await sfLogin(empresa.simplefactura.username, empresa.simplefactura.password);
+    res.json({ ok: true, mensaje: 'Login exitoso con SimpleFactura', token: token.substring(0, 20) + '...' });
   } catch(e) {
-    res.json({ error: e.message, endpoint: baseUrl });
+    res.json({ ok: false, error: e.message });
   }
 });
 

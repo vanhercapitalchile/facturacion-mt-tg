@@ -152,6 +152,38 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
   console.log('[SEED] Database initialised from seed-data.json');
 })();
 
+// ── Password migration: actualizar credenciales y renombrar hturra→admin ─────
+(function migratePasswords() {
+  try {
+    const users = getAppData('users');
+    if (!users) return;
+    let changed = false;
+    // Renombrar hturra → admin si existe
+    if (users.hturra && !users.admin) {
+      users.admin = { ...users.hturra };
+      delete users.hturra;
+      changed = true;
+      console.log('[MIGRATE] Renombrado usuario hturra → admin');
+    }
+    // Actualizar hashes de contraseñas
+    const newHashes = {
+      admin:     '1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc',
+      dbravo:    'f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69',
+      strujillo: 'ff54329f276f7364be2e3d36a7c13bac328b13a43be274db933cb56985c3954d'
+    };
+    for (const [uname, hash] of Object.entries(newHashes)) {
+      if (users[uname] && users[uname].passHash !== hash) {
+        users[uname].passHash = hash;
+        changed = true;
+        console.log(`[MIGRATE] Contraseña actualizada para ${uname}`);
+      }
+    }
+    if (changed) {
+      db.prepare('INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)').run('users', JSON.stringify(users));
+    }
+  } catch(e) { console.error('[MIGRATE] Error en migratePasswords:', e.message); }
+})();
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1431,6 +1463,63 @@ app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) 
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }
+});
+
+// ── Historial de facturación ─────────────────────────────────────────────────
+app.get('/api/facturacion/historial', requireAuth, (req, res) => {
+  const empresaId = filterByEmpresa(req);
+  const { buscar, fecha_desde, fecha_hasta, tipo_dte, limit: lim, offset: off } = req.query;
+  const pageLimit = Math.min(parseInt(lim) || 100, 500);
+  const pageOffset = parseInt(off) || 0;
+
+  let sql = `SELECT id, empresa_id, fecha, monto, monto_total, rut, rut_normalizado,
+             razon_social, nombre_origen, tipo_dte, estado, banco_cartola, email_receptor,
+             giro, direccion, comuna, ciudad, lote_id, fecha_facturacion, id_transferencia
+             FROM movimientos WHERE estado = 'facturado'`;
+  const params = [];
+
+  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
+  if (fecha_desde) { sql += ' AND fecha >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
+  if (tipo_dte) { sql += ' AND tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
+
+  // Buscador: por nombre, RUT o monto
+  if (buscar) {
+    const term = buscar.trim();
+    // Detectar si es búsqueda por monto (solo números y puntos/comas)
+    if (/^[\d.,]+$/.test(term)) {
+      const montoNum = parseFloat(term.replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(montoNum)) {
+        sql += ' AND (monto_total = ? OR monto = ?)';
+        params.push(montoNum, montoNum);
+      }
+    } else {
+      sql += ` AND (razon_social LIKE ? OR nombre_origen LIKE ? OR rut LIKE ? OR rut_normalizado LIKE ?)`;
+      const like = `%${term}%`;
+      params.push(like, like, like, like);
+    }
+  }
+
+  // Count total
+  const countSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
+  const total = db.prepare(countSql).get(...params)?.total || 0;
+
+  sql += ' ORDER BY fecha_facturacion DESC, id DESC LIMIT ? OFFSET ?';
+  params.push(pageLimit, pageOffset);
+
+  const movs = db.prepare(sql).all(...params);
+
+  // Estadísticas resumen
+  const statsSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as cnt, SUM(monto_total) as suma FROM')
+    .replace(/ORDER BY .+$/, '');
+  // Re-run without limit/offset for stats
+  const statsParams = params.slice(0, -2); // remove limit and offset
+  const stats = db.prepare(
+    `SELECT COUNT(*) as cnt, COALESCE(SUM(monto_total),0) as suma FROM movimientos WHERE estado = 'facturado'`
+    + (empresaId ? ' AND empresa_id = ?' : '')
+  ).get(...(empresaId ? [empresaId] : []));
+
+  res.json({ movimientos: movs, total, stats });
 });
 
 // Mark lote as manually exported

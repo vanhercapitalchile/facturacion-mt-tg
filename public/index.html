@@ -236,6 +236,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-section-title">Facturación</div>
           <div class="nav-item" onclick="adminNav('facturacion')">&#x1F9FE; Facturar</div>
           <div class="nav-item" onclick="adminNav('lotes')">&#x1F4E6; Lotes</div>
+          <div class="nav-item" onclick="adminNav('historial')">&#x1F4CB; Historial</div>
           <div class="nav-item" onclick="adminNav('exportar')">&#x2B07; Exportar CSV</div>
         </div>
         <div class="nav-section">
@@ -416,6 +417,59 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <div id="lotes-list"></div>
       </div>
 
+      <!-- HISTORIAL VIEW -->
+      <div class="view" id="view-historial">
+        <div class="topbar"><h1>Historial de Facturaci&oacute;n</h1></div>
+        <div class="card" style="margin-bottom:16px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="flex:1;min-width:200px;">
+              <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Buscar (nombre, RUT o monto)</label>
+              <input type="text" id="hist-buscar" class="inline-input" placeholder="Ej: INVERSIONES AR, 77653656-3, 200000" style="width:100%;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Desde</label>
+              <input type="date" id="hist-desde" class="inline-input">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Hasta</label>
+              <input type="date" id="hist-hasta" class="inline-input">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Tipo DTE</label>
+              <select id="hist-tipo-dte" class="inline-input">
+                <option value="">Todos</option>
+                <option value="34">34 - Factura Exenta</option>
+                <option value="41">41 - Boleta Exenta</option>
+                <option value="33">33 - Factura Afecta</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadHistorial()" style="height:34px;">Buscar</button>
+            <button class="btn btn-secondary btn-sm" onclick="limpiarHistorial()" style="height:34px;">Limpiar</button>
+          </div>
+        </div>
+        <div id="hist-stats" style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;"></div>
+        <div class="card">
+          <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Fecha Emisi&oacute;n</th>
+                  <th>RUT</th>
+                  <th>Raz&oacute;n Social</th>
+                  <th>DTE</th>
+                  <th style="text-align:right;">Monto</th>
+                  <th>Banco</th>
+                  <th>Lote</th>
+                </tr>
+              </thead>
+              <tbody id="hist-tbody"></tbody>
+            </table>
+          </div>
+          <div id="hist-pagination" style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:13px;color:var(--txt2);"></div>
+        </div>
+      </div>
+
       <!-- EXPORTAR VIEW -->
       <div class="view" id="view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
@@ -552,6 +606,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-item" onclick="empNav('cartolas')">&#x1F4C4; Cargar Cartola</div>
           <div class="nav-item" onclick="empNav('movimientos')">&#x1F4CB; Movimientos</div>
           <div class="nav-item" onclick="empNav('facturacion')">&#x1F9FE; Facturar</div>
+          <div class="nav-item" onclick="empNav('historial')">&#x1F4CB; Historial</div>
           <div class="nav-item" onclick="empNav('exportar')">&#x2B07; Exportar CSV</div>
           <div class="nav-item" onclick="empNav('clientes')">&#x1F465; Clientes</div>
         </div>
@@ -774,6 +829,7 @@ function adminNav(view) {
   else if (view === 'movimientos') loadMovimientos();
   else if (view === 'facturacion') loadFacturacion();
   else if (view === 'lotes') loadLotes();
+  else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
   else if (view === 'config') renderConfig();
@@ -793,6 +849,7 @@ function empNav(view) {
   if (view === 'dashboard') loadDashboard();
   else if (view === 'movimientos') loadMovimientos();
   else if (view === 'facturacion') loadFacturacion();
+  else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
 }
@@ -1709,6 +1766,98 @@ async function marcarExportadoLote(loteId) {
   showToast('Lote marcado como exportado', 'success');
   loadLotes();
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HISTORIAL DE FACTURACIÓN
+// ══════════════════════════════════════════════════════════════════════════════
+let HIST_PAGE = 0;
+const HIST_LIMIT = 50;
+
+async function loadHistorial(page) {
+  if (typeof page === 'number') HIST_PAGE = page;
+  const empId = getEmpresaId();
+  const buscar = document.getElementById('hist-buscar')?.value || '';
+  const desde = document.getElementById('hist-desde')?.value || '';
+  const hasta = document.getElementById('hist-hasta')?.value || '';
+  const tipoDte = document.getElementById('hist-tipo-dte')?.value || '';
+
+  let url = `/api/facturacion/historial?limit=${HIST_LIMIT}&offset=${HIST_PAGE * HIST_LIMIT}`;
+  if (empId) url += `&empresa_id=${empId}`;
+  if (buscar) url += `&buscar=${encodeURIComponent(buscar)}`;
+  if (desde) url += `&fecha_desde=${desde}`;
+  if (hasta) url += `&fecha_hasta=${hasta}`;
+  if (tipoDte) url += `&tipo_dte=${tipoDte}`;
+
+  const res = await apiFetch(url);
+  if (!res) return;
+  const { movimientos: movs, total, stats } = res;
+
+  // Stats
+  const statsEl = document.getElementById('hist-stats');
+  statsEl.innerHTML = `
+    <div class="stat-card" style="flex:1;min-width:150px;">
+      <div class="stat-label">Total facturado</div>
+      <div class="stat-value">${stats?.cnt || 0}</div>
+      <div style="font-size:12px;color:var(--txt3);">documentos</div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:150px;">
+      <div class="stat-label">Monto total</div>
+      <div class="stat-value">${fmt(stats?.suma || 0)}</div>
+    </div>
+    <div class="stat-card" style="flex:1;min-width:150px;">
+      <div class="stat-label">Resultados</div>
+      <div class="stat-value">${total}</div>
+      <div style="font-size:12px;color:var(--txt3);">${buscar ? 'filtrados' : 'en vista'}</div>
+    </div>`;
+
+  // Tabla
+  const tbody = document.getElementById('hist-tbody');
+  if (!movs.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt3);">No hay documentos facturados' + (buscar ? ' con ese criterio' : '') + '</td></tr>';
+  } else {
+    tbody.innerHTML = movs.map(m => {
+      const nombre = m.razon_social || m.nombre_origen || '';
+      return `<tr>
+        <td style="font-size:12px;">${m.fecha || ''}</td>
+        <td style="font-size:12px;">${m.fecha_facturacion ? m.fecha_facturacion.substring(0,10) : ''}</td>
+        <td style="font-family:monospace;font-size:11px;">${m.rut || ''}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(nombre)}">${escHtml(nombre)}</td>
+        <td>${tipoDteBadge(m.tipo_dte)}</td>
+        <td style="text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
+        <td><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || ''}</span></td>
+        <td style="font-size:11px;color:var(--txt3);max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${m.lote_id || ''}">${m.lote_id ? m.lote_id.substring(0, 20) : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Paginación
+  const totalPages = Math.ceil(total / HIST_LIMIT);
+  const pagEl = document.getElementById('hist-pagination');
+  pagEl.innerHTML = `
+    <span>P&aacute;gina ${HIST_PAGE + 1} de ${totalPages || 1} (${total} resultados)</span>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="loadHistorial(0)" ${HIST_PAGE === 0 ? 'disabled' : ''}>&#x23EA;</button>
+      <button class="btn btn-secondary btn-sm" onclick="loadHistorial(${HIST_PAGE - 1})" ${HIST_PAGE === 0 ? 'disabled' : ''}>&#x25C0; Anterior</button>
+      <button class="btn btn-secondary btn-sm" onclick="loadHistorial(${HIST_PAGE + 1})" ${HIST_PAGE >= totalPages - 1 ? 'disabled' : ''}> Siguiente &#x25B6;</button>
+    </div>`;
+}
+
+function limpiarHistorial() {
+  document.getElementById('hist-buscar').value = '';
+  document.getElementById('hist-desde').value = '';
+  document.getElementById('hist-hasta').value = '';
+  document.getElementById('hist-tipo-dte').value = '';
+  HIST_PAGE = 0;
+  loadHistorial();
+}
+
+// Enter en buscador dispara búsqueda
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const input = document.getElementById('hist-buscar');
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { HIST_PAGE = 0; loadHistorial(); }});
+  }, 500);
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EXPORT CSV (selection)

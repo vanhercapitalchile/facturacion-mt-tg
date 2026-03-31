@@ -1,21 +1,21 @@
 {
   "users": {
-    "hturra": {
-      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+    "admin": {
+      "passHash": "1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc",
       "role": "admin",
       "nombre": "Hernán Turra",
       "initials": "HT",
       "empresa": "all"
     },
     "dbravo": {
-      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "passHash": "f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69",
       "role": "empresa",
       "nombre": "D. Bravo",
       "initials": "DB",
       "empresa": "tg-inversiones"
     },
     "strujillo": {
-      "passHash": "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+      "passHash": "ff54329f276f7364be2e3d36a7c13bac328b13a43be274db933cb56985c3954d",
       "role": "empresa",
       "nombre": "S. Trujillo",
       "initials": "ST",

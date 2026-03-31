@@ -646,20 +646,23 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
 async function sfLogin(email, password) {
-  const r = await fetch(`${SF_BASE}/authentication/login`, {
+  // Swagger: POST /api/Authentication/login
+  // Body: { identifiers: { email }, password }
+  // Response: { token: "JWT...", firstName, lastName, ... }
+  const r = await fetch(`${SF_BASE}/Authentication/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Identifiers: email, password })
+    body: JSON.stringify({ identifiers: { email }, password })
   });
   const raw = await r.text();
-  console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 200)}`);
+  console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 300)}`);
   let data;
   try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
-  if (!r.ok || !data?.data?.token) {
-    const errMsg = typeof data?.errors === 'object' ? JSON.stringify(data.errors) : (data?.message || data?.errors || raw.substring(0, 300));
+  if (!r.ok || !data?.token) {
+    const errMsg = typeof data === 'object' ? JSON.stringify(data) : raw.substring(0, 300);
     throw new Error(`Login fallido (HTTP ${r.status}): ${errMsg}`);
   }
-  return data.data.token;
+  return data.token;
 }
 
 function buildSfCsv(movs, empresa) {

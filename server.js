@@ -112,28 +112,29 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)')
 // ── Schema migrations ─────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
 
-// ── Re-classify existing movements with wrong tipo_dte ────────────────────────
-// Fix: RUT comparison must exclude check digit (last char of rut_normalizado)
+// ── Re-classify existing movements on startup using empresa config ─────────────
 (function reclassifyMovimientos() {
-  const movs = db.prepare("SELECT id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE tipo_dte IS NOT NULL AND estado NOT IN ('facturado','en_lote')").all();
-  if (!movs.length) return;
-  const upd = db.prepare("UPDATE movimientos SET tipo_dte=?, estado=?, razon_social=CASE WHEN ?=41 AND (razon_social IS NULL OR razon_social='') THEN nombre_origen ELSE razon_social END, updated_at=? WHERE id=?");
-  const now = nowCL ? nowCL() : new Date().toISOString();
-  let fixed = 0;
-  db.transaction(() => {
-    for (const m of movs) {
-      if (!m.rut_normalizado) continue;
-      const rutNum = parseInt(m.rut_normalizado.slice(0, -1));
-      const correcto = rutNum >= 76000000 ? 34 : 41;
-      const actual = db.prepare('SELECT tipo_dte FROM movimientos WHERE id=?').get(m.id)?.tipo_dte;
-      if (actual !== correcto) {
-        const nuevoEstado = correcto === 41 ? 'listo' : m.estado;
-        upd.run(correcto, nuevoEstado, correcto, now, m.id);
-        fixed++;
+  try {
+    const empresas = getAppData('empresas') || {};
+    const movs = db.prepare("SELECT id, empresa_id, rut_normalizado, nombre_origen, estado, tipo_dte FROM movimientos WHERE estado NOT IN ('facturado','en_lote')").all();
+    if (!movs.length) return;
+    const upd = db.prepare("UPDATE movimientos SET tipo_dte=?, estado=?, razon_social=COALESCE(NULLIF(razon_social,''), nombre_origen, razon_social), updated_at=? WHERE id=?");
+    const now = nowCL ? nowCL() : new Date().toISOString();
+    let fixed = 0;
+    db.transaction(() => {
+      for (const m of movs) {
+        if (!m.rut_normalizado) continue;
+        const empConfig = empresas[m.empresa_id];
+        const correcto = getTipoDte(m.rut_normalizado, empConfig);
+        if (m.tipo_dte !== correcto) {
+          const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
+          upd.run(correcto, nuevoEstado, now, m.id);
+          fixed++;
+        }
       }
-    }
-  })();
-  if (fixed > 0) console.log(`[MIGRATE] Re-clasificados ${fixed} movimientos con tipo_dte incorrecto`);
+    })();
+    if (fixed > 0) console.log(`[MIGRATE] Re-clasificados ${fixed} movimientos con tipo_dte incorrecto`);
+  } catch(e) { console.error('[MIGRATE] Error en reclassify:', e.message); }
 })();
 
 // ── Seed ─────────────────────────────────────────────────────────────────────
@@ -488,11 +489,10 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // Determine DTE type by RUT: RUT >= 76M → Factura Exenta (34), RUT < 76M → Boleta Exenta (41)
-        // rutNorm includes check digit (e.g. "273657460") → slice last char to get pure number
+        // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
         if (rutNorm) {
-          const rutNum = parseInt(rutNorm.slice(0, -1));
-          tipoDte = rutNum >= 76000000 ? 34 : 41;
+          const empConf = getAppData('empresas')?.[empresaId];
+          tipoDte = getTipoDte(rutNorm, empConf);
 
           const cliente = clienteMap.get(rutNorm);
           if (cliente) {
@@ -508,8 +508,11 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
             // Boleta sin cliente en BD: usar nombre de la cartola como identificador
             razonSocial = (mov.nombre_origen || '').substring(0, 100) || 'SIN NOMBRE';
             estado = 'listo';
+          } else {
+            // Factura/DTE que no sea boleta sin cliente en BD: usar nombre_origen como razon_social
+            // El movimiento queda pendiente para revisión manual (completar datos)
+            razonSocial = (mov.nombre_origen || '').substring(0, 100);
           }
-          // Factura (34) sin cliente en BD: queda pendiente para revisión manual
         }
 
         const monto = parseFloat(mov.monto) || 0;
@@ -584,10 +587,23 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   res.json({ ok: true, eliminados: result.changes });
 });
 
+// Helper: determinar tipo_dte según RUT y config de empresa
+function getTipoDte(rutNormalizado, empresaConfig) {
+  if (!rutNormalizado) return 34;
+  const rutNum = parseInt(rutNormalizado.slice(0, -1));
+  const sf = empresaConfig?.simplefactura || {};
+  if (rutNum >= 76000000) {
+    return parseInt(sf.tipo_dte_empresas) || 34;
+  } else {
+    return parseInt(sf.tipo_dte_personas) || 34;
+  }
+}
+
 // ── Re-classify all pending movements (manual trigger) ───────────────────────
 app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  let sql = "SELECT id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE tipo_dte IS NOT NULL AND estado NOT IN ('facturado','en_lote')";
+  const empresas = getAppData('empresas') || {};
+  let sql = "SELECT id, empresa_id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE estado NOT IN ('facturado','en_lote')";
   const params = [];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
   const movs = db.prepare(sql).all(...params);
@@ -596,8 +612,9 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   db.transaction(() => {
     for (const m of movs) {
       if (!m.rut_normalizado) continue;
-      const rutNum = parseInt(m.rut_normalizado.slice(0, -1));
-      const correcto = rutNum >= 76000000 ? 34 : 41;
+      const empConfig = empresas[m.empresa_id];
+      const correcto = getTipoDte(m.rut_normalizado, empConfig);
+      // Estado: si es boleta (41) → listo (no requiere revisión), si es factura → mantener estado actual
       const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
       db.prepare('UPDATE movimientos SET tipo_dte=?, estado=?, updated_at=? WHERE id=?')
         .run(correcto, nuevoEstado, now, m.id);
@@ -868,6 +885,13 @@ function buildSfCsvRows(movs, empresa) {
     const correoRecep = m.email_receptor || empresa.email_facturacion || '';
     // campo Correo (col 38): solo si el receptor tiene email propio
     const correoExtra = m.email_receptor || '';
+    // Campos del receptor — usar fallbacks para evitar "No se encontraron datos para el rut"
+    const razonSocial = (m.razon_social || m.nombre_origen || 'SIN RAZON SOCIAL').substring(0, 100);
+    const giro        = (m.giro || 'PARTICULAR').substring(0, 80);
+    const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
+    const comuna      = m.comuna || 'NO INFORMADO';
+    const ciudad      = m.ciudad || 'NO INFORMADO';
+
     return [
       i + 1,
       m.tipo_dte || 34,
@@ -875,13 +899,13 @@ function buildSfCsvRows(movs, empresa) {
       fecha,                    // FechaEmision DD-MM-YYYY
       fecha,                    // Vencimiento (igual a emisión)
       rutParaSF(m.rut),         // RutRecep sin puntos con guión
-      (m.giro || '').substring(0, 80),
+      giro,
       'NO INFORMADO',           // Contacto
       correoRecep,              // CorreoRecep
-      (m.direccion || '').substring(0, 100),
-      m.comuna || '',
-      m.ciudad || '',
-      m.razon_social || '',
+      direccion,
+      comuna,
+      ciudad,
+      razonSocial,
       '', '', '',               // DirDest, CmnaDest, CiudadDest
       '', '', '', '', '',       // Referencias (vacías)
       '',                       // CodigoProducto

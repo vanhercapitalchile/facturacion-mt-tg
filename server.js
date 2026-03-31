@@ -1119,7 +1119,38 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   }
 });
 
-// Diagnóstico de plantillas: lista las plantillas del emisor en SF y muestra cuáles están activas
+// Helper: obtiene la lista global de TipoPlantilla desde GET /api/Plantilla/list
+// Respuesta: PagedResponse { data: [TipoPlantillaEnt], pageNumber, pageSize, ... }
+async function sfGetTiposPlantilla(token) {
+  const r = await fetch(`${SF_BASE}/Plantilla/list?PageNumber=1&PageSize=200`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const body = await r.text();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch(e) { return []; }
+  // PagedResponse → items en .data
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.data)) return parsed.data;
+  return [];
+}
+
+// Helper: obtiene PlantillaEmisor del emisor (sin filtro Activo para obtener todas)
+async function sfGetPlantillasEmisor(token, emisorId) {
+  const r = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}&PageNumber=1&PageSize=100`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const body = await r.text();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch(e) { return []; }
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.data)) return parsed.data;
+  if (Array.isArray(parsed?.items)) return parsed.items;
+  return [];
+}
+
+// Diagnóstico de plantillas: lista las plantillas del emisor y resuelve tipos DTE
 app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
@@ -1128,112 +1159,71 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
   const email = sfConf.username;
   try {
     const token = await sfGetToken(email, sfConf.password);
-    // Obtener emisorId
     const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
     await sfGetSucursalId(email, sfConf.password, nombreSucursal);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 
-    // 1. Listar todas las plantillas del emisor (activas e inactivas)
-    const respAll = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    });
-    const bodyAll = await respAll.text();
-    let plantillasEmisor = [];
-    try { plantillasEmisor = JSON.parse(bodyAll); } catch(e) { /* ignore */ }
-    if (!Array.isArray(plantillasEmisor)) plantillasEmisor = plantillasEmisor?.data || plantillasEmisor?.items || [];
+    // 1. Plantillas del emisor
+    const plantillasEmisor = await sfGetPlantillasEmisor(token, emisorId);
 
-    // 2. Listar plantillas del emisor activas
-    const respActivas = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}&Activo=true`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    });
-    const bodyActivas = await respActivas.text();
-    let plantillasActivas = [];
-    try { plantillasActivas = JSON.parse(bodyActivas); } catch(e) { /* ignore */ }
-    if (!Array.isArray(plantillasActivas)) plantillasActivas = plantillasActivas?.data || plantillasActivas?.items || [];
+    // 2. Tipos globales: GET /api/Plantilla/list → PagedResponse { data: [TipoPlantillaEnt] }
+    //    TipoPlantillaEnt.tipoPlantillaId = mismo UUID que PlantillaEmisor.tipoPlantillaId
+    //    TipoPlantillaEnt.codigoTipoDte   = código DTE entero (33, 34, 39, 41...)
+    const tiposPlantilla = await sfGetTiposPlantilla(token);
 
-    // 3. Para cada plantilla, resolver tipoPlantillaId → codigoTipoDte
-    //    SF usa el endpoint GET /api/TipoPlantilla/{id} para obtener el tipo individual
-    const plantillasEnriquecidas = [];
-    const tiposResueltos = {};
-    for (const p of plantillasEmisor) {
-      const tid = p.tipoPlantillaId || p.TipoPlantillaId;
-      let codigoDte = null;
-      let nombreDte = null;
-      if (tid && !tiposResueltos[tid]) {
-        // Intentar resolver el tipoPlantillaId con varias rutas posibles
-        for (const ruta of [
-          `TipoPlantilla/${tid}`,
-          `TipoPlantilla/get/${tid}`,
-          `Plantilla/${tid}`
-        ]) {
-          try {
-            const r = await fetch(`${SF_BASE}/${ruta}`, {
-              method: 'GET',
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (r.ok) {
-              const d = JSON.parse(await r.text());
-              const cod = d.codigoTipoDte ?? d.CodigoTipoDte ?? d.tipoDte ?? d.TipoDte ?? null;
-              if (cod !== null) {
-                tiposResueltos[tid] = { cod, nombre: d.nombreTipoDte || d.NombreTipoDte || d.nombre || '' };
-                break;
-              }
-            }
-          } catch(e) { /* try next */ }
-        }
-      }
-      if (tiposResueltos[tid]) {
-        codigoDte = tiposResueltos[tid].cod;
-        nombreDte = tiposResueltos[tid].nombre;
-      }
-      plantillasEnriquecidas.push({ ...p, _codigoDte: codigoDte, _nombreDte: nombreDte });
+    // 3. Construir mapa tipoPlantillaId → TipoPlantillaEnt para cruce
+    const tipoMap = {};
+    for (const t of tiposPlantilla) {
+      const tid = t.tipoPlantillaId || t.TipoPlantillaId;
+      if (tid) tipoMap[tid] = t;
     }
 
-    // 4. Listar TipoPlantilla globales (para saber qué tipos existen y poder asignar)
-    let tiposPlantilla = [];
-    for (const rutaTipos of ['TipoPlantilla/list', 'TipoPlantilla/list/filter', 'Plantilla/list']) {
-      try {
-        const r = await fetch(`${SF_BASE}/${rutaTipos}`, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const parsed = JSON.parse(await r.text());
-        const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : []);
-        if (arr.length > 0) { tiposPlantilla = arr; break; }
-      } catch(e) { /* try next */ }
-    }
+    // 4. Enriquecer plantillasEmisor con codigoTipoDte
+    const plantillasEnriquecidas = plantillasEmisor.map(p => {
+      const tid  = p.tipoPlantillaId || p.TipoPlantillaId;
+      const tipo = tipoMap[tid];
+      return {
+        ...p,
+        _codigoDte: tipo?.codigoTipoDte ?? null,
+        _nombreDte: tipo?.nombreTipoDte ?? tipo?.descripcion ?? null
+      };
+    });
 
-    const dtesCubiertos = [...new Set(plantillasEnriquecidas.map(p => p._codigoDte).filter(v => v !== null))];
+    const activas      = plantillasEnriquecidas.filter(p => p.activo === true || p.Activo === true);
+    const dtesCubiertos = [...new Set(activas.map(p => p._codigoDte).filter(v => v !== null))];
 
     res.json({
       ok: true,
       emisorId,
-      plantillasEmisorTotal: plantillasEmisor.length,
-      plantillasActivas: plantillasActivas.length,
+      plantillasEmisorTotal: plantillasEnriquecidas.length,
+      plantillasActivas: activas.length,
+      tiposPlantillaGlobal: tiposPlantilla.length,
       dtesCubiertos,
       tieneTipo34: dtesCubiertos.includes(34),
       tieneTipo33: dtesCubiertos.includes(33),
       plantillasEmisor: plantillasEnriquecidas,
-      tiposPlantilla,
-      primerItemKeys: plantillasEmisor.length > 0 ? Object.keys(plantillasEmisor[0]) : [],
-      raw: { all: bodyAll.substring(0, 3000) }
+      tiposPlantillaDisponibles: tiposPlantilla.map(t => ({
+        tipoPlantillaId: t.tipoPlantillaId,
+        codigoTipoDte: t.codigoTipoDte,
+        nombreTipoDte: t.nombreTipoDte,
+        existente: t.existente
+      })),
+      raw: { primerPlantilla: JSON.stringify(plantillasEmisor[0] || {}) }
     });
   } catch(e) {
     res.json({ ok: false, error: e.message, stack: e.stack?.substring(0, 500) });
   }
 });
 
-// Activar plantillas SF: activa todas las plantillas inactivas del emisor para el tipo de DTE dado
+// Activar plantillas SF para los tipos DTE pedidos (default: 33 y 34)
 app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
   const sfConf   = empresa?.simplefactura || {};
   if (!sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
   const email = sfConf.username;
-  const tiposDte = req.body?.tipos_dte || [33, 34]; // por defecto activa tipos 33 y 34
+  const tiposDte = req.body?.tipos_dte || [33, 34];
 
   try {
     const token = await sfGetToken(email, sfConf.password);
@@ -1242,84 +1232,65 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
     const emisorId = sfTokenCache[email]?.emisorId || null;
     if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
 
-    // Obtener TODAS las plantillas del emisor (activas e inactivas)
-    const respAll = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}`, {
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    let plantillas = [];
-    try { plantillas = JSON.parse(await respAll.text()); } catch(e) { plantillas = []; }
-    if (!Array.isArray(plantillas)) plantillas = plantillas?.data || plantillas?.items || [];
-
-    // Resolver tipoPlantillaId → codigoTipoDte para cada plantilla
-    const tiposResueltos2 = {};
-    for (const p of plantillas) {
-      const tid = p.tipoPlantillaId || p.TipoPlantillaId;
-      if (tid && !tiposResueltos2[tid]) {
-        for (const ruta of [`TipoPlantilla/${tid}`, `TipoPlantilla/get/${tid}`, `Plantilla/${tid}`]) {
-          try {
-            const r = await fetch(`${SF_BASE}/${ruta}`, { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
-            if (r.ok) {
-              const d = JSON.parse(await r.text());
-              const cod = d.codigoTipoDte ?? d.CodigoTipoDte ?? d.tipoDte ?? null;
-              if (cod !== null) { tiposResueltos2[tid] = cod; break; }
-            }
-          } catch(e) { /* next */ }
-        }
-      }
+    // Obtener tipos globales (PagedResponse.data)
+    const tiposGlobal = await sfGetTiposPlantilla(token);
+    const tipoMap     = {};
+    for (const t of tiposGlobal) {
+      const tid = t.tipoPlantillaId || t.TipoPlantillaId;
+      if (tid) tipoMap[tid] = t;
     }
 
+    // Obtener plantillas del emisor
+    const plantillas = await sfGetPlantillasEmisor(token, emisorId);
+
+    // Enriquecer con código DTE
+    const enriquecidas = plantillas.map(p => ({
+      ...p,
+      _codigoDte: tipoMap[p.tipoPlantillaId || p.TipoPlantillaId]?.codigoTipoDte ?? null
+    }));
+
     const resultados = [];
-    // Intentar activar cada plantilla inactiva que coincida con los tipos DTE pedidos
-    for (const p of plantillas) {
-      const tid    = p.tipoPlantillaId || p.TipoPlantillaId;
-      const codDte = tiposResueltos2[tid] ?? p.codigoTipoDte ?? p.CodigoTipoDte ?? p.tipoDte ?? null;
-      const activo = p.activo !== undefined ? p.activo : p.Activo;
+
+    // Paso 1: activar plantillas inactivas para tipos pedidos
+    for (const p of enriquecidas) {
+      const codDte = p._codigoDte;
+      if (codDte !== null && !tiposDte.includes(codDte)) continue;
+      const activo = p.activo === true || p.Activo === true;
       const pid    = p.plantillaEmisorId || p.PlantillaEmisorId;
-      const nombre = p.nombrePlantilla || p.NombrePlantilla || '';
-      if (codDte !== null && !tiposDte.includes(parseInt(codDte))) continue;
-      // Si codDte no pudo resolverse, aún intentar activar si está inactiva
-      if (activo === true) { resultados.push({ plantillaEmisorId: pid, nombre, codDte, resultado: 'ya activa' }); continue; }
-      const body = JSON.stringify({ plantillaEmisorId: pid, emisorId, tipoPlantillaId: tid, activo: true, nombrePlantilla: nombre });
+      const tid    = p.tipoPlantillaId   || p.TipoPlantillaId;
+      if (activo) { resultados.push({ paso: 'activate', codDte, pid: pid?.substring(0,8), resultado: 'ya activa' }); continue; }
+      const body = JSON.stringify({ plantillaEmisorId: pid, emisorId, tipoPlantillaId: tid, activo: true, nombrePlantilla: p.nombrePlantilla || '' });
       const r = await fetch(`${SF_BASE}/PlantillaEmisor/activate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body
       });
       const rBody = await r.text();
-      resultados.push({ plantillaEmisorId: pid, nombre, codDte, http: r.status, respuesta: rBody.substring(0, 300) });
+      resultados.push({ paso: 'activate', codDte, pid: pid?.substring(0,8), http: r.status, respuesta: rBody.substring(0, 300) });
     }
 
-    // Si no hay plantillas del emisor para los tipos buscados, intentar asignar desde TipoPlantilla global
-    const dtesCubiertos2 = [...new Set(Object.values(tiposResueltos2).map(Number))];
-    const dtesFaltantes  = tiposDte.filter(t => !dtesCubiertos2.includes(t));
-    if (dtesFaltantes.length > 0) {
-      // Obtener lista de TipoPlantilla para encontrar el tipoPlantillaId correcto
-      let tiposGlobal = [];
-      for (const ruta of ['TipoPlantilla/list', 'TipoPlantilla/list/filter']) {
-        try {
-          const r = await fetch(`${SF_BASE}/${ruta}`, { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } });
-          const parsed = JSON.parse(await r.text());
-          const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : []);
-          if (arr.length > 0) { tiposGlobal = arr; break; }
-        } catch(e) { /* next */ }
+    // Paso 2: asignar tipos faltantes usando /assign?emisorId=...&plantillaId=...&activate=true
+    // IMPORTANTE: /api/PlantillaEmisor/assign usa QUERY PARAMS (no JSON body)
+    const dtesYaCubiertos = new Set(enriquecidas.filter(p => p.activo === true || p.Activo === true).map(p => p._codigoDte).filter(Boolean));
+    for (const tipoDte of tiposDte) {
+      if (dtesYaCubiertos.has(tipoDte)) { resultados.push({ paso: 'assign', codDte: tipoDte, resultado: 'ya cubierto' }); continue; }
+      const tipoGlobal = tiposGlobal.find(t => t.codigoTipoDte === tipoDte);
+      if (!tipoGlobal) {
+        resultados.push({ paso: 'assign', codDte: tipoDte, resultado: `tipo DTE ${tipoDte} no encontrado en plantillas globales (${tiposGlobal.length} disponibles)` });
+        continue;
       }
-      for (const faltante of dtesFaltantes) {
-        const tp = tiposGlobal.find(t => (t.codigoTipoDte || t.CodigoTipoDte) === faltante);
-        if (!tp) { resultados.push({ tipo: 'assign', codDte: faltante, resultado: 'tipoPlantillaId no encontrado en SF' }); continue; }
-        const tpid = tp.tipoPlantillaId || tp.TipoPlantillaId || tp.id;
-        const body = JSON.stringify({ emisorId, tipoPlantillaId: tpid, activo: true, nombrePlantilla: tp.nombreTipoDte || '' });
-        const r = await fetch(`${SF_BASE}/PlantillaEmisor/assign`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body
-        });
-        const rBody = await r.text();
-        resultados.push({ tipo: 'assign', codDte: faltante, tpid, http: r.status, respuesta: rBody.substring(0, 300) });
-      }
+      const plantillaId = tipoGlobal.tipoPlantillaId || tipoGlobal.TipoPlantillaId;
+      // Usar query params tal como especifica el Swagger
+      const url = `${SF_BASE}/PlantillaEmisor/assign?emisorId=${emisorId}&plantillaId=${plantillaId}&activate=true`;
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      const rBody = await r.text();
+      resultados.push({ paso: 'assign', codDte: tipoDte, plantillaId: plantillaId?.substring(0,8), http: r.status, respuesta: rBody.substring(0, 400) });
     }
 
-    res.json({ ok: true, emisorId, plantillasEncontradas: plantillas.length, dtesCubiertos: dtesCubiertos2, resultados });
+    res.json({ ok: true, emisorId, tiposGlobal: tiposGlobal.length, plantillasEmisor: plantillas.length, resultados });
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }

@@ -1731,6 +1731,10 @@ function renderConfig() {
         <div class="form-group"><label>Email facturación</label><input type="text" class="inline-input" id="cfg-email-${id}" value="${emp.email_facturacion || ''}"></div>
         <div class="form-group"><label>Email SimpleFactura (login)</label><input type="email" class="inline-input" id="cfg-sfuser-${id}" value="${emp.simplefactura?.username || ''}" placeholder="correo@ejemplo.com"></div>
         <div class="form-group"><label>Contraseña SimpleFactura</label><input type="password" class="inline-input" id="cfg-sfpass-${id}" value="${emp.simplefactura?.password || ''}"></div>
+        <div class="form-group" style="grid-column:1/-1;"><label>🔑 Token API SimpleFactura <small style="color:var(--green);font-weight:600;">(recomendado — evita problemas de sesión)</small></label>
+          <input type="text" class="inline-input" id="cfg-sftoken-${id}" value="${emp.simplefactura?.api_token || ''}" placeholder="Pegar token desde Configuración → Integraciones en SimpleFactura" style="font-family:monospace;font-size:12px;">
+          <small style="color:var(--txt3);margin-top:4px;display:block;">Si se configura, se usa en lugar del email/contraseña. Válido 1 año. Generado en SF → Configuración → Integraciones.</small>
+        </div>
         <div class="form-group"><label>Nombre sucursal SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfsuc-${id}" value="${emp.simplefactura?.nombre_sucursal || 'Casa Matriz'}" placeholder="Casa Matriz"></div>
         <div class="form-group"><label>Tipo DTE personas naturales</label>
           <select class="inline-input" id="cfg-dtepers-${id}">
@@ -1762,6 +1766,7 @@ async function saveConfig() {
       rut_emisor: document.getElementById(`cfg-rut-${id}`)?.value || '',
       username: document.getElementById(`cfg-sfuser-${id}`)?.value || '',
       password: document.getElementById(`cfg-sfpass-${id}`)?.value || '',
+      api_token: document.getElementById(`cfg-sftoken-${id}`)?.value.trim() || '',
       nombre_sucursal: document.getElementById(`cfg-sfsuc-${id}`)?.value || 'Casa Matriz',
       tipo_dte_personas: parseInt(document.getElementById(`cfg-dtepers-${id}`)?.value || '41'),
       tipo_dte_empresas: parseInt(document.getElementById(`cfg-dteempr-${id}`)?.value || '34')

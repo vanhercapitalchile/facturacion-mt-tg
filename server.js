@@ -716,15 +716,26 @@ function sfTokenFromCache(email) {
   return null;
 }
 
-async function sfGetToken(email, password) {
-  // Return cached token if still valid
+// Obtener token SF: prioridad API token estático > login con email/password
+async function sfGetToken(email, password, apiToken) {
+  // 1. API token estático (más estable, sin sesión, sin expiración prematura)
+  if (apiToken) {
+    console.log(`[SF TOKEN] Usando API token estático para ${email}`);
+    // Guardar en cache para que sfGetSucursalId lo pueda usar
+    if (!sfTokenCache[email]) sfTokenCache[email] = {};
+    sfTokenCache[email].token = apiToken;
+    sfTokenCache[email].expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
+    return apiToken;
+  }
+
+  // 2. Return cached token if still valid (login previo)
   const cached = sfTokenFromCache(email);
   if (cached) {
     console.log(`[SF TOKEN] Usando token en caché para ${email}`);
     return cached;
   }
 
-  // Fresh login
+  // 3. Fresh login
   const doLogin = async () => {
     const r = await fetch(`${SF_BASE}/Authentication/login`, {
       method: 'POST',
@@ -803,7 +814,8 @@ async function sfGetSucursalId(email, password, nombreSucursal) {
     return cached.sucursalId;
   }
 
-  const token = await sfGetToken(email, password);
+  // Usar el token ya cacheado (puede ser API token o JWT de login)
+  const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
   try {
     const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
       method: 'GET',
@@ -960,8 +972,9 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
   const empresas = getAppData('empresas');
   const empresa = empresas[lote.empresa_id];
-  if (!empresa?.simplefactura?.username || !empresa?.simplefactura?.password) {
-    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas para esta empresa' });
+  const sfConf = empresa?.simplefactura || {};
+  if (!sfConf.api_token && (!sfConf.username || !sfConf.password)) {
+    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseña)' });
   }
 
   const movs = db.prepare("SELECT * FROM movimientos WHERE lote_id = ? AND estado = 'en_lote'").all(loteId);
@@ -971,9 +984,9 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const sfConfig = empresa.simplefactura;
 
   try {
-    // 1. Autenticar con SimpleFactura para obtener JWT
-    const token = await sfLogin(sfConfig.username, sfConfig.password);
-    console.log(`[SF] Login exitoso para ${lote.empresa_id}`);
+    // 1. Obtener token SF (API token estático tiene prioridad sobre login)
+    const token = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
+    console.log(`[SF] Token obtenido para ${lote.empresa_id} (método: ${sfConfig.api_token ? 'API token' : 'login'})`);
 
     // 2. Generar CSV en formato SimpleFactura
     const csvContent = buildSfCsv(movs, empresa);
@@ -1031,7 +1044,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     if (uploadResp.status === 401) {
       console.log('[SF UPLOAD] Token rechazado (401) — refrescando y reintentando...');
       delete sfTokenCache[sfConfig.username];
-      const newToken = await sfGetToken(sfConfig.username, sfConfig.password);
+      const newToken = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
       uploadResp = await doUpload(newToken);
     }
 
@@ -1081,16 +1094,17 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
-  if (!empresa?.simplefactura?.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
-  const email = empresa.simplefactura.username;
-  // Invalidar caché para forzar login fresco en el test
+  const sfConf = empresa?.simplefactura || {};
+  if (!sfConf.api_token && !sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = sfConf.username || 'api-token';
+  // Invalidar caché para forzar obtención fresca en el test
   delete sfTokenCache[email];
   try {
-    const token = await sfGetToken(email, empresa.simplefactura.password);
+    const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
     const claims = sfDecodeJwt(token);
-    const nombreSucursal = empresa.simplefactura?.nombre_sucursal || 'Casa Matriz';
+    const nombreSucursal = sfConf.nombre_sucursal || 'Casa Matriz';
     // También obtener sucursalId UUID para diagnóstico
-    const sucursalUUID = await sfGetSucursalId(email, empresa.simplefactura.password, nombreSucursal);
+    const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     let solicitudObj;
     if (sucursalUUID) {

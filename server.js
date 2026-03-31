@@ -167,7 +167,7 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
     }
     // Actualizar hashes de contraseñas
     const newHashes = {
-      hturra:    'ded2a6c4e483cba4b180146c6055a087f021d5b5d6cc5ba91f3f068d7a686ccd',
+      hturra:    '1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc',
       dbravo:    'f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69',
       strujillo: 'ff54329f276f7364be2e3d36a7c13bac328b13a43be274db933cb56985c3954d'
     };

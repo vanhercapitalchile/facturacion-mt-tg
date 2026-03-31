@@ -907,23 +907,19 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       const claims = sfDecodeJwt(tok);
       console.log('[SF UPLOAD] JWT claims:', JSON.stringify(claims));
 
-      // 1ª opción: IdEmisor UUID en el JWT (el más confiable si está presente)
+      // 1ª opción: IdEmisor UUID en el JWT (sub, IdEmisor, EmisorId, etc.)
       const idEmisor = claims.IdEmisor || claims.idEmisor || claims.EmisorId
-        || claims.emisorId || claims.IdEmpresa || claims.idEmpresa || null;
+        || claims.emisorId || claims.IdEmpresa || claims.idEmpresa
+        || claims.sub || null;
 
-      // 2ª opción: estructura Credenciales con RUT (formato SDK SimpleFactura)
-      // SimpleFactura almacena el RUT CON puntos en su BD: "77.859.376-9"
+      // 2ª opción: estructura Credenciales con RUT sin puntos (formato SDK oficial)
+      // El SDK de ejemplo usa '76269769-6' — sin puntos, con guión
       const rutRaw    = sfConfig.rut_emisor || '';
-      const rutCreds  = rutConPuntos(rutRaw);  // con puntos y guión: "77.859.376-9"
-      // NmbEmisor = nombre de la sucursal en SimpleFactura (por defecto "Casa Matriz")
+      const rutCreds  = rutParaSF(rutRaw);  // sin puntos, con guión: "77859376-9"
       const nmbEmisor = sfConfig.nombre_sucursal || 'Casa Matriz';
 
-      let obj;
-      if (idEmisor) {
-        obj = { IdEmisor: idEmisor, Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
-      } else {
-        obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
-      }
+      // Construir objeto base (solo Credenciales, sin IdEmisor — el JWT sub suele ser el user ID)
+      let obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nmbEmisor } };
 
       const ss = JSON.stringify(obj);
       console.log('[SF UPLOAD] solicitudString:', ss);
@@ -1005,7 +1001,15 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   delete sfTokenCache[email];
   try {
     const token = await sfGetToken(email, empresa.simplefactura.password);
-    res.json({ ok: true, mensaje: `Login exitoso — token activo y en caché para ${email}` });
+    const claims = sfDecodeJwt(token);
+    const rutCreds = rutParaSF(empresa.simplefactura?.rut_emisor || '');
+    const sucursal = empresa.simplefactura?.nombre_sucursal || 'Casa Matriz';
+    res.json({
+      ok: true,
+      mensaje: `Login exitoso para ${email}`,
+      jwtClaims: claims,
+      solicitudStringQueSeEnviara: JSON.stringify({ Credenciales: { RutEmisor: rutCreds, NombreSucursal: sucursal } })
+    });
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }

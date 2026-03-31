@@ -649,7 +649,7 @@ async function sfLogin(email, password) {
   const r = await fetch(`${SF_BASE}/authentication/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ Identifiers: email, password })
   });
   const raw = await r.text();
   console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 200)}`);

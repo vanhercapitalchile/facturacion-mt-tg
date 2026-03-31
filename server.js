@@ -1183,7 +1183,8 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
       plantillasActivas,
       tiposPlantilla,
       plantillasBase,
-      raw: { all: bodyAll.substring(0, 2000), activas: bodyActivas.substring(0, 2000), tipos: bodyTipos.substring(0, 1000), base: bodyBase.substring(0, 1000) }
+      primerItemKeys: plantillasEmisor.length > 0 ? Object.keys(plantillasEmisor[0]) : [],
+      raw: { all: bodyAll.substring(0, 3000), activas: bodyActivas.substring(0, 2000), tipos: bodyTipos.substring(0, 1000), base: bodyBase.substring(0, 1000) }
     });
   } catch(e) {
     res.json({ ok: false, error: e.message, stack: e.stack?.substring(0, 500) });

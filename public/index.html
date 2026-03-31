@@ -1577,13 +1577,18 @@ async function activarPlantillas(empresaId) {
     resultEl.innerHTML = `<span style="color:var(--red)">❌ ${data?.error || 'Error'}</span>`;
     return;
   }
-  const { resultados, plantillasEncontradas } = data;
-  let html = `<strong>Plantillas encontradas:</strong> ${plantillasEncontradas}<br>`;
+  const resultados = data.resultados;
+  const plantillasEncontradas = data.plantillasEmisor ?? data.plantillasEncontradas ?? '?';
+  let html = `<strong>Tipos globales SF:</strong> ${data.tiposGlobal ?? '?'} &nbsp;|&nbsp; <strong>Plantillas emisor:</strong> ${plantillasEncontradas}<br>`;
   if (resultados?.length > 0) {
     html += '<ul style="margin:6px 0;padding-left:18px;font-size:12px">';
     for (const r of resultados) {
-      const ok = r.resultado === 'ya activa' || (r.http >= 200 && r.http < 300);
-      html += `<li style="color:${ok ? 'var(--green)' : 'var(--red)'}">${r.nombre || r.tipo || 'Plantilla'} (DTE ${r.codDte}): ${r.resultado || 'HTTP ' + r.http + ' — ' + (r.respuesta || '').substring(0, 80)}</li>`;
+      const esInfoNeutral = r.resultado === 'ya activa' || r.resultado === 'ya cubierto';
+      const esExito = r.http >= 200 && r.http < 300;
+      const color = esInfoNeutral ? 'var(--txt2)' : esExito ? 'var(--green)' : 'var(--red)';
+      const label = r.paso === 'assign' ? '🆕 Asignar' : '🔄 Activar';
+      const desc  = r.resultado || `HTTP ${r.http} — ${(r.respuesta || '').substring(0, 100)}`;
+      html += `<li style="color:${color}">${label} (DTE ${r.codDte}): ${desc}</li>`;
     }
     html += '</ul>';
   } else {

@@ -656,7 +656,8 @@ async function sfLogin(email, password) {
   let data;
   try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
   if (!r.ok || !data?.data?.token) {
-    throw new Error(`Login fallido (HTTP ${r.status}): ${data?.message || data?.errors || raw.substring(0, 200)}`);
+    const errMsg = typeof data?.errors === 'object' ? JSON.stringify(data.errors) : (data?.message || data?.errors || raw.substring(0, 300));
+    throw new Error(`Login fallido (HTTP ${r.status}): ${errMsg}`);
   }
   return data.data.token;
 }

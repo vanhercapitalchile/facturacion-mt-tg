@@ -1373,10 +1373,28 @@ async function emitirLote(loteId) {
   showToast('Enviando a SimpleFactura...', 'info');
   const data = await apiFetch(`/api/facturacion/emitir/${loteId}`, { method: 'POST' });
   if (data?.ok) {
-    showToast(`Emitidos: ${data.exitosos} OK, ${data.fallidos} errores`, data.fallidos ? 'error' : 'success');
+    showToast('¡Lote emitido correctamente en SimpleFactura!', 'success');
     loadLotes();
   } else {
-    showToast(data?.error || 'Error al emitir', 'error');
+    const msg = data?.mensaje || data?.error || 'Error al emitir';
+    showToast(`Error SimpleFactura: ${msg}`, 'error', 8000);
+    if (data?.estado === 'error') loadLotes(); // refresh to show error state
+  }
+}
+
+async function testSF(empresaId) {
+  const resultEl = document.getElementById(`sf-test-result-${empresaId}`);
+  resultEl.textContent = '⏳ Probando...';
+  resultEl.style.color = 'var(--txt2)';
+  // Save first so latest credentials are used
+  await saveConfig();
+  const data = await apiFetch(`/api/facturacion/test-sf/${empresaId}`);
+  if (data?.ok) {
+    resultEl.textContent = '✅ Conexión exitosa';
+    resultEl.style.color = 'var(--green)';
+  } else {
+    resultEl.textContent = `❌ ${data?.error || 'Sin respuesta'}`;
+    resultEl.style.color = 'var(--red)';
   }
 }
 
@@ -1594,8 +1612,12 @@ function renderConfig() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group"><label>RUT emisor</label><input type="text" class="inline-input" id="cfg-rut-${id}" value="${emp.simplefactura?.rut_emisor || ''}"></div>
         <div class="form-group"><label>Email facturación</label><input type="text" class="inline-input" id="cfg-email-${id}" value="${emp.email_facturacion || ''}"></div>
-        <div class="form-group"><label>Usuario SimpleFactura</label><input type="text" class="inline-input" id="cfg-sfuser-${id}" value="${emp.simplefactura?.username || ''}"></div>
+        <div class="form-group"><label>Email SimpleFactura (login)</label><input type="email" class="inline-input" id="cfg-sfuser-${id}" value="${emp.simplefactura?.username || ''}" placeholder="correo@ejemplo.com"></div>
         <div class="form-group"><label>Contraseña SimpleFactura</label><input type="password" class="inline-input" id="cfg-sfpass-${id}" value="${emp.simplefactura?.password || ''}"></div>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn btn-secondary btn-sm" onclick="testSF('${id}')">🔌 Probar conexión SimpleFactura</button>
+        <span id="sf-test-result-${id}" style="margin-left:10px;font-size:13px;"></span>
       </div>
     </div>
   `).join('');
@@ -1799,12 +1821,12 @@ async function sha256hex(msg) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-function showToast(msg, type = 'success') {
+function showToast(msg, type = 'success', duration = 4000) {
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 4000);
+  setTimeout(() => t.remove(), duration);
 }
 
 function showModal() { document.getElementById('modal-overlay').classList.add('show'); }

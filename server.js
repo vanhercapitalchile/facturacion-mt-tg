@@ -1119,6 +1119,155 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   }
 });
 
+// Diagnóstico de plantillas: lista las plantillas del emisor en SF y muestra cuáles están activas
+app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa  = empresas[req.params.empresa_id];
+  const sfConf   = empresa?.simplefactura || {};
+  if (!sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = sfConf.username;
+  try {
+    const token = await sfGetToken(email, sfConf.password);
+    // Obtener emisorId
+    const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal);
+    const emisorId = sfTokenCache[email]?.emisorId || null;
+    if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
+
+    // 1. Listar todas las plantillas del emisor (activas e inactivas)
+    const respAll = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const bodyAll = await respAll.text();
+    let plantillasEmisor = [];
+    try { plantillasEmisor = JSON.parse(bodyAll); } catch(e) { /* ignore */ }
+    if (!Array.isArray(plantillasEmisor)) plantillasEmisor = plantillasEmisor?.data || plantillasEmisor?.items || [];
+
+    // 2. Listar plantillas del emisor activas
+    const respActivas = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}&Activo=true`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const bodyActivas = await respActivas.text();
+    let plantillasActivas = [];
+    try { plantillasActivas = JSON.parse(bodyActivas); } catch(e) { /* ignore */ }
+    if (!Array.isArray(plantillasActivas)) plantillasActivas = plantillasActivas?.data || plantillasActivas?.items || [];
+
+    // 3. Listar tipos de plantilla globales disponibles
+    const respTipos = await fetch(`${SF_BASE}/TipoPlantilla/list`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const bodyTipos = await respTipos.text();
+    let tiposPlantilla = [];
+    try { tiposPlantilla = JSON.parse(bodyTipos); } catch(e) { /* ignore */ }
+    if (!Array.isArray(tiposPlantilla)) tiposPlantilla = tiposPlantilla?.data || tiposPlantilla?.items || [];
+
+    // 4. Listar plantillas globales base (por si tiposPlantilla falla)
+    const respBase = await fetch(`${SF_BASE}/Plantilla/list`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const bodyBase = await respBase.text();
+    let plantillasBase = [];
+    try { plantillasBase = JSON.parse(bodyBase); } catch(e) { /* ignore */ }
+    if (!Array.isArray(plantillasBase)) plantillasBase = plantillasBase?.data || plantillasBase?.items || [];
+
+    res.json({
+      ok: true,
+      emisorId,
+      plantillasEmisorTotal: plantillasEmisor.length,
+      plantillasActivas: plantillasActivas.length,
+      plantillasEmisor,
+      plantillasActivas,
+      tiposPlantilla,
+      plantillasBase,
+      raw: { all: bodyAll.substring(0, 2000), activas: bodyActivas.substring(0, 2000), tipos: bodyTipos.substring(0, 1000), base: bodyBase.substring(0, 1000) }
+    });
+  } catch(e) {
+    res.json({ ok: false, error: e.message, stack: e.stack?.substring(0, 500) });
+  }
+});
+
+// Activar plantillas SF: activa todas las plantillas inactivas del emisor para el tipo de DTE dado
+app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa  = empresas[req.params.empresa_id];
+  const sfConf   = empresa?.simplefactura || {};
+  if (!sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = sfConf.username;
+  const tiposDte = req.body?.tipos_dte || [33, 34]; // por defecto activa tipos 33 y 34
+
+  try {
+    const token = await sfGetToken(email, sfConf.password);
+    const nombreSucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
+    await sfGetSucursalId(email, sfConf.password, nombreSucursal);
+    const emisorId = sfTokenCache[email]?.emisorId || null;
+    if (!emisorId) return res.status(400).json({ error: 'No se pudo obtener emisorId de SF' });
+
+    // Obtener TODAS las plantillas del emisor (activas e inactivas)
+    const respAll = await fetch(`${SF_BASE}/PlantillaEmisor/list/filter?EmisorId=${emisorId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    let plantillas = [];
+    try { plantillas = JSON.parse(await respAll.text()); } catch(e) { plantillas = []; }
+    if (!Array.isArray(plantillas)) plantillas = plantillas?.data || plantillas?.items || [];
+
+    const resultados = [];
+    // Intentar activar cada plantilla inactiva que coincida con los tipos DTE pedidos
+    for (const p of plantillas) {
+      const codDte = p.codigoTipoDte || p.CodigoTipoDte || p.tipoDte || p.TipoDte;
+      const activo  = p.activo !== undefined ? p.activo : p.Activo;
+      const pid     = p.plantillaEmisorId || p.PlantillaEmisorId;
+      const tpid    = p.tipoPlantillaId  || p.TipoPlantillaId;
+      const nombre  = p.nombrePlantilla  || p.NombrePlantilla || '';
+      if (!tiposDte.includes(parseInt(codDte))) continue;
+      if (activo === true) { resultados.push({ plantillaEmisorId: pid, nombre, codDte, resultado: 'ya activa' }); continue; }
+      // Intentar activar
+      const body = JSON.stringify({ plantillaEmisorId: pid, emisorId, tipoPlantillaId: tpid, activo: true, nombrePlantilla: nombre });
+      const r = await fetch(`${SF_BASE}/PlantillaEmisor/activate`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body
+      });
+      const rBody = await r.text();
+      resultados.push({ plantillaEmisorId: pid, nombre, codDte, http: r.status, respuesta: rBody.substring(0, 300) });
+    }
+
+    // Si no hay plantillas del emisor, intentar asignar desde plantillas globales
+    if (plantillas.length === 0) {
+      // Obtener plantillas globales
+      const respBase = await fetch(`${SF_BASE}/Plantilla/list`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      let basePlantillas = [];
+      try { basePlantillas = JSON.parse(await respBase.text()); } catch(e) { basePlantillas = []; }
+      if (!Array.isArray(basePlantillas)) basePlantillas = basePlantillas?.data || basePlantillas?.items || [];
+
+      for (const bp of basePlantillas) {
+        const codDte = bp.codigoTipoDte || bp.CodigoTipoDte || bp.tipoDte;
+        const bpid   = bp.plantillaId   || bp.PlantillaId || bp.id;
+        if (!tiposDte.includes(parseInt(codDte))) continue;
+        const body = JSON.stringify({ emisorId, tipoPlantillaId: bpid, activo: true });
+        const r = await fetch(`${SF_BASE}/PlantillaEmisor/assign`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body
+        });
+        const rBody = await r.text();
+        resultados.push({ tipo: 'assign', plantillaId: bpid, codDte, http: r.status, respuesta: rBody.substring(0, 300) });
+      }
+    }
+
+    res.json({ ok: true, emisorId, plantillasEncontradas: plantillas.length, resultados });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // Diagnóstico: muestra los claims del JWT de SimpleFactura (útil para depurar solicitudString)
 app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');

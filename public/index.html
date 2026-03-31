@@ -53,6 +53,8 @@ a { color: var(--blue); text-decoration: none; }
 .btn-secondary { background: var(--bg2); color: var(--txt); border: 1px solid var(--card-b); }
 .btn-secondary:hover { background: var(--card-hover); }
 .btn-danger { background: var(--red); color: white; }
+.btn-warning { background: #e8a000; color: #0a0e1a; }
+.btn-warning:hover { background: #ffb800; transform: translateY(-1px); }
 .btn-sm { padding:8px 14px; font-size:12px; }
 .btn-xs { padding:4px 10px; font-size:11px; border-radius:6px; }
 .btn-icon { padding:8px; border-radius:8px; background:transparent; border:1px solid var(--card-b); color:var(--txt2); cursor:pointer; }
@@ -1515,6 +1517,67 @@ async function testSF(empresaId) {
   }
 }
 
+async function diagnosticoPlantillas(empresaId) {
+  const resultEl = document.getElementById(`sf-plantillas-result-${empresaId}`);
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '⏳ Consultando plantillas en SimpleFactura...';
+  resultEl.style.color = 'var(--txt2)';
+  await saveConfig();
+  const data = await apiFetch(`/api/facturacion/diagnostico-plantillas/${empresaId}`);
+  if (!data?.ok) {
+    resultEl.innerHTML = `<span style="color:var(--red)">❌ ${data?.error || 'Error desconocido'}</span>`;
+    return;
+  }
+  const { emisorId, plantillasEmisor, plantillasActivas } = data;
+  let html = `<strong>EmisorId:</strong> ${emisorId}<br>`;
+  html += `<strong>Plantillas del emisor:</strong> ${plantillasEmisor?.length || 0} total, ${plantillasActivas?.length || 0} activas<br>`;
+  if (plantillasEmisor?.length > 0) {
+    html += '<table style="font-size:12px;border-collapse:collapse;margin-top:6px;width:100%">';
+    html += '<tr style="background:var(--surface2)"><th style="padding:3px 6px;border:1px solid var(--border)">Nombre</th><th style="padding:3px 6px;border:1px solid var(--border)">Tipo DTE</th><th style="padding:3px 6px;border:1px solid var(--border)">Activa</th></tr>';
+    for (const p of plantillasEmisor) {
+      const nombre = p.nombrePlantilla || p.NombrePlantilla || '-';
+      const dte    = p.codigoTipoDte  || p.CodigoTipoDte  || p.tipoDte || '-';
+      const activa = (p.activo !== undefined ? p.activo : p.Activo) ? '✅ Sí' : '❌ No';
+      html += `<tr><td style="padding:3px 6px;border:1px solid var(--border)">${nombre}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center">${dte}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center">${activa}</td></tr>`;
+    }
+    html += '</table>';
+    const hayInactivas = plantillasEmisor.some(p => !(p.activo !== undefined ? p.activo : p.Activo));
+    if (hayInactivas) html += `<br><em style="color:var(--yellow)">⚠️ Hay plantillas inactivas. Usa "Activar Plantillas" para habilitarlas.</em>`;
+  } else {
+    html += `<em style="color:var(--yellow)">⚠️ No se encontraron plantillas para este emisor. Plantillas base disponibles: ${data.plantillasBase?.length || 0}</em>`;
+  }
+  resultEl.innerHTML = html;
+}
+
+async function activarPlantillas(empresaId) {
+  const resultEl = document.getElementById(`sf-plantillas-result-${empresaId}`);
+  if (!confirm('¿Activar/asignar plantillas para tipos DTE 33 y 34 (Facturas Afecta y Exenta) en SimpleFactura?')) return;
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '⏳ Activando plantillas...';
+  await saveConfig();
+  const data = await apiFetch(`/api/facturacion/activar-plantillas/${empresaId}`, {
+    method: 'POST',
+    body: JSON.stringify({ tipos_dte: [33, 34, 39, 41] })
+  });
+  if (!data?.ok) {
+    resultEl.innerHTML = `<span style="color:var(--red)">❌ ${data?.error || 'Error'}</span>`;
+    return;
+  }
+  const { resultados, plantillasEncontradas } = data;
+  let html = `<strong>Plantillas encontradas:</strong> ${plantillasEncontradas}<br>`;
+  if (resultados?.length > 0) {
+    html += '<ul style="margin:6px 0;padding-left:18px;font-size:12px">';
+    for (const r of resultados) {
+      const ok = r.resultado === 'ya activa' || (r.http >= 200 && r.http < 300);
+      html += `<li style="color:${ok ? 'var(--green)' : 'var(--red)'}">${r.nombre || r.tipo || 'Plantilla'} (DTE ${r.codDte}): ${r.resultado || 'HTTP ' + r.http + ' — ' + (r.respuesta || '').substring(0, 80)}</li>`;
+    }
+    html += '</ul>';
+  } else {
+    html += '<em style="color:var(--yellow)">Sin plantillas para procesar. Es posible que deban configurarse manualmente en SimpleFactura.</em>';
+  }
+  resultEl.innerHTML = html;
+}
+
 function exportarCSVLote(loteId) {
   window.open(`/api/facturacion/exportar-csv/${loteId}?token=${TOKEN}`, '_blank');
 }
@@ -1751,9 +1814,14 @@ function renderConfig() {
         </div>
       </div>
       <div style="margin-top:10px;">
-        <button class="btn btn-secondary btn-sm" onclick="testSF('${id}')">🔌 Probar conexión SimpleFactura</button>
+        <button class="btn btn-secondary btn-sm" onclick="testSF('${id}')">🔌 Probar conexión SF</button>
         <span id="sf-test-result-${id}" style="margin-left:10px;font-size:13px;"></span>
       </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="diagnosticoPlantillas('${id}')">🔍 Diagnóstico Plantillas</button>
+        <button class="btn btn-warning btn-sm" onclick="activarPlantillas('${id}')">⚡ Activar Plantillas</button>
+      </div>
+      <div id="sf-plantillas-result-${id}" style="margin-top:8px;font-size:12px;line-height:1.5;padding:8px;background:var(--surface2);border-radius:6px;display:none;border:1px solid var(--border)"></div>
     </div>
   `).join('');
 }

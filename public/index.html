@@ -343,6 +343,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="card-header">
             <h3 id="mov-count">Movimientos</h3>
             <div class="card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="reclasificarMovimientos()" title="Re-asigna el tipo DTE a cada movimiento según la configuración de empresa (34/41)">🔄 Reclasificar DTEs</button>
               <button class="btn btn-secondary btn-sm" onclick="loadMovimientos()">Actualizar</button>
             </div>
           </div>
@@ -1173,6 +1174,20 @@ async function enviarMovimientos(empresaId, banco, movimientos, resultId) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MOVIMIENTOS
 // ══════════════════════════════════════════════════════════════════════════════
+async function reclasificarMovimientos() {
+  if (!confirm('¿Re-clasificar todos los movimientos según la configuración de tipo DTE de cada empresa?\n\nEsto actualizará el tipo DTE (Factura/Boleta) de todos los movimientos pendientes y listos.')) return;
+  const empId = getEmpresaId();
+  let url = '/api/movimientos/reclasificar';
+  if (empId) url += `?empresa_id=${empId}`;
+  const data = await apiFetch(url, { method: 'POST' });
+  if (data?.ok) {
+    showToast(`✅ ${data.reclasificados} movimientos reclasificados`, 'success');
+    await loadMovimientos();
+  } else {
+    showToast('Error al reclasificar: ' + (data?.error || 'desconocido'), 'error');
+  }
+}
+
 async function loadMovimientos() {
   const empId = getEmpresaId();
   let url = '/api/movimientos?limit=500';

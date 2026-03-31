@@ -1441,12 +1441,12 @@ async function emitirLote(loteId) {
   showToast('Enviando a SimpleFactura...', 'info');
   const data = await apiFetch(`/api/facturacion/emitir/${loteId}`, { method: 'POST' });
   if (data?.ok) {
-    showToast('¡Lote emitido correctamente en SimpleFactura!', 'success');
+    showToast(`✅ ${data.mensaje || 'Lote emitido en SimpleFactura'}`, 'success', 6000);
     loadLotes();
   } else {
     const msg = data?.mensaje || data?.error || 'Error al emitir';
-    showToast(`Error SimpleFactura: ${msg}`, 'error', 8000);
-    if (data?.estado === 'error') loadLotes(); // refresh to show error state
+    showToast(`Error SimpleFactura: ${msg}`, 'error', 10000);
+    loadLotes(); // refresh to show error state
   }
 }
 

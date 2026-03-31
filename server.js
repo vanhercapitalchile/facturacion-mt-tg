@@ -839,23 +839,34 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const csvContent = buildSfCsv(movs, empresa);
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
 
-    // 3. Subir CSV a /importacion/facturarcsv como multipart form-data
+    // 3. Subir CSV — URL correcta según Swagger: /api/FacturacionMasiva/importacion/facturarcsv
     const formData = new FormData();
-    formData.append('file', new Blob([csvContent], { type: 'text/csv' }), csvFilename);
+    formData.append('file', new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), csvFilename);
 
-    const uploadResp = await fetch(`${SF_BASE}/importacion/facturarcsv`, {
+    const uploadResp = await fetch(`${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData
     });
 
     const rawText = await uploadResp.text();
-    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 400)}`);
+    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 600)}`);
     let data;
     try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText }; }
 
-    const loteEstado = (uploadResp.ok && data?.status === 200) ? 'emitido' : 'error';
-    const mensaje = data?.message || data?.errors || data?.raw || JSON.stringify(data);
+    // Éxito: HTTP 2xx Y (sin errores en respuesta O tieneErrores===false)
+    const tieneErrores = data?.data?.tieneErrores;
+    const loteEstado = uploadResp.ok && tieneErrores !== true ? 'emitido' : 'error';
+    // Mensaje legible
+    let mensaje;
+    if (uploadResp.ok && data?.data) {
+      const d = data.data;
+      mensaje = `Procesado: ${d.cantidadDte || 0} DTEs, ${d.cantidadRegistros || 0} registros, $${(d.montoTotal || 0).toLocaleString('es-CL')}`;
+      if (d.tieneErrores) mensaje += ' (con errores — revisar en SimpleFactura)';
+    } else {
+      const errs = data?.errors;
+      mensaje = Array.isArray(errs) ? errs.join('. ') : (typeof errs === 'object' ? JSON.stringify(errs) : errs) || data?.message || data?.raw || JSON.stringify(data);
+    }
 
     // 4. Si exitoso, marcar movimientos como facturados
     if (loteEstado === 'emitido') {

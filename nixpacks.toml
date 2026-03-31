@@ -1,8 +1,2 @@
 [phases.setup]
 nixPkgs = ["python3", "gcc", "gnumake", "pkg-config"]
-
-[phases.install]
-cmds = ["npm install"]
-
-[start]
-cmd = "node server.js"

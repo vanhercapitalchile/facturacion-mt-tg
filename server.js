@@ -669,6 +669,13 @@ function buildMultipartBody(fileBuffer, fieldName, filename, mimeType, extraFiel
   return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
+// Decodifica el payload de un JWT de SimpleFactura (sin verificar firma)
+function sfDecodeJwt(token) {
+  try {
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+  } catch(e) { return {}; }
+}
+
 // Cache de tokens por empresa (email → { token, expiresAt })
 const sfTokenCache = {};
 
@@ -865,8 +872,28 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     // 3. Subir CSV — multipart manual (evita bugs de FormData+Blob en Node.js)
     const SF_UPLOAD_URL = `${SF_BASE}/FacturacionMasiva/importacion/facturarcsv`;
 
+    // Construir solicitudString desde el JWT (IdEmisor) o RUT de config
+    const buildSolicitudString = (tok) => {
+      const claims = sfDecodeJwt(tok);
+      console.log('[SF UPLOAD] JWT claims:', JSON.stringify(claims));
+      // SimpleFactura embebe el IdEmisor en el JWT bajo distintos nombres posibles
+      const idEmisor = claims.IdEmisor || claims.idEmisor || claims.EmisorId
+        || claims.emisorId || claims.IdEmpresa || claims.idEmpresa || null;
+      if (idEmisor) {
+        console.log('[SF UPLOAD] solicitudString via JWT IdEmisor:', idEmisor);
+        return JSON.stringify({ IdEmisor: idEmisor });
+      }
+      // Fallback: usar RUT del emisor configurado
+      const rut = rutParaSF(sfConfig.rut_emisor || '');
+      console.log('[SF UPLOAD] solicitudString via RUT emisor:', rut);
+      return JSON.stringify({ Rut: rut });
+    };
+
     const doUpload = async (tok) => {
-      const { body: mpBody, contentType: mpCT } = buildMultipartBody(csvBuffer, 'file', csvFilename, 'text/csv');
+      const solicitudString = buildSolicitudString(tok);
+      const { body: mpBody, contentType: mpCT } = buildMultipartBody(
+        csvBuffer, 'file', csvFilename, 'text/csv', { solicitudString }
+      );
       return fetch(SF_UPLOAD_URL, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${tok}`, 'Content-Type': mpCT },
@@ -937,6 +964,21 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   try {
     const token = await sfGetToken(email, empresa.simplefactura.password);
     res.json({ ok: true, mensaje: `Login exitoso — token activo y en caché para ${email}` });
+  } catch(e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Diagnóstico: muestra los claims del JWT de SimpleFactura (útil para depurar solicitudString)
+app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa = empresas[req.params.empresa_id];
+  if (!empresa?.simplefactura?.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
+  const email = empresa.simplefactura.username;
+  try {
+    const token = await sfGetToken(email, empresa.simplefactura.password);
+    const claims = sfDecodeJwt(token);
+    res.json({ ok: true, claims, tokenPreview: token.substring(0, 40) + '...' });
   } catch(e) {
     res.json({ ok: false, error: e.message });
   }

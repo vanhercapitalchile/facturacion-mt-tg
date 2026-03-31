@@ -649,18 +649,43 @@ async function sfLogin(email, password) {
   // Swagger: POST /api/Authentication/login
   // Body: { identifiers: { email }, password }
   // Response: { token: "JWT...", firstName, lastName, ... }
-  const r = await fetch(`${SF_BASE}/Authentication/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identifiers: { email }, password })
-  });
-  const raw = await r.text();
-  console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 300)}`);
-  let data;
-  try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
-  if (!r.ok || !data?.token) {
-    const errMsg = typeof data === 'object' ? JSON.stringify(data) : raw.substring(0, 300);
-    throw new Error(`Login fallido (HTTP ${r.status}): ${errMsg}`);
+  // Note: SimpleFactura blocks concurrent sessions. If "Sesión activa" error,
+  // we attempt a blind logout first using email as identifier, then retry.
+  const doLogin = async () => {
+    const r = await fetch(`${SF_BASE}/Authentication/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifiers: { email }, password })
+    });
+    const raw = await r.text();
+    console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 300)}`);
+    let data;
+    try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
+    return { ok: r.ok, data, status: r.status };
+  };
+
+  let { ok, data, status } = await doLogin();
+
+  // Si hay sesión activa, intentar logout forzado y reintentar
+  if (!ok && (data?.data === 'Sesión activa' || JSON.stringify(data?.errors || '').includes('activa'))) {
+    console.log('[SF LOGIN] Sesión activa detectada, intentando logout forzado...');
+    try {
+      await fetch(`${SF_BASE}/Authentication/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifiers: { email } })
+      });
+    } catch(e) { /* ignorar errores de logout */ }
+    // Esperar un momento y reintentar
+    await new Promise(r => setTimeout(r, 1500));
+    ({ ok, data, status } = await doLogin());
+  }
+
+  if (!ok || !data?.token) {
+    const errors = data?.errors;
+    const errDetail = Array.isArray(errors) ? errors.join('. ') : (typeof errors === 'object' ? JSON.stringify(errors) : errors);
+    const errMsg = errDetail || data?.message || data?.data || JSON.stringify(data);
+    throw new Error(`Login fallido (HTTP ${status}): ${errMsg}`);
   }
   return data.token;
 }

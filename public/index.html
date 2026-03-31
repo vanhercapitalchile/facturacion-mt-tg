@@ -1393,7 +1393,11 @@ async function testSF(empresaId) {
     resultEl.textContent = '✅ Conexión exitosa';
     resultEl.style.color = 'var(--green)';
   } else {
-    resultEl.textContent = `❌ ${data?.error || 'Sin respuesta'}`;
+    // Simplify error message for session conflicts
+    let errMsg = data?.error || 'Sin respuesta';
+    if (errMsg.includes('activa')) errMsg = '❌ Sesión activa en browser — cierra SimpleFactura en Chrome y reintenta';
+    else errMsg = `❌ ${errMsg}`;
+    resultEl.textContent = errMsg;
     resultEl.style.color = 'var(--red)';
   }
 }

@@ -379,12 +379,14 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
 // ── Movimientos (transferencias de cartola) ──────────────────────────────────
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  const { estado, fecha_desde, fecha_hasta, lote_id, limit: lim, offset: off } = req.query;
+  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off } = req.query;
   let sql = 'SELECT * FROM movimientos WHERE 1=1';
   const params = [];
 
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
   if (estado) { sql += ' AND estado = ?'; params.push(estado); }
+  if (tipo_dte) { sql += ' AND tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
+  if (banco) { sql += ' AND banco_cartola = ?'; params.push(banco); }
   if (fecha_desde) { sql += ' AND fecha >= ?'; params.push(fecha_desde); }
   if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
   if (lote_id) { sql += ' AND lote_id = ?'; params.push(lote_id); }
@@ -725,38 +727,89 @@ async function sfLogin(email, password) {
   return sfGetToken(email, password);
 }
 
-function buildSfCsv(movs, empresa) {
-  const headers = [
-    'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
-    'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
-    'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
-    'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
-    'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
-    'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
-    'ID Transferencia','Cartola','Id Compuesto'
-  ];
-  const today = todayCL().split('-').reverse().join('-'); // DD-MM-YYYY
-  const rows = movs.map((m, i) => {
-    const fechaEmision = m.fecha_emision || today;
+// ── CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ───
+const SF_CSV_HEADERS = [
+  'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
+  'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
+  'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
+  'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
+  'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
+  'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
+  'ID Transferencia','Cartola','Id Compuesto'
+];
+
+function rutParaSF(rut) {
+  // Formato SimpleFactura: sin puntos, con guión (ej: 77653656-3)
+  if (!rut) return '';
+  return rut.replace(/\./g, ''); // quitar puntos, mantener guión
+}
+
+function fechaParaSF(fechaISO) {
+  // DB guarda YYYY-MM-DD, SimpleFactura espera DD-MM-YYYY
+  if (!fechaISO) return todayCL().split('-').reverse().join('-');
+  const parts = fechaISO.split('-');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return fechaISO; // si ya está en otro formato, devolver tal cual
+}
+
+function escaparCsvSF(val) {
+  const s = String(val ?? '');
+  // Envolver en comillas si contiene punto y coma o comillas
+  if (s.includes(';') || s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function buildSfCsvRows(movs, empresa) {
+  return movs.map((m, i) => {
+    const fecha = fechaParaSF(m.fecha);
+    const correoRecep = m.email_receptor || empresa.email_facturacion || '';
+    // campo Correo (col 38): solo si el receptor tiene email propio
+    const correoExtra = m.email_receptor || '';
     return [
-      i + 1, m.tipo_dte || 34, 1, fechaEmision, fechaEmision,
-      normalizeRut(m.rut), (m.giro || '').substring(0, 80), 'NO INFORMADO',
-      m.email_receptor || empresa.email_facturacion || '',
-      (m.direccion || '').substring(0, 100), m.comuna || '', m.ciudad || '',
-      m.razon_social || '', '', '', '',
-      '', '', '', '', '',
-      '', m.nombre_item || 'Venta paquete activo digital',
+      i + 1,
+      m.tipo_dte || 34,
+      1,                        // FmaPago: contado
+      fecha,                    // FechaEmision DD-MM-YYYY
+      fecha,                    // Vencimiento (igual a emisión)
+      rutParaSF(m.rut),         // RutRecep sin puntos con guión
+      (m.giro || '').substring(0, 80),
+      'NO INFORMADO',           // Contacto
+      correoRecep,              // CorreoRecep
+      (m.direccion || '').substring(0, 100),
+      m.comuna || '',
+      m.ciudad || '',
+      m.razon_social || '',
+      '', '', '',               // DirDest, CmnaDest, CiudadDest
+      '', '', '', '', '',       // Referencias (vacías)
+      '',                       // CodigoProducto
+      m.nombre_item || 'Venta paquete activo digital',
       m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
-      1, m.monto_total || 0, 'UNID', 0, 0, 0,
-      1, m.monto_total || 0,  // IndicadorExento=1 para tipos 34 y 41 (ambos exentos)
-      '', '', '', '', '', '',
-      m.email_receptor || '',
-      m.id_transferencia || '', m.banco_cartola || '', m.id_compuesto || ''
+      1,                        // CantidadProducto
+      m.monto_total || 0,       // PrecioProducto
+      'UNID',
+      0, 0, 0,                  // Descuento, Recargo, RebajaAvaluo
+      1,                        // IndicadorExento=1 (tipos 34 y 41 son AMBOS exentos)
+      m.monto_total || 0,       // TotalProducto
+      '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
+      correoExtra,              // Correo (col 38)
+      m.id_transferencia || '',
+      m.banco_cartola || '',
+      m.id_compuesto || ''
     ];
   });
-  let csv = headers.join(';') + '\n';
-  for (const row of rows) csv += row.join(';') + '\n';
-  return '\uFEFF' + csv; // BOM para compatibilidad
+}
+
+function buildSfCsvContent(movs, empresa) {
+  let csv = SF_CSV_HEADERS.join(';') + '\n';
+  for (const row of buildSfCsvRows(movs, empresa)) {
+    csv += row.map(escaparCsvSF).join(';') + '\n';
+  }
+  return '\uFEFF' + csv; // BOM UTF-8 para compatibilidad Excel/SimpleFactura
+}
+
+// Alias para compatibilidad con el endpoint de emisión vía API
+function buildSfCsv(movs, empresa) {
+  return buildSfCsvContent(movs, empresa);
 }
 
 // Emit via SimpleFactura API (CSV upload)
@@ -859,43 +912,10 @@ app.get('/api/facturacion/exportar-csv/:lote_id', requireAuth, (req, res) => {
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
   const empresa = empresas[lote?.empresa_id] || {};
 
-  // Build CSV in SimpleFactura format
-  const headers = [
-    'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
-    'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
-    'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
-    'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
-    'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
-    'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
-    'ID Transferencia','Cartola','Id Compuesto'
-  ];
-
-  const today = todayCL().split('-').reverse().join('-'); // DD-MM-YYYY
-  const rows = movs.map((m, i) => {
-    const fechaEmision = m.fecha_emision || today;
-    return [
-      i + 1, m.tipo_dte || 34, 1, fechaEmision, fechaEmision,
-      normalizeRut(m.rut), (m.giro || '').substring(0, 80), 'NO INFORMADO',
-      m.email_receptor || empresa.email_facturacion || '',
-      (m.direccion || '').substring(0, 100), m.comuna || '', m.ciudad || '',
-      m.razon_social || '', '', '', '',
-      '', '', '', '', '',
-      '', m.nombre_item || 'Venta paquete activo digital',
-      m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
-      1, m.monto_total || 0, 'UNID', 0, 0, 0,
-      m.tipo_dte === 34 ? 1 : 0, m.monto_total || 0,
-      '', '', '', '', '', '',
-      m.email_receptor || '',
-      m.id_transferencia || '', m.banco_cartola || '', m.id_compuesto || ''
-    ];
-  });
-
-  let csv = headers.join(';') + '\n';
-  for (const row of rows) csv += row.join(';') + '\n';
-
+  const csv = buildSfCsvContent(movs, empresa);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="Facturacion_${lote?.empresa_id}_${loteId}.csv"`);
-  res.send('\uFEFF' + csv); // BOM for Excel
+  res.send(csv);
 });
 
 // Export movimientos as CSV (without lote - for manual selection)
@@ -908,42 +928,10 @@ app.post('/api/facturacion/exportar-seleccion', requireAuth, (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[empresaId] || {};
 
-  const headers = [
-    'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
-    'DirRecep','CmnaRecep','CiudadRecep','RazonSocialRecep','DirDest','CmnaDest','CiudadDest',
-    'ReferenciaTpoDocRef','ReferenciaFolioRef','ReferenciaFchRef','ReferenciaRazonRef','ReferenciaCodigo',
-    'CodigoProducto','NombreProducto','DescripcionProducto','CantidadProducto','PrecioProducto',
-    'UnidadMedidaProducto','DescuentoProducto','RecargoProducto','RebajaAvaluo','IndicadorExento',
-    'TotalProducto','GlosaDR','TpoMov','TpoValor','ValorDR','ValorOtrMnda','IndExeDR','Correo',
-    'ID Transferencia','Cartola','Id Compuesto'
-  ];
-
-  const today = todayCL().split('-').reverse().join('-');
-  const rows = movs.map((m, i) => {
-    const fechaEmision = m.fecha_emision || today;
-    return [
-      i + 1, m.tipo_dte || 34, 1, fechaEmision, fechaEmision,
-      normalizeRut(m.rut), (m.giro || '').substring(0, 80), 'NO INFORMADO',
-      m.email_receptor || empresa.email_facturacion || '',
-      (m.direccion || '').substring(0, 100), m.comuna || '', m.ciudad || '',
-      m.razon_social || '', '', '', '',
-      '', '', '', '', '',
-      '', m.nombre_item || 'Venta paquete activo digital',
-      m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
-      1, m.monto_total || 0, 'UNID', 0, 0, 0,
-      m.tipo_dte === 34 ? 1 : 0, m.monto_total || 0,
-      '', '', '', '', '', '',
-      m.email_receptor || '',
-      m.id_transferencia || '', m.banco_cartola || '', m.id_compuesto || ''
-    ];
-  });
-
-  let csv = headers.join(';') + '\n';
-  for (const row of rows) csv += row.join(';') + '\n';
-
+  const csv = buildSfCsvContent(movs, empresa);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="Facturacion_${empresaId}_seleccion.csv"`);
-  res.send('\uFEFF' + csv);
+  res.send(csv);
 });
 
 // ── Dashboard stats ──────────────────────────────────────────────────────────

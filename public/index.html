@@ -375,8 +375,18 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="card-header">
             <h3>Movimientos listos para facturar</h3>
             <div class="card-actions">
-              <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote de facturación</button>
+              <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote seleccionados</button>
+              <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(34)" title="Crea un lote solo con Facturas Exentas (tipo 34)">Lote solo Facturas</button>
+              <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(41)" title="Crea un lote solo con Boletas Exentas (tipo 41)">Lote solo Boletas</button>
             </div>
+          </div>
+          <!-- Filtros por tipo -->
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
+            <button id="fact-filter-all"   class="btn btn-primary btn-sm"   onclick="setFactFilter('all')">Todos</button>
+            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas (34)</button>
+            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas (41)</button>
+            <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
             <table>
@@ -590,8 +600,23 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       </div>
       <div class="view" id="emp-view-facturacion">
         <div class="topbar"><h1>Facturar</h1></div>
-        <div class="card"><div class="card-header"><h3>Movimientos listos</h3><div class="card-actions"><button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote</button></div></div>
-        <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" onchange="toggleSelectAllFact(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-fact-tbody"></tbody></table></div></div>
+        <div class="card">
+          <div class="card-header"><h3>Movimientos listos</h3>
+            <div class="card-actions">
+              <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote seleccionados</button>
+              <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(34)">Lote solo Facturas</button>
+              <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(41)">Lote solo Boletas</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
+            <button id="fact-filter-all"   class="btn btn-primary btn-sm"   onclick="setFactFilter('all')">Todos</button>
+            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas (34)</button>
+            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas (41)</button>
+            <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
+          </div>
+          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" id="fact-select-all" onchange="toggleSelectAllFact(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-fact-tbody"></tbody></table></div>
+        </div>
       </div>
       <div class="view" id="emp-view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
@@ -1287,15 +1312,40 @@ async function saveMovimiento(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 // FACTURACION
 // ══════════════════════════════════════════════════════════════════════════════
+// Estado del filtro de facturación
+let FACT_FILTER = 'all'; // 'all' | 34 | 41
+let ALL_FACT_MOVS = [];
+
 async function loadFacturacion() {
   const empId = getEmpresaId();
   let url = '/api/movimientos?estado=listo&limit=500';
   if (empId) url += `&empresa_id=${empId}`;
-  const movs = await apiFetch(url) || [];
+  ALL_FACT_MOVS = await apiFetch(url) || [];
+  renderFacturacionTable();
+}
 
+function setFactFilter(tipo) {
+  FACT_FILTER = tipo;
+  // Actualizar estilos de botones
+  ['all', 34, 41].forEach(t => {
+    const btn = document.getElementById(`fact-filter-${t === 'all' ? 'all' : t}`);
+    if (!btn) return;
+    btn.className = t === tipo ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderFacturacionTable();
+}
+
+function renderFacturacionTable() {
+  const movs = FACT_FILTER === 'all' ? ALL_FACT_MOVS : ALL_FACT_MOVS.filter(m => m.tipo_dte === FACT_FILTER);
   const tbody = document.getElementById(isAdmin() ? 'fact-tbody' : 'emp-fact-tbody');
+  const label = document.getElementById('fact-count-label');
+  if (label) {
+    const total34 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 34).length;
+    const total41 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 41).length;
+    label.textContent = `${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
+  }
   if (!movs.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos listos para facturar</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
     return;
   }
   tbody.innerHTML = movs.map(m => `
@@ -1324,6 +1374,24 @@ async function crearLoteFacturacion() {
   });
   if (data?.ok) {
     showToast(`Lote creado: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
+    if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
+  } else {
+    showToast(data?.error || 'Error al crear lote', 'error');
+  }
+}
+
+async function crearLotePorTipo(tipoDte) {
+  const label = tipoDte === 34 ? 'Facturas Exentas (34)' : 'Boletas Exentas (41)';
+  const ids = ALL_FACT_MOVS.filter(m => m.tipo_dte === tipoDte).map(m => m.id);
+  if (!ids.length) return showToast(`No hay ${label} listas para facturar`, 'error');
+  if (!confirm(`Crear lote con ${ids.length} ${label}?`)) return;
+  const empId = getEmpresaId();
+  const data = await apiFetch('/api/facturacion/crear-lote', {
+    method: 'POST',
+    body: JSON.stringify({ empresa_id: empId, movimiento_ids: ids })
+  });
+  if (data?.ok) {
+    showToast(`Lote ${label}: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
     if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
   } else {
     showToast(data?.error || 'Error al crear lote', 'error');

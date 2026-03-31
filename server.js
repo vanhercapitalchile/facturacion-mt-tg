@@ -826,11 +826,15 @@ async function sfGetSucursalId(email, password, nombreSucursal) {
 
     if (!match) throw new Error('No se encontraron sucursales en SimpleFactura');
 
-    const uuid = match.sucursalId || match.SucursalId;
-    console.log(`[SF SUCURSAL] Usando sucursalId: ${uuid} (nombre: "${match.nombre || match.Nombre}")`);
+    const uuid     = match.sucursalId || match.SucursalId;
+    const emisorId = match.emisorId   || match.EmisorId || null;
+    console.log(`[SF SUCURSAL] Usando sucursalId: ${uuid}, emisorId: ${emisorId} (nombre: "${match.nombre || match.Nombre}")`);
 
-    // Cachear junto al token
-    if (sfTokenCache[email]) sfTokenCache[email].sucursalId = uuid;
+    // Cachear ambos junto al token
+    if (sfTokenCache[email]) {
+      sfTokenCache[email].sucursalId = uuid;
+      sfTokenCache[email].emisorId   = emisorId;
+    }
 
     return uuid;
   } catch (err) {
@@ -990,11 +994,13 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
       let obj;
       if (sucursalUUID) {
-        // Estructura correcta: sucursalId UUID (descubierto via /api/Sucursal/list/filter)
+        // Incluir idEmisor si está disponible — SF lo necesita para encontrar las plantillas activas
+        const emisorId = sfTokenCache[sfConfig.username]?.emisorId || null;
         obj = { sucursalId: sucursalUUID };
-        console.log('[SF UPLOAD] Usando sucursalId UUID:', sucursalUUID);
+        if (emisorId) obj.idEmisor = emisorId;
+        console.log('[SF UPLOAD] solicitudString obj:', JSON.stringify(obj));
       } else {
-        // Fallback: Credenciales con RUT (puede fallar si SF usa lookup por UUID)
+        // Fallback: Credenciales con RUT
         const rutRaw   = sfConfig.rut_emisor || '';
         const rutCreds = rutParaSF(rutRaw);
         obj = { Credenciales: { RutEmisor: rutCreds, NombreSucursal: nombreSucursal } };
@@ -1085,15 +1091,21 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
     const nombreSucursal = empresa.simplefactura?.nombre_sucursal || 'Casa Matriz';
     // También obtener sucursalId UUID para diagnóstico
     const sucursalUUID = await sfGetSucursalId(email, empresa.simplefactura.password, nombreSucursal);
-    const solicitudString = sucursalUUID
-      ? JSON.stringify({ sucursalId: sucursalUUID })
-      : JSON.stringify({ Credenciales: { RutEmisor: rutParaSF(empresa.simplefactura?.rut_emisor || ''), NombreSucursal: nombreSucursal } });
+    const emisorId = sfTokenCache[email]?.emisorId || null;
+    let solicitudObj;
+    if (sucursalUUID) {
+      solicitudObj = { sucursalId: sucursalUUID };
+      if (emisorId) solicitudObj.idEmisor = emisorId;
+    } else {
+      solicitudObj = { Credenciales: { RutEmisor: rutParaSF(empresa.simplefactura?.rut_emisor || ''), NombreSucursal: nombreSucursal } };
+    }
     res.json({
       ok: true,
       mensaje: `Login exitoso para ${email}`,
       jwtClaims: claims,
       sucursalUUID: sucursalUUID || 'no encontrado',
-      solicitudStringQueSeEnviara: solicitudString
+      emisorId: emisorId || 'no encontrado',
+      solicitudStringQueSeEnviara: JSON.stringify(solicitudObj)
     });
   } catch(e) {
     res.json({ ok: false, error: e.message });

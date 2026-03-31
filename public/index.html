@@ -916,101 +916,84 @@ function parseCartolaData(workbook, banco) {
       });
     }
   } else if (banco === 'BCI') {
-    // BCI .xls format: columns appear to be structured differently
-    // From analysis: date, id, rut, banco, cuenta, monto, estado, nombre, etc.
+    // BCI .xls real format (verified from file):
+    // Header row: Fecha | ID Transferencia | Rut Origen/Destino | Banco Origen/Destino | Cuenta Origen/Destino | Monto $ | Estado | Nombre Destino/Origen | Mensaje Destino
+    // Data rows: each row has ALL fields including date in col 0
     const ws = workbook.Sheets[workbook.SheetNames[0]];
     const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    // BCI format varies - let's detect structure
-    // Common BCI pattern: each row has date, transaction ID, RUT, bank, account, amount, status, name
-    let currentDate = '';
-
-    for (let i = 0; i < data.length; i++) {
+    // Find header row (look for "Fecha" or "ID Transferencia")
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(20, data.length); i++) {
       const row = data[i];
-      if (!row || row.length < 2) continue;
+      const rowStr = row.map(c => String(c || '').trim()).join('|');
+      if (rowStr.includes('Fecha') && rowStr.includes('ID')) { headerIdx = i; break; }
+      if (rowStr.includes('ID Transferencia')) { headerIdx = i; break; }
+    }
+    // If header not found, try to detect from first row that looks like data
+    const dataStart = headerIdx >= 0 ? headerIdx + 1 : 0;
 
-      // Check if first cell is a date (DD/MM/YYYY)
-      const firstCell = String(row[0] || '');
-      if (firstCell.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-        const [d, m, y] = firstCell.split('/');
-        currentDate = `${y}-${m}-${d}`;
-        continue;
-      }
+    for (let i = dataStart; i < data.length; i++) {
+      const row = data[i];
+      if (!row || row.length < 5) continue;
 
-      // Try to find transaction rows: ID, RUT, Banco, Cuenta, Monto, Estado, Nombre
-      // BCI cartola structure from analysis:
-      // Col 0: ID transferencia (numeric)
-      // Col 1: RUT (XX.XXX.XXX-X)
-      // Col 2: Banco origen
-      // Col 3: Cuenta origen
-      // Col 4: Monto
-      // Col 5: Estado (Recibidas)
-      // Col 6: Nombre
-
-      const col0 = String(row[0] || '').trim();
-      const col1 = String(row[1] || '').trim();
-
-      // If col0 is a long number and col1 looks like RUT
-      if (col0.match(/^\d{5,}$/) && col1.match(/\d+[\.\-]/)) {
-        const idTransf = col0;
-        const rut = col1.replace(/[.\-\s]/g, '');
-        const bancoOrigen = String(row[2] || '').trim();
-        const cuentaOrigen = String(row[3] || '').trim();
-        let monto = row[4];
-        if (typeof monto === 'string') monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
-        if (!monto || monto <= 0) continue;
-        const estado = String(row[5] || '').trim();
-        const nombre = String(row[6] || '').trim();
-
-        if (estado.toLowerCase().includes('recibida')) {
-          movimientos.push({
-            id_transferencia: idTransf,
-            fecha: currentDate,
-            monto, glosa: nombre,
-            rut, nombre_origen: nombre,
-            banco_origen: bancoOrigen || 'BCI',
-            cuenta_origen: cuentaOrigen
-          });
+      // Col 0: Fecha (DD/MM/YYYY string or Excel date serial)
+      let fechaRaw = row[0];
+      let fecha = '';
+      if (typeof fechaRaw === 'number') {
+        // Excel serial date
+        const d = XLSX.SSF.parse_date_code(fechaRaw);
+        if (d) fecha = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+      } else {
+        const fs = String(fechaRaw || '').trim();
+        if (fs.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+          const [dd, mm, yyyy] = fs.split('/');
+          fecha = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+        } else if (fs.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          fecha = fs;
         }
       }
-      // Alternative: some BCI exports have different column ordering
-      // Check if any column contains "Recibidas"
-      else {
-        let hasRecibidas = false;
-        let montoIdx = -1, rutIdx = -1, idIdx = -1, nombreIdx = -1;
-        for (let j = 0; j < row.length; j++) {
-          const cell = String(row[j] || '');
-          if (cell === 'Recibidas') hasRecibidas = true;
-          if (cell.match(/^\d{5,}$/) && idIdx === -1) idIdx = j;
-          if (cell.match(/^\d{1,2}\.\d{3}\.\d{3}[\-][0-9kK]$/)) rutIdx = j;
-          if (typeof row[j] === 'number' && row[j] > 1000) montoIdx = j;
-        }
+      if (!fecha) continue; // skip rows without a valid date
 
-        if (hasRecibidas && (idIdx >= 0 || montoIdx >= 0)) {
-          const idTransf = idIdx >= 0 ? String(row[idIdx]) : `B${i}`;
-          const rut = rutIdx >= 0 ? String(row[rutIdx]).replace(/[.\-\s]/g, '') : '';
-          let monto = montoIdx >= 0 ? row[montoIdx] : 0;
-          if (typeof monto === 'string') monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
-          if (!monto || monto <= 0) continue;
+      // Col 1: ID Transferencia
+      const idTransf = String(row[1] || '').trim();
+      if (!idTransf || idTransf === 'ID Transferencia') continue; // skip header
 
-          // Find name - usually longest string in row
-          let nombre = '';
-          for (let j = 0; j < row.length; j++) {
-            const cell = String(row[j] || '');
-            if (cell.length > nombre.length && cell !== 'Recibidas' && !cell.match(/^\d+$/) && !cell.match(/^\d+[\.\-]/)) {
-              nombre = cell;
-            }
-          }
+      // Col 2: RUT
+      const rutRaw = String(row[2] || '').trim();
+      const rut = rutRaw.replace(/[.\-\s]/g, '');
 
-          movimientos.push({
-            id_transferencia: idTransf,
-            fecha: currentDate,
-            monto, glosa: nombre, rut,
-            nombre_origen: nombre,
-            banco_origen: 'BCI', cuenta_origen: ''
-          });
-        }
+      // Col 3: Banco origen
+      const bancoOrigen = String(row[3] || '').trim();
+
+      // Col 4: Cuenta origen
+      const cuentaOrigen = String(row[4] || '').trim();
+
+      // Col 5: Monto
+      let monto = row[5];
+      if (typeof monto === 'string') {
+        // Chilean format: "1.892.000" → remove dots → 1892000
+        monto = parseFloat(monto.replace(/\./g, '').replace(',', '.').replace(/[$\s]/g, ''));
       }
+      if (!monto || monto <= 0) continue;
+
+      // Col 6: Estado
+      const estado = String(row[6] || '').trim();
+      if (!estado.toLowerCase().includes('recibida')) continue; // solo transferencias recibidas
+
+      // Col 7: Nombre
+      const nombre = String(row[7] || '').trim();
+
+      movimientos.push({
+        id_transferencia: idTransf,
+        fecha,
+        monto,
+        glosa: nombre,
+        rut,
+        nombre_origen: nombre,
+        banco_origen: bancoOrigen || 'BCI',
+        cuenta_origen: cuentaOrigen
+      });
     }
   }
 

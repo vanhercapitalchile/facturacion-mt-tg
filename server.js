@@ -456,10 +456,14 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // Try to match client
+        // Determine DTE type by RUT: RUT >= 76M → Factura Exenta (34), RUT < 76M → Boleta Exenta (41)
         if (rutNorm) {
+          const rutNum = parseInt(rutNorm);
+          tipoDte = rutNum >= 76000000 ? 34 : 41;
+
           const cliente = clienteMap.get(rutNorm);
           if (cliente) {
+            // Client found in DB: use full client data, mark as ready
             estado = 'listo';
             razonSocial = cliente.razon_social || '';
             giro = cliente.giro || '';
@@ -467,10 +471,12 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
             comuna = cliente.comuna || '';
             ciudad = cliente.ciudad || '';
             emailReceptor = cliente.email || '';
-            // Determine DTE type: empresa (RUT >= 50M) = tipo 34, persona = tipo 41
-            const rutNum = parseInt(rutNorm);
-            tipoDte = rutNum >= 50000000 ? 34 : 41;
+          } else if (tipoDte === 41) {
+            // Boleta sin cliente en BD: usar nombre de la cartola como identificador
+            razonSocial = (mov.nombre_origen || '').substring(0, 100) || 'SIN NOMBRE';
+            estado = 'listo';
           }
+          // Factura (34) sin cliente en BD: queda pendiente para revisión manual
         }
 
         const monto = parseFloat(mov.monto) || 0;
@@ -485,7 +491,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
           razonSocial, giro ? giro.substring(0, 80) : '', direccion ? direccion.substring(0, 100) : '',
           comuna, ciudad, emailReceptor,
           nombreItem, descripcionItem,
-          monto, tipoDte === 34 ? monto : 0, monto,
+          monto, tipoDte ? monto : 0, monto,  // ambos tipo 34 y 41 son exentos
           now, now, now
         );
         nuevos++;

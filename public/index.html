@@ -1401,6 +1401,21 @@ async function crearLotePorTipo(tipoDte) {
 // ══════════════════════════════════════════════════════════════════════════════
 // LOTES
 // ══════════════════════════════════════════════════════════════════════════════
+
+function loteErrorMsg(responseApiStr) {
+  if (!responseApiStr) return '';
+  try {
+    const r = JSON.parse(responseApiStr);
+    return r.message || r.error || '';
+  } catch(e) { return ''; }
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 async function loadLotes() {
   const empId = getEmpresaId();
   let url = '/api/facturacion/lotes';
@@ -1413,27 +1428,42 @@ async function loadLotes() {
     return;
   }
 
-  el.innerHTML = lotes.map(l => `
-    <div class="card">
+  el.innerHTML = lotes.map(l => {
+    const esError = l.estado === 'error';
+    const esPendiente = l.estado === 'pendiente';
+    const errMsg = loteErrorMsg(l.response_api);
+    return `
+    <div class="card" style="${esError ? 'border-left:4px solid var(--red);' : ''}">
       <div class="card-header">
         <h3>Lote ${l.lote_id}</h3>
         <div class="card-actions">
-          ${l.estado === 'pendiente' ? `
-            <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">Emitir vía API</button>
-            <button class="btn btn-secondary btn-sm" onclick="exportarCSVLote('${l.lote_id}')">Descargar CSV</button>
-            <button class="btn btn-secondary btn-sm" onclick="marcarExportadoLote('${l.lote_id}')">Marcar exportado</button>
+          ${esPendiente ? `
+            <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">&#x1F4E4; Emitir vía API</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportarCSVLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="marcarExportadoLote('${l.lote_id}')">&#x2705; Marcar exportado</button>
+          ` : esError ? `
+            ${estadoBadge('error')}
+            <button class="btn btn-sm" style="background:#e67e22;color:#fff;font-weight:600;"
+              onclick="emitirLote('${l.lote_id}')">&#x1F504; Re-intentar emisión</button>
+            <button class="btn btn-secondary btn-sm"
+              onclick="exportarCSVLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
           ` : estadoBadge(l.estado)}
         </div>
       </div>
-      <div style="display:flex;gap:24px;color:var(--txt2);font-size:13px;">
+      <div style="display:flex;gap:24px;color:var(--txt2);font-size:13px;flex-wrap:wrap;">
         <span><strong>${l.cantidad}</strong> documentos</span>
         <span><strong>${fmt(l.monto_total)}</strong> total</span>
         <span>Empresa: <strong>${l.empresa_id}</strong></span>
         <span>Método: <strong>${l.metodo}</strong></span>
         <span>Creado: ${l.created_at}</span>
       </div>
-    </div>
-  `).join('');
+      ${esError && errMsg ? `
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(231,76,60,.1);border-radius:6px;
+          font-size:12px;color:#e74c3c;border:1px solid rgba(231,76,60,.25);">
+          <strong>Error:</strong> ${escHtml(errMsg)}
+        </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 async function emitirLote(loteId) {

@@ -755,9 +755,9 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
     ({ ok, data, status } = await doLogin());
   }
 
-  // La API pública devuelve access_token; el backend viejo devolvía token
-  const accessToken = data?.access_token || data?.token;
-  if (!ok || !accessToken) {
+  // La API pública devuelve accessToken (camelCase); manejar variantes por si acaso
+  const accessToken = data?.accessToken || data?.access_token || data?.token;
+  if (!accessToken) {
     const errors = data?.errors;
     const errDetail = Array.isArray(errors) ? errors.join('. ') : (typeof errors === 'object' ? JSON.stringify(errors) : errors);
     const errMsg = errDetail || data?.message || data?.data || JSON.stringify(data);

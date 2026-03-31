@@ -1448,12 +1448,14 @@ async function loadLotes() {
   el.innerHTML = lotes.map(l => {
     const esError = l.estado === 'error';
     const esPendiente = l.estado === 'pendiente';
+    const esEmitido = l.estado === 'emitido' || l.estado === 'exportado';
     const errMsg = loteErrorMsg(l.response_api);
+    const borderColor = esError ? 'var(--red)' : esEmitido ? 'var(--green)' : 'var(--border)';
     return `
-    <div class="card" style="${esError ? 'border-left:4px solid var(--red);' : ''}">
+    <div class="card" style="border-left:4px solid ${borderColor};">
       <div class="card-header">
-        <h3>Lote ${l.lote_id}</h3>
-        <div class="card-actions">
+        <h3 style="font-size:15px;">Lote ${l.lote_id}</h3>
+        <div class="card-actions" style="gap:6px;display:flex;align-items:center;">
           ${esPendiente ? `
             <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">&#x1F4E4; Emitir vía API</button>
             <button class="btn btn-secondary btn-sm" onclick="exportarCSVLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
@@ -1467,20 +1469,97 @@ async function loadLotes() {
           ` : estadoBadge(l.estado)}
         </div>
       </div>
-      <div style="display:flex;gap:24px;color:var(--txt2);font-size:13px;flex-wrap:wrap;">
+      <div style="display:flex;gap:24px;color:var(--txt2);font-size:13px;flex-wrap:wrap;align-items:center;">
         <span><strong>${l.cantidad}</strong> documentos</span>
         <span><strong>${fmt(l.monto_total)}</strong> total</span>
         <span>Empresa: <strong>${l.empresa_id}</strong></span>
         <span>Método: <strong>${l.metodo}</strong></span>
         <span>Creado: ${l.created_at}</span>
+        <button class="btn btn-sm" style="margin-left:auto;padding:2px 10px;font-size:12px;background:var(--surface2);color:var(--txt2);border:1px solid var(--border);"
+          onclick="toggleLoteDetalle('${l.lote_id}', this)">&#x25BC; Ver detalle</button>
       </div>
       ${esError && errMsg ? `
         <div style="margin-top:10px;padding:8px 12px;background:rgba(231,76,60,.1);border-radius:6px;
           font-size:12px;color:#e74c3c;border:1px solid rgba(231,76,60,.25);">
           <strong>Error:</strong> ${escHtml(errMsg)}
         </div>` : ''}
+      ${esEmitido && l.response_api ? `
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(46,204,113,.1);border-radius:6px;
+          font-size:12px;color:#2ecc71;border:1px solid rgba(46,204,113,.25);">
+          ${escHtml(loteSuccessMsg(l.response_api))}
+        </div>` : ''}
+      <div id="lote-detalle-${l.lote_id}" style="display:none;margin-top:12px;"></div>
     </div>`;
   }).join('');
+}
+
+function loteSuccessMsg(raw) {
+  try { const d = JSON.parse(raw); return d?.mensaje || ''; } catch(e) { return ''; }
+}
+
+async function toggleLoteDetalle(loteId, btn) {
+  const container = document.getElementById('lote-detalle-' + loteId);
+  if (container.style.display !== 'none') {
+    container.style.display = 'none';
+    btn.innerHTML = '&#x25BC; Ver detalle';
+    return;
+  }
+  btn.innerHTML = '&#x25B2; Ocultar';
+  container.style.display = 'block';
+  container.innerHTML = '<div style="color:var(--txt3);font-size:13px;padding:8px;">Cargando movimientos...</div>';
+
+  const movs = await apiFetch(`/api/facturacion/lotes/${loteId}/movimientos`);
+  if (!movs || !movs.length) {
+    container.innerHTML = '<div style="color:var(--txt3);font-size:13px;padding:8px;">Sin movimientos en este lote</div>';
+    return;
+  }
+
+  let html = `<div style="overflow-x:auto;">
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:var(--surface2);text-align:left;">
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">#</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Fecha</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">RUT</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Razón Social</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Tipo DTE</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">Monto</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Banco</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Estado</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  movs.forEach((m, i) => {
+    const nombre = m.razon_social || m.nombre_origen || '—';
+    const estadoColor = m.estado === 'facturado' ? '#2ecc71' : m.estado === 'error' ? '#e74c3c' : 'var(--txt3)';
+    html += `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:5px 8px;color:var(--txt3);">${i + 1}</td>
+        <td style="padding:5px 8px;">${m.fecha || '—'}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:11px;">${m.rut || '—'}</td>
+        <td style="padding:5px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(nombre)}">${escHtml(nombre)}</td>
+        <td style="padding:5px 8px;">${tipoDteBadge(m.tipo_dte)}</td>
+        <td style="padding:5px 8px;text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
+        <td style="padding:5px 8px;"><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || '—'}</span></td>
+        <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}</td>
+      </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Resumen
+  const total = movs.reduce((s, m) => s + (m.monto_total || m.monto || 0), 0);
+  const tipos = {};
+  movs.forEach(m => { const t = m.tipo_dte || '?'; tipos[t] = (tipos[t] || 0) + 1; });
+  const tipoStr = Object.entries(tipos).map(([k,v]) => `${v}x DTE ${k}`).join(', ');
+  html = `<div style="padding:6px 0 8px;font-size:12px;color:var(--txt2);display:flex;gap:16px;flex-wrap:wrap;">
+    <span><strong>${movs.length}</strong> movimientos</span>
+    <span>Total: <strong>${fmt(total)}</strong></span>
+    <span>${tipoStr}</span>
+  </div>` + html;
+
+  container.innerHTML = html;
 }
 
 async function emitirLote(loteId) {

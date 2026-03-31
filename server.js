@@ -667,6 +667,17 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// Detalle de movimientos de un lote
+app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) => {
+  const movs = db.prepare(
+    `SELECT id, fecha, monto, monto_total, rut, razon_social, nombre_origen, tipo_dte,
+            estado, banco_cartola, email_receptor, giro, direccion, comuna, ciudad,
+            id_transferencia, id_compuesto
+     FROM movimientos WHERE lote_id = ? ORDER BY id`
+  ).all(req.params.lote_id);
+  res.json(movs);
+});
+
 // ── SimpleFactura helpers ─────────────────────────────────────────────────────
 // API pública documentada: https://documentacion.simplefactura.cl/
 const SF_API  = 'https://api.simplefactura.cl';

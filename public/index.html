@@ -1531,36 +1531,34 @@ async function diagnosticoPlantillas(empresaId) {
   const { emisorId, plantillasEmisor, plantillasActivas } = data;
   let html = `<strong>EmisorId:</strong> ${emisorId}<br>`;
   html += `<strong>Plantillas del emisor:</strong> ${plantillasEmisor?.length || 0} total, ${plantillasActivas?.length || 0} activas<br>`;
-  // Helper: extraer campo de DTE con soporte para estructura anidada SF
-  function getDteCod(p) {
-    return p.codigoTipoDte ?? p.CodigoTipoDte ?? p.tipoDte ?? p.TipoDte ??
-           p.tipoPlantilla?.codigoTipoDte ?? p.TipoPlantilla?.CodigoTipoDte ??
-           p.tipoPlantilla?.CodigoTipoDte ?? p.tipo?.codigoTipoDte ?? '-';
-  }
-  function getNombrePlantilla(p) {
-    return p.nombrePlantilla || p.NombrePlantilla || p.nombre || p.Nombre ||
-           p.tipoPlantilla?.nombreTipoDte || p.TipoPlantilla?.NombreTipoDte || '-';
+  if (data.dtesCubiertos?.length > 0) {
+    html += `<strong>DTEs con plantilla activa:</strong> ${data.dtesCubiertos.join(', ')}<br>`;
+    if (!data.tieneTipo34 && !data.tieneTipo33) {
+      html += `<span style="color:var(--red)">❌ No hay plantillas para tipo 34 ni 33 — esto causa el error "sin plantillas activas"</span><br>`;
+    } else if (!data.tieneTipo34) {
+      html += `<span style="color:var(--yellow)">⚠️ Tipo 34 (Factura Exenta) no tiene plantilla. Considera usar tipo 33 (Factura Afecta) si la cuenta tiene IVA.</span><br>`;
+    } else {
+      html += `<span style="color:var(--green)">✅ Tipo 34 (Factura Exenta) disponible</span><br>`;
+    }
+  } else if (plantillasEmisor?.length > 0) {
+    html += `<span style="color:var(--yellow)">⚠️ No se pudo resolver el tipo DTE de las plantillas (API TipoPlantilla no respondió).</span><br>`;
+    html += `<em style="font-size:11px">IDs de plantillas: ${plantillasEmisor.map(p => (p.tipoPlantillaId||'').substring(0,8)+'...').join(', ')}</em><br>`;
   }
 
   if (plantillasEmisor?.length > 0) {
     html += '<table style="font-size:12px;border-collapse:collapse;margin-top:6px;width:100%">';
-    html += '<tr style="background:var(--surface2)"><th style="padding:3px 6px;border:1px solid var(--border)">Nombre</th><th style="padding:3px 6px;border:1px solid var(--border)">Tipo DTE</th><th style="padding:3px 6px;border:1px solid var(--border)">Activa</th></tr>';
+    html += '<tr style="background:var(--surface2)"><th style="padding:3px 6px;border:1px solid var(--border)">tipoPlantillaId (short)</th><th style="padding:3px 6px;border:1px solid var(--border)">Tipo DTE</th><th style="padding:3px 6px;border:1px solid var(--border)">Nombre DTE</th><th style="padding:3px 6px;border:1px solid var(--border)">Activa</th></tr>';
     for (const p of plantillasEmisor) {
-      const nombre = getNombrePlantilla(p);
-      const dte    = getDteCod(p);
-      const activa = (p.activo !== undefined ? p.activo : p.Activo) ? '✅ Sí' : '❌ No';
-      html += `<tr><td style="padding:3px 6px;border:1px solid var(--border)">${nombre}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center">${dte}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center">${activa}</td></tr>`;
+      const tid    = (p.tipoPlantillaId || '-').substring(0, 18) + '…';
+      const dte    = p._codigoDte ?? '-';
+      const nombre = p._nombreDte || p.nombrePlantilla || '-';
+      const activa = (p.activo !== undefined ? p.activo : p.Activo) ? '✅' : '❌';
+      html += `<tr><td style="padding:3px 6px;border:1px solid var(--border);font-family:monospace">${tid}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center;font-weight:bold">${dte}</td><td style="padding:3px 6px;border:1px solid var(--border)">${nombre}</td><td style="padding:3px 6px;border:1px solid var(--border);text-align:center">${activa}</td></tr>`;
     }
     html += '</table>';
-    const hayInactivas = plantillasEmisor.some(p => !(p.activo !== undefined ? p.activo : p.Activo));
-    if (hayInactivas) html += `<br><em style="color:var(--yellow)">⚠️ Hay plantillas inactivas. Usa "Activar Plantillas" para habilitarlas.</em>`;
-    // Mostrar JSON crudo del primer ítem para debug de estructura
-    html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--txt2)">🔎 Ver estructura JSON (debug)</summary><pre style="font-size:10px;overflow:auto;max-height:200px;background:var(--bg2);padding:6px;border-radius:4px;margin-top:4px">${JSON.stringify(plantillasEmisor[0], null, 2)}</pre></details>`;
+    html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--txt2)">🔎 JSON primer ítem (debug)</summary><pre style="font-size:10px;overflow:auto;max-height:200px;background:var(--bg2);padding:6px;border-radius:4px;margin-top:4px">${JSON.stringify(plantillasEmisor[0], null, 2)}</pre></details>`;
   } else {
-    html += `<em style="color:var(--yellow)">⚠️ No se encontraron plantillas para este emisor. Plantillas base disponibles: ${data.plantillasBase?.length || 0}</em>`;
-    if (data.plantillasBase?.length > 0) {
-      html += `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--txt2)">🔎 Ver plantilla base (debug)</summary><pre style="font-size:10px;overflow:auto;max-height:200px;background:var(--bg2);padding:6px;border-radius:4px;margin-top:4px">${JSON.stringify(data.plantillasBase[0], null, 2)}</pre></details>`;
-    }
+    html += `<em style="color:var(--yellow)">⚠️ No se encontraron plantillas para este emisor.</em>`;
   }
   resultEl.innerHTML = html;
 }

@@ -447,7 +447,7 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
 // ── Movimientos (transferencias de cartola) ──────────────────────────────────
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag } = req.query;
+  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag, orden, dir } = req.query;
   let sql = 'SELECT * FROM movimientos WHERE 1=1';
   const params = [];
 
@@ -459,11 +459,16 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
   if (lote_id) { sql += ' AND lote_id = ?'; params.push(lote_id); }
 
+  // Columnas permitidas para ORDER BY (whitelist anti-injection)
+  const COLS_FACT = { fecha: 'fecha', monto: 'monto', rut: 'rut', razon_social: 'razon_social', id: 'id' };
+  const sortCol = COLS_FACT[orden] || 'fecha';
+  const sortDir = dir === 'desc' ? 'DESC' : 'ASC';
+
   // Modo paginado: devuelve { movimientos, total }
   if (pag === '1') {
     const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
     const total = db.prepare(countSql).get(...params)?.total || 0;
-    sql += ' ORDER BY id DESC';
+    sql += ` ORDER BY ${sortCol} ${sortDir}, id ${sortDir}`;
     if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
     if (off) { sql += ' OFFSET ?'; params.push(parseInt(off)); }
     return res.json({ movimientos: db.prepare(sql).all(...params), total });

@@ -119,6 +119,8 @@ tbody tr.selected { background: rgba(0,212,170,.06); }
 .badge-orange { background: var(--orange-bg); color: var(--orange); border:1px solid rgba(240,160,48,.2); }
 .badge-purple { background: rgba(160,120,240,.08); color: var(--purple); border:1px solid rgba(160,120,240,.2); }
 .badge-gray { background: rgba(90,96,112,.1); color: var(--txt3); border:1px solid rgba(90,96,112,.2); }
+.sortable-th { cursor:pointer; user-select:none; white-space:nowrap; }
+.sortable-th:hover { background:rgba(255,255,255,.04); }
 
 /* ── Upload area ────────────────────────────────────── */
 .upload-area { border:2px dashed var(--card-b); border-radius: var(--radius); padding:40px; text-align:center; transition: var(--transition); cursor:pointer; }
@@ -499,13 +501,13 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
             <table>
-              <thead>
+              <thead id="fact-thead">
                 <tr>
                   <th><input type="checkbox" id="fact-select-all" onchange="toggleSelectAllFact(this)"></th>
-                  <th>Fecha</th>
-                  <th>Monto</th>
-                  <th>RUT</th>
-                  <th>Razón Social</th>
+                  <th class="sortable-th" onclick="sortFact('fecha')">Fecha <span id="fact-arr-fecha"></span></th>
+                  <th class="sortable-th" onclick="sortFact('monto')">Monto <span id="fact-arr-monto"></span></th>
+                  <th class="sortable-th" onclick="sortFact('rut')">RUT <span id="fact-arr-rut"></span></th>
+                  <th class="sortable-th" onclick="sortFact('razon_social')">Razón Social <span id="fact-arr-razon_social"></span></th>
                   <th>Tipo</th>
                   <th>Banco</th>
                 </tr>
@@ -873,7 +875,14 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas (41)</button>
             <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
           </div>
-          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" id="fact-select-all" onchange="toggleSelectAllFact(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-fact-tbody"></tbody></table></div>
+          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead id="emp-fact-thead"><tr>
+            <th><input type="checkbox" id="emp-fact-select-all" onchange="toggleSelectAllFact(this)"></th>
+            <th class="sortable-th" onclick="sortFact('fecha')">Fecha <span id="emp-fact-arr-fecha"></span></th>
+            <th class="sortable-th" onclick="sortFact('monto')">Monto <span id="emp-fact-arr-monto"></span></th>
+            <th class="sortable-th" onclick="sortFact('rut')">RUT <span id="emp-fact-arr-rut"></span></th>
+            <th class="sortable-th" onclick="sortFact('razon_social')">Razón Social <span id="emp-fact-arr-razon_social"></span></th>
+            <th>Tipo</th><th>Banco</th>
+          </tr></thead><tbody id="emp-fact-tbody"></tbody></table></div>
           <div id="emp-fact-paginacion"></div>
         </div>
       </div>
@@ -1972,17 +1981,37 @@ let FACT_FILTER = 'all'; // 'all' | 34 | 41
 let ALL_FACT_MOVS = [];
 let FACT_PAGE = 0;
 let FACT_TOTAL = 0;
-const FACT_PER_PAGE = 250;
+const FACT_PER_PAGE = 300;
+let FACT_SORT_COL = 'fecha';   // columna activa de orden
+let FACT_SORT_DIR = 'asc';     // 'asc' | 'desc' — por defecto más antigua primero
 
 async function loadFacturacion(page) {
   if (typeof page === 'number') FACT_PAGE = page;
   const empId = getEmpresaId();
-  let url = `/api/movimientos?pag=1&estado=listo&limit=${FACT_PER_PAGE}&offset=${FACT_PAGE * FACT_PER_PAGE}`;
+  let url = `/api/movimientos?pag=1&estado=listo&limit=${FACT_PER_PAGE}&offset=${FACT_PAGE * FACT_PER_PAGE}&orden=${FACT_SORT_COL}&dir=${FACT_SORT_DIR}`;
   if (empId) url += `&empresa_id=${empId}`;
   const res = await apiFetch(url);
   ALL_FACT_MOVS = res?.movimientos || [];
   FACT_TOTAL = res?.total || 0;
   renderFacturacionTable();
+}
+
+function sortFact(col) {
+  if (FACT_SORT_COL === col) {
+    FACT_SORT_DIR = FACT_SORT_DIR === 'asc' ? 'desc' : 'asc';
+  } else {
+    FACT_SORT_COL = col;
+    FACT_SORT_DIR = 'asc';
+  }
+  FACT_PAGE = 0;
+  loadFacturacion(0);
+}
+
+function factSortArrow(col) {
+  if (FACT_SORT_COL !== col) return ' <span style="opacity:0.3;font-size:10px;">⇅</span>';
+  return FACT_SORT_DIR === 'asc'
+    ? ' <span style="color:var(--accent);font-size:11px;">▲</span>'
+    : ' <span style="color:var(--accent);font-size:11px;">▼</span>';
 }
 
 function setFactFilter(tipo) {
@@ -1999,6 +2028,17 @@ function setFactFilter(tipo) {
 }
 
 function renderFacturacionTable() {
+  // Actualizar flechas de orden en headers (admin y emp)
+  ['fecha','monto','rut','razon_social'].forEach(col => {
+    const arrow = FACT_SORT_COL === col
+      ? (FACT_SORT_DIR === 'asc' ? '<span style="color:var(--accent);font-size:11px;">▲</span>' : '<span style="color:var(--accent);font-size:11px;">▼</span>')
+      : '<span style="opacity:0.3;font-size:10px;">⇅</span>';
+    const a1 = document.getElementById(`fact-arr-${col}`);
+    const a2 = document.getElementById(`emp-fact-arr-${col}`);
+    if (a1) a1.innerHTML = arrow;
+    if (a2) a2.innerHTML = arrow;
+  });
+
   // Filtro por tipo DTE
   let movs = FACT_FILTER === 'all' ? ALL_FACT_MOVS : ALL_FACT_MOVS.filter(m => m.tipo_dte === FACT_FILTER);
 

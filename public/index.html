@@ -461,6 +461,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <tbody id="mov-tbody"></tbody>
             </table>
           </div>
+          <div id="mov-paginacion"></div>
         </div>
       </div>
 
@@ -511,6 +512,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <tbody id="fact-tbody"></tbody>
             </table>
           </div>
+          <div id="fact-paginacion"></div>
         </div>
       </div>
 
@@ -709,6 +711,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-item" onclick="empNav('cartolas')">&#x1F4C4; Cargar Cartola</div>
           <div class="nav-item" onclick="empNav('movimientos')">&#x1F4CB; Movimientos</div>
           <div class="nav-item" onclick="empNav('facturacion')">&#x1F9FE; Facturar</div>
+          <div class="nav-item" onclick="empNav('lotes')">&#x1F4E6; Lotes</div>
           <div class="nav-item" onclick="empNav('historial')">&#x1F4CB; Historial</div>
           <div class="nav-item" onclick="empNav('exportar')">&#x2B07; Exportar CSV</div>
           <div class="nav-item" onclick="empNav('clientes')">&#x1F465; Clientes</div>
@@ -775,7 +778,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
         <div class="card"><div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr>
           <th><input type="checkbox" onchange="toggleSelectAll(this)"></th><th>Fecha</th><th>ID</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Banco</th><th>Tipo</th><th>Estado</th><th>Acc.</th>
-        </tr></thead><tbody id="emp-mov-tbody"></tbody></table></div></div>
+        </tr></thead><tbody id="emp-mov-tbody"></tbody></table></div><div id="emp-mov-paginacion"></div></div>
       </div>
       <div class="view" id="emp-view-facturacion">
         <div class="topbar"><h1>Facturar</h1></div>
@@ -806,7 +809,12 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" id="fact-select-all" onchange="toggleSelectAllFact(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-fact-tbody"></tbody></table></div>
+          <div id="emp-fact-paginacion"></div>
         </div>
+      </div>
+      <div class="view" id="emp-view-lotes">
+        <div class="topbar"><h1>Lotes de Facturación</h1></div>
+        <div id="emp-lotes-list"></div>
       </div>
       <div class="view" id="emp-view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
@@ -844,6 +852,9 @@ let CURRENT_EMPRESA = 'all';
 let CURRENT_VIEW = 'dashboard';
 let MOV_FILTER = 'todos';
 let ALL_MOVIMIENTOS = [];
+let MOV_PAGE = 0;
+let MOV_TOTAL = 0;
+const MOV_PER_PAGE = 250;
 let ALL_CLIENTES = [];
 let PARSED_CARTOLA = null;
 const isAdmin = () => ME.role === 'admin';
@@ -981,6 +992,7 @@ function empNav(view) {
   if (view === 'dashboard') loadDashboard();
   else if (view === 'movimientos') loadMovimientos();
   else if (view === 'facturacion') loadFacturacion();
+  else if (view === 'lotes') loadLotes();
   else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
@@ -1702,18 +1714,22 @@ async function reclasificarMovimientos() {
   }
 }
 
-async function loadMovimientos() {
+async function loadMovimientos(page) {
+  if (typeof page === 'number') MOV_PAGE = page;
   const empId = getEmpresaId();
-  let url = '/api/movimientos?limit=500';
+  let url = `/api/movimientos?pag=1&limit=${MOV_PER_PAGE}&offset=${MOV_PAGE * MOV_PER_PAGE}`;
   if (empId) url += `&empresa_id=${empId}`;
   if (MOV_FILTER !== 'todos') url += `&estado=${MOV_FILTER}`;
 
-  ALL_MOVIMIENTOS = await apiFetch(url) || [];
+  const res = await apiFetch(url);
+  ALL_MOVIMIENTOS = res?.movimientos || [];
+  MOV_TOTAL = res?.total || 0;
   renderMovimientos();
 }
 
 function filterMovimientos(filter) {
   MOV_FILTER = filter;
+  MOV_PAGE = 0;
   const tabsContainer = isAdmin() ? 'mov-filter-tabs' : 'emp-mov-filter-tabs';
   document.querySelectorAll(`#${tabsContainer} .tab`).forEach(t => t.classList.remove('active'));
   event?.target?.classList?.add('active');
@@ -1738,14 +1754,22 @@ function renderMovimientos() {
 
   if (!movsFiltrados.length) {
     tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--txt3)">${q ? 'Sin resultados para "' + q + '"' : 'No hay movimientos'}</td></tr>`;
-    if (isAdmin()) document.getElementById('mov-count').textContent = q ? `0 de ${ALL_MOVIMIENTOS.length} movimientos` : '0 movimientos';
+    if (isAdmin()) document.getElementById('mov-count').textContent = '0 movimientos';
+    renderMovPaginacion();
     return;
   }
-  if (isAdmin()) document.getElementById('mov-count').textContent = q
-    ? `${movsFiltrados.length} de ${ALL_MOVIMIENTOS.length} movimientos`
-    : `${ALL_MOVIMIENTOS.length} movimientos`;
 
-  tbody.innerHTML = movsFiltrados.map(m => `
+  // Cuando hay búsqueda activa, paginar sobre el subconjunto filtrado en memoria
+  const totalMostrar = q ? movsFiltrados.length : MOV_TOTAL;
+  const totalPages = Math.ceil(totalMostrar / MOV_PER_PAGE);
+  const inicio = q ? MOV_PAGE * MOV_PER_PAGE : 0;
+  const pagina = q ? movsFiltrados.slice(inicio, inicio + MOV_PER_PAGE) : movsFiltrados;
+
+  if (isAdmin()) document.getElementById('mov-count').textContent = q
+    ? `${movsFiltrados.length} de ${MOV_TOTAL} movimientos`
+    : `${MOV_TOTAL} movimientos`;
+
+  tbody.innerHTML = pagina.map(m => `
     <tr data-id="${m.id}">
       <td><input type="checkbox" class="mov-check" value="${m.id}"></td>
       <td>${m.fecha || '—'}</td>
@@ -1759,6 +1783,25 @@ function renderMovimientos() {
       <td><button class="btn-icon" onclick="editMovimiento(${m.id})" title="Editar">&#9998;</button></td>
     </tr>
   `).join('');
+
+  renderMovPaginacion(q ? totalPages : Math.ceil(MOV_TOTAL / MOV_PER_PAGE), q);
+}
+
+function renderMovPaginacion(totalPages, isSearch) {
+  const pagId = isAdmin() ? 'mov-paginacion' : 'emp-mov-paginacion';
+  const el = document.getElementById(pagId);
+  if (!el) return;
+  const tp = totalPages || 0;
+  if (tp <= 1 && MOV_PAGE === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--txt2);">Página ${MOV_PAGE + 1} de ${tp}</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary btn-sm" onclick="loadMovimientos(0)" ${MOV_PAGE === 0 ? 'disabled' : ''}>&#x23EA;</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadMovimientos(${MOV_PAGE - 1})" ${MOV_PAGE === 0 ? 'disabled' : ''}>&#x25C4; Ant.</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadMovimientos(${MOV_PAGE + 1})" ${MOV_PAGE >= tp - 1 ? 'disabled' : ''}>Sig. &#x25BA;</button>
+      </div>
+    </div>`;
 }
 
 function toggleSelectAll(cb) {
@@ -1861,24 +1904,32 @@ async function saveMovimiento(id) {
 // Estado del filtro de facturación
 let FACT_FILTER = 'all'; // 'all' | 34 | 41
 let ALL_FACT_MOVS = [];
+let FACT_PAGE = 0;
+let FACT_TOTAL = 0;
+const FACT_PER_PAGE = 250;
 
-async function loadFacturacion() {
+async function loadFacturacion(page) {
+  if (typeof page === 'number') FACT_PAGE = page;
   const empId = getEmpresaId();
-  let url = '/api/movimientos?estado=listo&limit=500';
+  let url = `/api/movimientos?pag=1&estado=listo&limit=${FACT_PER_PAGE}&offset=${FACT_PAGE * FACT_PER_PAGE}`;
   if (empId) url += `&empresa_id=${empId}`;
-  ALL_FACT_MOVS = await apiFetch(url) || [];
+  const res = await apiFetch(url);
+  ALL_FACT_MOVS = res?.movimientos || [];
+  FACT_TOTAL = res?.total || 0;
   renderFacturacionTable();
 }
 
 function setFactFilter(tipo) {
   FACT_FILTER = tipo;
+  FACT_PAGE = 0;
   // Actualizar estilos de botones
   ['all', 34, 41].forEach(t => {
     const btn = document.getElementById(`fact-filter-${t === 'all' ? 'all' : t}`);
     if (!btn) return;
     btn.className = t === tipo ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
   });
-  renderFacturacionTable();
+  // Recargar desde servidor con offset 0 para reflejar filtro de tipo
+  loadFacturacion(0);
 }
 
 function renderFacturacionTable() {
@@ -1900,15 +1951,18 @@ function renderFacturacionTable() {
 
   const tbody = document.getElementById(isAdmin() ? 'fact-tbody' : 'emp-fact-tbody');
   const label = document.getElementById('fact-count-label');
+  const totalPages = Math.ceil(FACT_TOTAL / FACT_PER_PAGE);
   if (label) {
     const total34 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 34).length;
     const total41 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 41).length;
+    const visibles = movs.length;
     label.textContent = q
-      ? `${movs.length} de ${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`
-      : `${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
+      ? `${visibles} filtrados de ${FACT_TOTAL} total — ${total34} Facturas / ${total41} Boletas`
+      : `${FACT_TOTAL} total — ${total34} Facturas / ${total41} Boletas`;
   }
   if (!movs.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
+    renderFactPaginacion(totalPages);
     return;
   }
   tbody.innerHTML = movs.map(m => `
@@ -1922,6 +1976,24 @@ function renderFacturacionTable() {
       <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
     </tr>
   `).join('');
+  renderFactPaginacion(totalPages);
+}
+
+function renderFactPaginacion(totalPages) {
+  const pagId = isAdmin() ? 'fact-paginacion' : 'emp-fact-paginacion';
+  const el = document.getElementById(pagId);
+  if (!el) return;
+  const tp = totalPages || 0;
+  if (tp <= 1 && FACT_PAGE === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:12px;color:var(--txt2);">Página ${FACT_PAGE + 1} de ${tp}</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary btn-sm" onclick="loadFacturacion(0)" ${FACT_PAGE === 0 ? 'disabled' : ''}>&#x23EA;</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadFacturacion(${FACT_PAGE - 1})" ${FACT_PAGE === 0 ? 'disabled' : ''}>&#x25C4; Ant.</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadFacturacion(${FACT_PAGE + 1})" ${FACT_PAGE >= tp - 1 ? 'disabled' : ''}>Sig. &#x25BA;</button>
+      </div>
+    </div>`;
 }
 
 function toggleSelectAllFact(cb) { document.querySelectorAll('.fact-check').forEach(c => c.checked = cb.checked); }
@@ -1937,7 +2009,7 @@ async function crearLoteFacturacion() {
   });
   if (data?.ok) {
     showToast(`Lote creado: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
-    if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
+    if (isAdmin()) adminNav('lotes'); else empNav('lotes');
   } else {
     showToast(data?.error || 'Error al crear lote', 'error');
   }
@@ -1955,7 +2027,7 @@ async function crearLotePorTipo(tipoDte) {
   });
   if (data?.ok) {
     showToast(`Lote ${label}: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
-    if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
+    if (isAdmin()) adminNav('lotes'); else empNav('lotes');
   } else {
     showToast(data?.error || 'Error al crear lote', 'error');
   }
@@ -2010,7 +2082,7 @@ async function loadLotes() {
   if (empId) url += `?empresa_id=${empId}`;
   const lotes = await apiFetch(url) || [];
 
-  const el = document.getElementById('lotes-list');
+  const el = document.getElementById(isAdmin() ? 'lotes-list' : 'emp-lotes-list');
   if (!lotes.length) {
     el.innerHTML = '<div class="empty-state"><div class="icon">&#x1F4E6;</div><h3>No hay lotes</h3><p>Crea un lote desde la vista de facturación</p></div>';
     return;

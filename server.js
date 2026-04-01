@@ -113,6 +113,19 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)')
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 
+// ── Cleanup: eliminar intentos fallidos de facturación anteriores al deploy ──
+// Resetea movimientos y borra lotes con estado 'error'. Seguro de correr múltiples veces.
+try {
+  db.transaction(() => {
+    // Devolver movimientos de lotes fallidos a estado 'listo'
+    db.exec(`UPDATE movimientos SET estado = 'listo', lote_id = NULL, updated_at = datetime('now')
+             WHERE lote_id IN (SELECT lote_id FROM lotes_facturacion WHERE estado = 'error')`);
+    // Eliminar los lotes con error
+    db.exec(`DELETE FROM lotes_facturacion WHERE estado = 'error'`);
+  })();
+  console.log('[STARTUP] Limpieza de lotes con error completada');
+} catch(e) { console.warn('[STARTUP] Error en limpieza de lotes:', e.message); }
+
 // ── Re-classify existing movements on startup using empresa config ─────────────
 (function reclassifyMovimientos() {
   try {
@@ -434,7 +447,7 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
 // ── Movimientos (transferencias de cartola) ──────────────────────────────────
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off } = req.query;
+  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag } = req.query;
   let sql = 'SELECT * FROM movimientos WHERE 1=1';
   const params = [];
 
@@ -446,12 +459,21 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
   if (lote_id) { sql += ' AND lote_id = ?'; params.push(lote_id); }
 
+  // Modo paginado: devuelve { movimientos, total }
+  if (pag === '1') {
+    const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
+    const total = db.prepare(countSql).get(...params)?.total || 0;
+    sql += ' ORDER BY id DESC';
+    if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
+    if (off) { sql += ' OFFSET ?'; params.push(parseInt(off)); }
+    return res.json({ movimientos: db.prepare(sql).all(...params), total });
+  }
+
+  // Modo legado: devuelve array directo (usado por exportar, reclasificar, etc.)
   sql += ' ORDER BY id DESC';
   if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
   if (off) { sql += ' OFFSET ?'; params.push(parseInt(off)); }
-
-  const rows = db.prepare(sql).all(...params);
-  res.json(rows);
+  res.json(db.prepare(sql).all(...params));
 });
 
 app.get('/api/movimientos/stats', requireAuth, (req, res) => {

@@ -424,6 +424,16 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             </div>
           </div>
         </div>
+        <!-- Buscador movimientos admin -->
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+          <div style="flex:1;position:relative;">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt3);font-size:14px;">🔍</span>
+            <input type="text" id="mov-buscar" class="inline-input" placeholder="Buscar por nombre, RUT o monto…"
+              style="width:100%;padding-left:32px;"
+              oninput="renderMovimientos()">
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('mov-buscar').value='';renderMovimientos();">✕ Limpiar</button>
+        </div>
         <div class="card">
           <div class="card-header">
             <h3 id="mov-count">Movimientos</h3>
@@ -461,10 +471,21 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="card-header">
             <h3>Movimientos listos para facturar</h3>
             <div class="card-actions">
+              <button class="btn btn-warning btn-sm" onclick="marcarSeleccionadosFacturados()" title="Marca los seleccionados como facturados sin crear lote">✔ Marcar facturados</button>
               <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote seleccionados</button>
               <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(34)" title="Crea un lote solo con Facturas Exentas (tipo 34)">Lote solo Facturas</button>
               <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(41)" title="Crea un lote solo con Boletas Exentas (tipo 41)">Lote solo Boletas</button>
             </div>
+          </div>
+          <!-- Buscador facturar admin -->
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
+            <div style="flex:1;position:relative;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt3);font-size:14px;">🔍</span>
+              <input type="text" id="fact-buscar" class="inline-input" placeholder="Buscar por nombre, RUT o monto…"
+                style="width:100%;padding-left:32px;"
+                oninput="renderFacturacionTable()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fact-buscar').value='';renderFacturacionTable();">✕ Limpiar</button>
           </div>
           <!-- Filtros por tipo -->
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
@@ -742,6 +763,16 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="tab" onclick="filterMovimientos('listo')">Listos</div>
           <div class="tab" onclick="filterMovimientos('facturado')">Facturados</div>
         </div></div></div>
+        <!-- Buscador movimientos operador -->
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+          <div style="flex:1;position:relative;">
+            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt3);font-size:14px;">🔍</span>
+            <input type="text" id="emp-mov-buscar" class="inline-input" placeholder="Buscar por nombre, RUT o monto…"
+              style="width:100%;padding-left:32px;"
+              oninput="renderMovimientos()">
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-mov-buscar').value='';renderMovimientos();">✕ Limpiar</button>
+        </div>
         <div class="card"><div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr>
           <th><input type="checkbox" onchange="toggleSelectAll(this)"></th><th>Fecha</th><th>ID</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Banco</th><th>Tipo</th><th>Estado</th><th>Acc.</th>
         </tr></thead><tbody id="emp-mov-tbody"></tbody></table></div></div>
@@ -751,10 +782,21 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <div class="card">
           <div class="card-header"><h3>Movimientos listos</h3>
             <div class="card-actions">
+              <button class="btn btn-warning btn-sm" onclick="marcarSeleccionadosFacturados()" title="Marca los seleccionados como facturados sin crear lote">✔ Marcar facturados</button>
               <button class="btn btn-primary btn-sm" onclick="crearLoteFacturacion()">Crear lote seleccionados</button>
               <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(34)">Lote solo Facturas</button>
               <button class="btn btn-secondary btn-sm" onclick="crearLotePorTipo(41)">Lote solo Boletas</button>
             </div>
+          </div>
+          <!-- Buscador facturar operador -->
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
+            <div style="flex:1;position:relative;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt3);font-size:14px;">🔍</span>
+              <input type="text" id="emp-fact-buscar" class="inline-input" placeholder="Buscar por nombre, RUT o monto…"
+                style="width:100%;padding-left:32px;"
+                oninput="renderFacturacionTable()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-fact-buscar').value='';renderFacturacionTable();">✕ Limpiar</button>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
@@ -1324,7 +1366,7 @@ async function procesarCartolaAutoEmp(file) {
     formData.append('empresa_id', empresaId);
     formData.append('banco', banco);
 
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('mttg_token');
     const resp  = await fetch('/api/movimientos/cargar-y-procesar', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
@@ -1435,7 +1477,7 @@ async function procesarCartolaAuto(file) {
     formData.append('empresa_id', empresaId);
     formData.append('banco', banco);
 
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('mttg_token');
     const resp  = await fetch('/api/movimientos/cargar-y-procesar', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
@@ -1557,7 +1599,7 @@ function formatRutDisplay(rut) {
 // Exportar base de datos en Excel original
 async function exportarBaseDatos(empresaId) {
   try {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('mttg_token');
     const resp  = await fetch(`/api/exportar/base-datos/${empresaId}`, {
       headers: { 'Authorization': 'Bearer ' + token }
     });
@@ -1593,7 +1635,7 @@ async function importarBaseDatos(file) {
     formData.append('empresa_id', empresaId);
     formData.append('importar_movimientos', incluirMov ? 'true' : 'false');
 
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('mttg_token');
     const resp  = await fetch('/api/importar/base-datos', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token },
@@ -1680,13 +1722,30 @@ function filterMovimientos(filter) {
 
 function renderMovimientos() {
   const tbody = document.getElementById(isAdmin() ? 'mov-tbody' : 'emp-mov-tbody');
-  if (!ALL_MOVIMIENTOS.length) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos</td></tr>';
+
+  // Filtro de texto (admin usa #mov-buscar, emp usa #emp-mov-buscar)
+  const buscarEl = document.getElementById(isAdmin() ? 'mov-buscar' : 'emp-mov-buscar');
+  const q = (buscarEl?.value || '').toLowerCase().trim();
+  const movsFiltrados = q
+    ? ALL_MOVIMIENTOS.filter(m =>
+        (m.razon_social || '').toLowerCase().includes(q) ||
+        (m.nombre_origen || '').toLowerCase().includes(q) ||
+        (m.rut || '').toLowerCase().includes(q) ||
+        String(m.monto || '').includes(q) ||
+        String(m.monto_total || '').includes(q)
+      )
+    : ALL_MOVIMIENTOS;
+
+  if (!movsFiltrados.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--txt3)">${q ? 'Sin resultados para "' + q + '"' : 'No hay movimientos'}</td></tr>`;
+    if (isAdmin()) document.getElementById('mov-count').textContent = q ? `0 de ${ALL_MOVIMIENTOS.length} movimientos` : '0 movimientos';
     return;
   }
-  if (isAdmin()) document.getElementById('mov-count').textContent = `${ALL_MOVIMIENTOS.length} movimientos`;
+  if (isAdmin()) document.getElementById('mov-count').textContent = q
+    ? `${movsFiltrados.length} de ${ALL_MOVIMIENTOS.length} movimientos`
+    : `${ALL_MOVIMIENTOS.length} movimientos`;
 
-  tbody.innerHTML = ALL_MOVIMIENTOS.map(m => `
+  tbody.innerHTML = movsFiltrados.map(m => `
     <tr data-id="${m.id}">
       <td><input type="checkbox" class="mov-check" value="${m.id}"></td>
       <td>${m.fecha || '—'}</td>
@@ -1823,16 +1882,33 @@ function setFactFilter(tipo) {
 }
 
 function renderFacturacionTable() {
-  const movs = FACT_FILTER === 'all' ? ALL_FACT_MOVS : ALL_FACT_MOVS.filter(m => m.tipo_dte === FACT_FILTER);
+  // Filtro por tipo DTE
+  let movs = FACT_FILTER === 'all' ? ALL_FACT_MOVS : ALL_FACT_MOVS.filter(m => m.tipo_dte === FACT_FILTER);
+
+  // Filtro de texto (admin usa #fact-buscar, emp usa #emp-fact-buscar)
+  const buscarEl = document.getElementById(isAdmin() ? 'fact-buscar' : 'emp-fact-buscar');
+  const q = (buscarEl?.value || '').toLowerCase().trim();
+  if (q) {
+    movs = movs.filter(m =>
+      (m.razon_social || '').toLowerCase().includes(q) ||
+      (m.nombre_origen || '').toLowerCase().includes(q) ||
+      (m.rut || '').toLowerCase().includes(q) ||
+      String(m.monto || '').includes(q) ||
+      String(m.monto_total || '').includes(q)
+    );
+  }
+
   const tbody = document.getElementById(isAdmin() ? 'fact-tbody' : 'emp-fact-tbody');
   const label = document.getElementById('fact-count-label');
   if (label) {
     const total34 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 34).length;
     const total41 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 41).length;
-    label.textContent = `${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
+    label.textContent = q
+      ? `${movs.length} de ${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`
+      : `${ALL_FACT_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
   }
   if (!movs.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
     return;
   }
   tbody.innerHTML = movs.map(m => `
@@ -1882,6 +1958,22 @@ async function crearLotePorTipo(tipoDte) {
     if (isAdmin()) adminNav('lotes'); else empNav('facturacion');
   } else {
     showToast(data?.error || 'Error al crear lote', 'error');
+  }
+}
+
+async function marcarSeleccionadosFacturados() {
+  const ids = [...document.querySelectorAll('.fact-check:checked')].map(c => parseInt(c.value));
+  if (!ids.length) return showToast('Selecciona al menos un movimiento', 'error');
+  if (!confirm(`¿Marcar ${ids.length} movimiento(s) como FACTURADO? Esta acción no se puede deshacer fácilmente.`)) return;
+  const data = await apiFetch('/api/movimientos/bulk-estado', {
+    method: 'PUT',
+    body: JSON.stringify({ ids, estado: 'facturado' })
+  });
+  if (data?.ok) {
+    showToast(`✅ ${ids.length} movimiento(s) marcados como facturados`, 'success');
+    loadFacturacion();
+  } else {
+    showToast(data?.error || 'Error al actualizar estado', 'error');
   }
 }
 

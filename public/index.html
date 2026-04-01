@@ -145,6 +145,7 @@ tbody tr.selected { background: rgba(0,212,170,.06); }
 .toast-error { background:#2b0d0d; border:1px solid var(--red); color:var(--red); }
 .toast-info { background:#0d1e2b; border:1px solid var(--blue); color:var(--blue); }
 @keyframes slideIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Checkbox ───────────────────────────────────────── */
 .checkbox-wrapper { display:flex; align-items:center; gap:8px; cursor:pointer; }
@@ -282,17 +283,25 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <!-- CARGAR CARTOLA VIEW -->
       <div class="view" id="view-cartolas">
         <div class="topbar"><h1>Cargar Cartola Bancaria</h1></div>
+
+        <!-- Card principal: subida automática (servidor + SimpleAPI) -->
         <div class="card">
-          <div class="card-header"><h3>Subir archivo de cartola</h3></div>
-          <div style="display:flex;gap:16px;margin-bottom:20px;">
-            <div class="form-group" style="flex:1">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>&#x26A1; Procesamiento Automático</h3>
+            <span class="badge badge-blue" style="font-size:11px;">SimpleAPI integrado</span>
+          </div>
+          <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">
+            El servidor parsea la cartola, detecta movimientos nuevos vs. ya procesados, consulta SimpleAPI para identificar clientes de Santander e incorpora automáticamente los nuevos clientes a la base.
+          </p>
+          <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:160px;">
               <label>Empresa</label>
               <select id="cartola-empresa" class="inline-input">
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
               </select>
             </div>
-            <div class="form-group" style="flex:1">
+            <div class="form-group" style="flex:1;min-width:160px;">
               <label>Banco</label>
               <select id="cartola-banco" class="inline-input">
                 <option value="BCI">BCI</option>
@@ -300,31 +309,104 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               </select>
             </div>
           </div>
-          <div class="upload-area" id="cartola-upload" onclick="document.getElementById('cartola-file').click()">
-            <div class="upload-icon">&#x1F4C2;</div>
-            <p>Arrastra o haz clic para subir cartola (.xls / .xlsx)</p>
-            <input type="file" id="cartola-file" accept=".xls,.xlsx" style="display:none" onchange="handleCartolaFile(this)">
+
+          <!-- Zona de drop -->
+          <div class="upload-area" id="cartola-drop-zone"
+               style="border:2px dashed var(--border);border-radius:12px;padding:32px;text-align:center;cursor:pointer;transition:all .2s;"
+               ondragover="event.preventDefault();this.style.borderColor='var(--accent)';"
+               ondragleave="this.style.borderColor='var(--border)';"
+               ondrop="handleCartolaDrop(event)"
+               onclick="document.getElementById('cartola-file-auto').click()">
+            <div style="font-size:36px;margin-bottom:8px;">&#x1F4E4;</div>
+            <p style="margin:0;font-weight:600;">Arrastra la cartola aquí o haz clic para seleccionar</p>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--txt2);">Formatos: .xls (BCI) · .xlsx (Santander)</p>
+            <input type="file" id="cartola-file-auto" accept=".xls,.xlsx,.csv" style="display:none"
+                   onchange="procesarCartolaAuto(this.files[0])">
           </div>
-          <div id="cartola-status" style="margin-top:16px;display:none;">
-            <div style="display:flex;align-items:center;gap:12px;">
-              <span class="badge badge-blue" id="cartola-filename"></span>
-              <span id="cartola-count" style="font-size:13px;color:var(--txt2)"></span>
+
+          <!-- Estado del procesamiento -->
+          <div id="cartola-auto-status" style="display:none;margin-top:16px;"></div>
+          <div id="cartola-auto-result" style="display:none;margin-top:16px;"></div>
+        </div>
+
+        <!-- Card secundario: Base de Datos (importar / exportar) -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header"><h3>&#x1F4CA; Base de Datos</h3></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+            <!-- Exportar -->
+            <div style="flex:1;min-width:220px;background:var(--surface2);border-radius:10px;padding:16px;">
+              <p style="font-weight:600;margin:0 0 6px;">&#x2B07; Exportar Base</p>
+              <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">Descarga un Excel con todas las hojas (RECIBIDAS, DME, DMP) en el formato original.</p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="exportarBaseDatos('tg-inversiones')">TG Inversiones</button>
+                <button class="btn btn-secondary btn-sm" onclick="exportarBaseDatos('mt-inversiones')">MT Inversiones</button>
+              </div>
             </div>
-            <div style="margin-top:12px;">
-              <button class="btn btn-primary" onclick="procesarCartola()">Procesar Cartola</button>
+            <!-- Importar -->
+            <div style="flex:1;min-width:220px;background:var(--surface2);border-radius:10px;padding:16px;">
+              <p style="font-weight:600;margin:0 0 6px;">&#x2B06; Importar Base Existente</p>
+              <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">Carga tu Excel "Base de Datos X.xlsx" y migra todos los clientes a la BD del servidor.</p>
+              <select id="import-base-empresa" class="inline-input" style="margin-bottom:8px;font-size:12px;">
+                <option value="tg-inversiones">TG Inversiones</option>
+                <option value="mt-inversiones">MT Inversiones</option>
+              </select>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer;">
+                <input type="checkbox" id="import-incluir-movimientos"> Incluir historial RECIBIDAS (marcar como facturados)
+              </label>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-base-file').click()">Seleccionar Excel</button>
+              <input type="file" id="import-base-file" accept=".xlsx,.xls" style="display:none" onchange="importarBaseDatos(this.files[0])">
+              <div id="import-base-result" style="margin-top:8px;font-size:12px;"></div>
+            </div>
+            <!-- Consulta RUT manual -->
+            <div style="flex:1;min-width:220px;background:var(--surface2);border-radius:10px;padding:16px;">
+              <p style="font-weight:600;margin:0 0 6px;">&#x1F50D; Consultar RUT (SimpleAPI)</p>
+              <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">Busca datos de un RUT en el SII vía SimpleAPI.</p>
+              <div style="display:flex;gap:6px;margin-bottom:8px;">
+                <input type="text" id="rut-consulta-input" class="inline-input" placeholder="12.345.678-9" style="flex:1;font-size:12px;">
+                <select id="rut-consulta-empresa" class="inline-input" style="font-size:12px;width:auto;">
+                  <option value="tg-inversiones">TG</option>
+                  <option value="mt-inversiones">MT</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="consultarRUTManual()">Consultar</button>
+              <div id="rut-consulta-result" style="margin-top:8px;font-size:12px;"></div>
             </div>
           </div>
-          <div id="cartola-result" style="margin-top:20px;display:none;"></div>
         </div>
 
         <!-- Historial de cargas -->
-        <div class="card" style="margin-top:20px;">
+        <div class="card" style="margin-top:16px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h3>Historial de Cargas</h3>
             <button class="btn btn-sm" onclick="loadHistorialCartolas()" style="font-size:12px;">&#x21BB; Actualizar</button>
           </div>
           <div id="historial-cartolas-list">
             <p style="color:var(--txt2);font-size:13px;padding:12px 0;">Cargando historial...</p>
+          </div>
+        </div>
+
+        <!-- Modo legacy (cliente-side SheetJS) — colapsable -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header" style="cursor:pointer;" onclick="toggleLegacyCartola()">
+            <h3 style="font-size:14px;color:var(--txt2);">&#x1F527; Modo manual (procesamiento en navegador)</h3>
+          </div>
+          <div id="legacy-cartola-panel" style="display:none;padding-top:8px;">
+            <p style="font-size:12px;color:var(--txt2);margin-bottom:12px;">Usa SheetJS en el navegador para parsear y subir al servidor. Útil si el servidor no tiene xlsx instalado.</p>
+            <div class="upload-area" id="cartola-upload" onclick="document.getElementById('cartola-file').click()">
+              <div class="upload-icon">&#x1F4C2;</div>
+              <p>Arrastra o haz clic para subir cartola (.xls / .xlsx)</p>
+              <input type="file" id="cartola-file" accept=".xls,.xlsx" style="display:none" onchange="handleCartolaFile(this)">
+            </div>
+            <div id="cartola-status" style="margin-top:16px;display:none;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span class="badge badge-blue" id="cartola-filename"></span>
+                <span id="cartola-count" style="font-size:13px;color:var(--txt2)"></span>
+              </div>
+              <div style="margin-top:12px;">
+                <button class="btn btn-primary" onclick="procesarCartola()">Procesar Cartola</button>
+              </div>
+            </div>
+            <div id="cartola-result" style="margin-top:20px;display:none;"></div>
           </div>
         </div>
       </div>
@@ -628,7 +710,10 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="emp-view-cartolas">
         <div class="topbar"><h1>Cargar Cartola</h1></div>
         <div class="card">
-          <div class="card-header"><h3>Subir archivo de cartola</h3></div>
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>&#x26A1; Procesamiento Automático</h3>
+            <span class="badge badge-blue" style="font-size:11px;">SimpleAPI integrado</span>
+          </div>
           <div class="form-group">
             <label>Banco</label>
             <select id="emp-cartola-banco" class="inline-input">
@@ -636,10 +721,15 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <option value="SANTANDER">Santander</option>
             </select>
           </div>
-          <div class="upload-area" onclick="document.getElementById('emp-cartola-file').click()">
-            <div class="upload-icon">&#x1F4C2;</div>
+          <div class="upload-area" style="cursor:pointer;"
+               ondragover="event.preventDefault();"
+               ondrop="handleEmpCartolaDrop(event)"
+               onclick="document.getElementById('emp-cartola-file-auto').click()">
+            <div class="upload-icon">&#x1F4E4;</div>
             <p>Arrastra o haz clic para subir cartola</p>
-            <input type="file" id="emp-cartola-file" accept=".xls,.xlsx" style="display:none" onchange="handleCartolaFileEmp(this)">
+            <p style="font-size:12px;color:var(--txt2);margin:0;">El servidor parsea y consulta SimpleAPI automáticamente</p>
+            <input type="file" id="emp-cartola-file-auto" accept=".xls,.xlsx" style="display:none"
+                   onchange="procesarCartolaAutoEmp(this.files[0])">
           </div>
           <div id="emp-cartola-status" style="margin-top:16px;display:none;"></div>
           <div id="emp-cartola-result" style="margin-top:20px;display:none;"></div>
@@ -1204,6 +1294,81 @@ async function procesarCartolaEmp() {
   await enviarMovimientos(ME.empresa, PARSED_CARTOLA.banco, PARSED_CARTOLA.movimientos, 'emp-cartola-result');
 }
 
+function handleEmpCartolaDrop(event) {
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (file) procesarCartolaAutoEmp(file);
+}
+
+async function procesarCartolaAutoEmp(file) {
+  if (!file) return;
+  const statusEl = document.getElementById('emp-cartola-status');
+  const resultEl = document.getElementById('emp-cartola-result');
+  const banco    = document.getElementById('emp-cartola-banco').value;
+  const empresaId= ME.empresa;
+
+  statusEl.style.display = 'block';
+  resultEl.style.display  = 'none';
+  statusEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface2);border-radius:8px;">
+      <div class="spinner" style="width:18px;height:18px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+      <div>
+        <p style="margin:0;font-weight:600;">${file.name}</p>
+        <p style="margin:2px 0 0;font-size:12px;color:var(--txt2);">Procesando en servidor… ${banco === 'SANTANDER' ? '(consultando SimpleAPI)' : ''}</p>
+      </div>
+    </div>`;
+
+  try {
+    const formData = new FormData();
+    formData.append('cartola', file);
+    formData.append('empresa_id', empresaId);
+    formData.append('banco', banco);
+
+    const token = localStorage.getItem('token');
+    const resp  = await fetch('/api/movimientos/cargar-y-procesar', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData
+    });
+    const data = await resp.json();
+
+    statusEl.style.display = 'none';
+    resultEl.style.display = 'block';
+
+    if (!resp.ok || !data.ok) {
+      resultEl.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,.1);border-radius:8px;color:var(--red);">❌ ${data.error || 'Error al procesar'}</div>`;
+      return;
+    }
+
+    resultEl.innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <div style="padding:10px 14px;background:var(--surface2);font-weight:600;">✅ ${file.name} — ${data.banco}</div>
+        <div style="display:flex;gap:0;flex-wrap:wrap;">
+          <div style="flex:1;min-width:100px;padding:14px;text-align:center;border-right:1px solid var(--border);">
+            <div style="font-size:22px;font-weight:700;color:var(--green);">${data.nuevos}</div>
+            <div style="font-size:11px;color:var(--txt2);">Nuevos</div>
+          </div>
+          <div style="flex:1;min-width:100px;padding:14px;text-align:center;border-right:1px solid var(--border);">
+            <div style="font-size:22px;font-weight:700;color:var(--gold);">${data.duplicados}</div>
+            <div style="font-size:11px;color:var(--txt2);">Ya procesados</div>
+          </div>
+          <div style="flex:1;min-width:100px;padding:14px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:var(--accent);">${data.clientes_nuevos}</div>
+            <div style="font-size:11px;color:var(--txt2);">Clientes nuevos</div>
+          </div>
+        </div>
+        <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="empNav('movimientos')">Ver movimientos →</button>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-cartola-result').style.display='none'">Subir otra</button>
+        </div>
+      </div>`;
+    showToast(`✅ ${data.nuevos} nuevos · ${data.clientes_nuevos} clientes nuevos`, 'success');
+    document.getElementById('emp-cartola-file-auto').value = '';
+  } catch(e) {
+    statusEl.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,.1);border-radius:8px;color:var(--red);">❌ ${e.message}</div>`;
+  }
+}
+
 async function enviarMovimientos(empresaId, banco, movimientos, resultId) {
   const resultEl = document.getElementById(resultId);
   resultEl.style.display = 'block';
@@ -1228,6 +1393,254 @@ async function enviarMovimientos(empresaId, banco, movimientos, resultId) {
     </div>`;
   showToast(`Cartola procesada: ${data.nuevos} nuevos, ${data.duplicados} duplicados`, 'success');
   PARSED_CARTOLA = null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NUEVAS FUNCIONES: PROCESAMIENTO AUTOMÁTICO SERVIDOR + SIMPLEAPI
+// ══════════════════════════════════════════════════════════════════════════════
+
+function toggleLegacyCartola() {
+  const panel = document.getElementById('legacy-cartola-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function handleCartolaDrop(event) {
+  event.preventDefault();
+  document.getElementById('cartola-drop-zone').style.borderColor = 'var(--border)';
+  const file = event.dataTransfer.files[0];
+  if (file) procesarCartolaAuto(file);
+}
+
+async function procesarCartolaAuto(file) {
+  if (!file) return;
+  const statusEl = document.getElementById('cartola-auto-status');
+  const resultEl = document.getElementById('cartola-auto-result');
+  const empresaId= document.getElementById('cartola-empresa').value;
+  const banco    = document.getElementById('cartola-banco').value;
+
+  statusEl.style.display = 'block';
+  resultEl.style.display  = 'none';
+  statusEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface2);border-radius:8px;">
+      <div class="spinner" style="width:18px;height:18px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+      <div>
+        <p style="margin:0;font-weight:600;">${file.name}</p>
+        <p style="margin:2px 0 0;font-size:12px;color:var(--txt2);">Subiendo y procesando en servidor… ${banco === 'SANTANDER' ? 'Consultando RUTs en SimpleAPI…' : ''}</p>
+      </div>
+    </div>`;
+
+  try {
+    const formData = new FormData();
+    formData.append('cartola', file);
+    formData.append('empresa_id', empresaId);
+    formData.append('banco', banco);
+
+    const token = localStorage.getItem('token');
+    const resp  = await fetch('/api/movimientos/cargar-y-procesar', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData
+    });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      statusEl.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,.1);border-radius:8px;color:var(--red);">❌ ${data.error || 'Error al procesar'}</div>`;
+      return;
+    }
+
+    // ─── Mostrar resumen de resultados ───────────────────────────────────────
+    statusEl.innerHTML = '';
+    resultEl.style.display = 'block';
+
+    const simpleApiInfo = data.simpleapi_consultados > 0
+      ? `<span class="badge badge-blue" style="font-size:11px;">SimpleAPI: ${data.simpleapi_consultados} RUTs enriquecidos</span>`
+      : '';
+
+    const clientesNuevosInfo = data.clientes_nuevos > 0
+      ? `<span class="badge badge-green" style="font-size:11px;">+${data.clientes_nuevos} clientes nuevos guardados</span>`
+      : '';
+
+    resultEl.innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <div style="padding:12px 16px;background:var(--surface2);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-weight:600;">✅ Cartola procesada — ${data.banco}</span>
+          <span style="font-size:12px;color:var(--txt2);">${file.name}</span>
+          ${simpleApiInfo}
+          ${clientesNuevosInfo}
+        </div>
+        <div style="display:flex;gap:0;flex-wrap:wrap;">
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border);">
+            <div style="font-size:26px;font-weight:700;color:var(--green);">${data.nuevos}</div>
+            <div style="font-size:12px;color:var(--txt2);">Nuevos</div>
+          </div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border);">
+            <div style="font-size:26px;font-weight:700;color:var(--gold);">${data.duplicados}</div>
+            <div style="font-size:12px;color:var(--txt2);">Ya procesados</div>
+          </div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;border-right:1px solid var(--border);">
+            <div style="font-size:26px;font-weight:700;color:var(--accent);">${data.clientes_nuevos}</div>
+            <div style="font-size:12px;color:var(--txt2);">Clientes nuevos</div>
+          </div>
+          <div style="flex:1;min-width:120px;padding:16px;text-align:center;">
+            <div style="font-size:26px;font-weight:700;color:var(--txt);">${data.total}</div>
+            <div style="font-size:12px;color:var(--txt2);">Total detectados</div>
+          </div>
+        </div>
+        ${data.errores > 0 ? `<div style="padding:8px 16px;background:rgba(239,68,68,.08);font-size:12px;color:var(--red);">⚠ ${data.errores} filas con error — revisa el archivo</div>` : ''}
+        <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);">
+          <button class="btn btn-primary btn-sm" onclick="adminNav('movimientos')">Ver movimientos →</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadHistorialCartolas()">Actualizar historial</button>
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cartola-auto-result').style.display='none';document.getElementById('cartola-auto-status').style.display='none';">Subir otra</button>
+        </div>
+      </div>
+      ${renderDetalleResultados(data.results)}`;
+
+    showToast(`✅ ${data.nuevos} nuevos · ${data.duplicados} ya procesados · ${data.clientes_nuevos} clientes nuevos`, 'success');
+    loadHistorialCartolas();
+    document.getElementById('cartola-file-auto').value = '';
+  } catch(e) {
+    statusEl.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,.1);border-radius:8px;color:var(--red);">❌ Error de red: ${e.message}</div>`;
+  }
+}
+
+function renderDetalleResultados(results) {
+  if (!results || results.length === 0) return '';
+  // Mostrar solo los primeros 30 movimientos nuevos o pendientes
+  const interesantes = results.filter(r => r.status !== 'duplicado').slice(0, 30);
+  if (interesantes.length === 0) return '';
+
+  const rows = interesantes.map(r => {
+    const fuenteBadge = {
+      'simpleapi':    '<span style="font-size:10px;background:#3b82f6;color:#fff;padding:1px 6px;border-radius:4px;">SimpleAPI</span>',
+      'bd':           '<span style="font-size:10px;background:#10b981;color:#fff;padding:1px 6px;border-radius:4px;">BD</span>',
+      'cartola_bci':  '<span style="font-size:10px;background:#6366f1;color:#fff;padding:1px 6px;border-radius:4px;">BCI</span>',
+      'glosa_limpia': '<span style="font-size:10px;background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;">Glosa</span>'
+    }[r.fuente] || '';
+
+    const estadoBadge = r.status === 'listo'
+      ? '<span style="font-size:10px;background:#10b981;color:#fff;padding:1px 6px;border-radius:4px;">Listo</span>'
+      : '<span style="font-size:10px;background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;">Pendiente</span>';
+
+    return `<tr>
+      <td style="font-size:12px;padding:6px 8px;">${formatRutDisplay(r.rut)}</td>
+      <td style="font-size:12px;padding:6px 8px;">${r.razon_social || '—'}</td>
+      <td style="padding:6px 8px;">${fuenteBadge}</td>
+      <td style="padding:6px 8px;">${estadoBadge}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="margin-top:12px;">
+      <p style="font-size:12px;color:var(--txt2);margin-bottom:6px;">Primeros ${interesantes.length} movimientos nuevos:</p>
+      <div style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:var(--surface2);font-size:11px;">
+            <th style="padding:6px 8px;text-align:left;">RUT</th>
+            <th style="padding:6px 8px;text-align:left;">Razón Social</th>
+            <th style="padding:6px 8px;text-align:left;">Fuente</th>
+            <th style="padding:6px 8px;text-align:left;">Estado</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function formatRutDisplay(rut) {
+  if (!rut) return '—';
+  const clean = rut.replace(/[^0-9kK]/g,'').toUpperCase();
+  if (clean.length < 2) return rut;
+  const body = clean.slice(0,-1).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  return body + '-' + clean.slice(-1);
+}
+
+// Exportar base de datos en Excel original
+async function exportarBaseDatos(empresaId) {
+  try {
+    const token = localStorage.getItem('token');
+    const resp  = await fetch(`/api/exportar/base-datos/${empresaId}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!resp.ok) {
+      const e = await resp.json();
+      return showToast('Error: ' + (e.error || 'desconocido'), 'error');
+    }
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = resp.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1]
+                 || `Base_Datos_${empresaId}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ Base de datos exportada', 'success');
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+// Importar Excel base de datos existente
+async function importarBaseDatos(file) {
+  if (!file) return;
+  const empresaId        = document.getElementById('import-base-empresa').value;
+  const incluirMov       = document.getElementById('import-incluir-movimientos').checked;
+  const resultEl         = document.getElementById('import-base-result');
+
+  resultEl.innerHTML = '⏳ Importando…';
+  try {
+    const formData = new FormData();
+    formData.append('base', file);
+    formData.append('empresa_id', empresaId);
+    formData.append('importar_movimientos', incluirMov ? 'true' : 'false');
+
+    const token = localStorage.getItem('token');
+    const resp  = await fetch('/api/importar/base-datos', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: formData
+    });
+    const data = await resp.json();
+    if (!data.ok) { resultEl.innerHTML = `<span style="color:var(--red);">❌ ${data.error}</span>`; return; }
+
+    resultEl.innerHTML = `
+      <span style="color:var(--green);">✅ Importado:</span>
+      ${data.clientes.importados} clientes nuevos
+      (${data.clientes.omitidos} ya existían)
+      ${incluirMov ? `· ${data.movimientos.importados} movimientos históricos` : ''}`;
+    showToast(`✅ ${data.clientes.importados} clientes importados`, 'success');
+    document.getElementById('import-base-file').value = '';
+  } catch(e) {
+    resultEl.innerHTML = `<span style="color:var(--red);">❌ ${e.message}</span>`;
+  }
+}
+
+// Consulta manual de RUT en SimpleAPI
+async function consultarRUTManual() {
+  const rut     = document.getElementById('rut-consulta-input').value.trim();
+  const empresa = document.getElementById('rut-consulta-empresa').value;
+  const resultEl= document.getElementById('rut-consulta-result');
+  if (!rut) return showToast('Ingresa un RUT', 'error');
+
+  resultEl.innerHTML = '⏳ Consultando…';
+  try {
+    const data = await apiFetch('/api/simpleapi/consultar-rut', {
+      method: 'POST',
+      body: JSON.stringify({ rut, empresa_id: empresa })
+    });
+    if (!data.ok) {
+      resultEl.innerHTML = `<span style="color:var(--gold);">⚠ ${data.message || 'Sin datos'}</span>`;
+      return;
+    }
+    const d = data.data;
+    resultEl.innerHTML = `
+      <div style="margin-top:6px;padding:8px;background:var(--surface);border-radius:6px;font-size:12px;">
+        <strong>${d.razon_social || '—'}</strong><br>
+        ${d.giro ? `Giro: ${d.giro}<br>` : ''}
+        ${d.direccion ? `Dir: ${d.direccion}, ${d.comuna}` : ''}
+      </div>`;
+  } catch(e) {
+    resultEl.innerHTML = `<span style="color:var(--red);">❌ ${e.message}</span>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

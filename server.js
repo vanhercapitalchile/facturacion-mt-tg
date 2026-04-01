@@ -1588,6 +1588,683 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   res.json(stats);
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MÓDULO: PROCESAMIENTO AUTOMÁTICO DE CARTOLAS CON SIMPLEAPI
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Cargar xlsx para parsing server-side
+let XLSX_LIB;
+try { XLSX_LIB = require('xlsx'); } catch(e) {
+  console.warn('[XLSX] Paquete no disponible — instalar con: npm install xlsx');
+}
+
+// ── SimpleAPI configuration ───────────────────────────────────────────────────
+const SIMPLEAPI_BASE = 'https://api.simpleapi.cl';
+// Keys por defecto (hardcoded como fallback); también se pueden sobrescribir vía DB
+const SIMPLEAPI_KEYS_DEFAULT = {
+  'tg-inversiones': '2131-W810-6394-2111-1765',
+  'mt-inversiones': '2128-N940-6394-5813-7213'
+};
+
+function getSimpleApiKey(empresaId) {
+  try {
+    const cfg = getAppData('simpleapi_keys') || {};
+    return cfg[empresaId] || SIMPLEAPI_KEYS_DEFAULT[empresaId] || null;
+  } catch(e) { return SIMPLEAPI_KEYS_DEFAULT[empresaId] || null; }
+}
+
+// Limpiar nombre de glosa Santander: elimina RUT inicial y prefijos "Transf de", "Transf.", etc.
+function cleanSantanderName(glosa) {
+  if (!glosa) return '';
+  return glosa
+    .replace(/^0*\d{6,11}[kK]?\s+/i, '')         // RUT al inicio (ej: "026042825K ")
+    .replace(/Transferencia\s+de\s+/gi, '')
+    .replace(/Transf(?:erencia)?\.?\s+de\s+/gi, '')
+    .replace(/Transf(?:erencia)?\.?\s+/gi, '')
+    .replace(/^de\s+/i, '')
+    .trim()
+    .replace(/\s{2,}/g, ' ');
+}
+
+// Formatear dígitos de RUT a "XX.XXX.XXX-X"
+function formatRutDigits(rutDigits) {
+  if (!rutDigits) return '';
+  const clean = String(rutDigits).replace(/[^0-9kK]/g, '').toUpperCase();
+  if (clean.length < 2) return clean;
+  const body = clean.slice(0, -1);
+  const dv   = clean.slice(-1);
+  const formatted = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return formatted + '-' + dv;
+}
+
+// ── Parser BCI (.xls) ─────────────────────────────────────────────────────────
+function parseBCICartola(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const movimientos = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(20, data.length); i++) {
+    const rowStr = data[i].map(c => String(c || '')).join('|');
+    if (rowStr.includes('Fecha') && rowStr.includes('ID')) { headerIdx = i; break; }
+    if (rowStr.includes('ID Transferencia'))               { headerIdx = i; break; }
+  }
+  const dataStart = headerIdx >= 0 ? headerIdx + 1 : 9;
+
+  for (let i = dataStart; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 5) continue;
+
+    // Columna 0: Fecha (string DD/MM/YYYY o serial numérico Excel)
+    let fecha = '';
+    const fechaRaw = row[0];
+    if (typeof fechaRaw === 'number') {
+      const d = XLSX_LIB.SSF.parse_date_code(fechaRaw);
+      if (d) fecha = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } else {
+      const fs = String(fechaRaw || '').trim();
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(fs)) {
+        const [dd, mm, yyyy] = fs.split('/');
+        fecha = `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(fs)) {
+        fecha = fs;
+      }
+    }
+    if (!fecha) continue;
+
+    const idTransf    = String(row[1] || '').trim();
+    if (!idTransf || idTransf === 'ID Transferencia') continue;
+    const rutRaw      = String(row[2] || '').trim();
+    const bancoOrigen = String(row[3] || '').trim();
+    const cuentaOrig  = String(row[4] || '').trim();
+
+    let monto = row[5];
+    if (typeof monto === 'string') {
+      monto = parseFloat(monto.replace(/\./g, '').replace(',', '.').replace(/[$\s]/g, ''));
+    }
+    if (!monto || monto <= 0) continue;
+
+    const estado = String(row[6] || '').trim();
+    if (!estado.toLowerCase().includes('recibida')) continue;
+
+    const nombre = String(row[7] || '').trim();
+
+    movimientos.push({
+      id_transferencia: idTransf,
+      fecha, monto,
+      glosa: nombre,
+      rut: rutRaw,                            // con puntos y guión del banco
+      nombre_origen: nombre,
+      banco_origen: bancoOrigen || 'BCI',
+      cuenta_origen: cuentaOrig
+    });
+  }
+  return movimientos;
+}
+
+// ── Parser Santander (.xlsx) ──────────────────────────────────────────────────
+function parseSantanderCartola(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const movimientos = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(15, data.length); i++) {
+    const cell0 = String(data[i]?.[0] || '');
+    if (cell0.includes('mero de Movimiento') || cell0.includes('Número')) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) headerIdx = 9;
+
+  for (let i = headerIdx + 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 3) continue;
+
+    const idRaw = String(row[0] || '').trim();
+    if (!idRaw) continue;
+
+    // Fecha DD/MM/YYYY → YYYY-MM-DD
+    let fecha = String(row[1] || '').trim();
+    if (fecha.includes('/')) {
+      const [d, m, y] = fecha.split('/');
+      fecha = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+
+    let monto = row[2];
+    if (typeof monto === 'string') {
+      monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+    }
+    if (!monto || monto <= 0) continue;
+
+    const glosa = String(row[3] || '').trim();
+
+    // Extraer RUT desde glosa: patrón "0XXXXXXXXXX Transf de NOMBRE"
+    let rutDigits = '';
+    let nombre    = '';
+    const m1 = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+    if (m1) {
+      rutDigits = m1[1];
+      nombre    = m1[2]?.trim() || '';
+    } else {
+      const m2 = glosa.match(/(\d{7,9}[0-9kK])/);
+      if (m2) rutDigits = m2[1];
+      nombre = cleanSantanderName(glosa);
+    }
+
+    // ID único: si todos ceros usar "S{i}"
+    const useId = idRaw.replace(/0/g,'') === '' ? `S${i}` : idRaw;
+
+    movimientos.push({
+      id_transferencia: useId,
+      fecha, monto, glosa,
+      rut: rutDigits ? formatRutDigits(rutDigits) : '',
+      rut_digits: rutDigits,                  // solo dígitos para consulta API
+      nombre_origen: nombre,
+      banco_origen: 'No específica',
+      cuenta_origen: '999999'
+    });
+  }
+  return movimientos;
+}
+
+// ── Consultar RUT en SimpleAPI ────────────────────────────────────────────────
+async function consultarRUTSimpleAPI(rutNorm, apiKey) {
+  if (!apiKey || !rutNorm || rutNorm.length < 3) return null;
+  // Intentar dos variantes del endpoint (la documentación puede diferir entre versiones)
+  const endpoints = [
+    `${SIMPLEAPI_BASE}/v1/rut/${encodeURIComponent(rutNorm)}`,
+    `https://www.simpleapi.cl/api/Rut/${encodeURIComponent(rutNorm)}`
+  ];
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url, {
+        headers: { 'Authorization': apiKey, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (resp.status === 404) { console.log(`[SIMPLEAPI] RUT ${rutNorm} no encontrado (404)`); return null; }
+      if (!resp.ok) {
+        console.log(`[SIMPLEAPI] RUT ${rutNorm} → HTTP ${resp.status} en ${url}`);
+        continue; // intentar siguiente endpoint
+      }
+      const data = await resp.json();
+      console.log(`[SIMPLEAPI] RUT ${rutNorm} → ${JSON.stringify(data).substring(0,200)}`);
+      return data;
+    } catch(e) {
+      console.warn(`[SIMPLEAPI] Error en ${url}: ${e.message}`);
+    }
+  }
+  return null;
+}
+
+// Normalizar respuesta SimpleAPI a campos internos
+function normalizarRespuestaSimpleAPI(data) {
+  if (!data) return null;
+  return {
+    razon_social: data.razonSocial || data.nombre || data.name || data.RazonSocial || '',
+    giro:         data.giro || data.actividad || data.Giro || data.Actividad || '',
+    direccion:    data.direccion || data.address || data.Direccion || '',
+    comuna:       data.comuna || data.Comuna || '',
+    ciudad:       data.ciudad || data.Ciudad || '',
+    email:        data.email || data.correo || data.Email || ''
+  };
+}
+
+// ── Endpoint principal: procesar cartola server-side con SimpleAPI ─────────────
+app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
+    if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no instalado — ejecutar: npm install xlsx' });
+
+    const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
+    if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+
+    // Auto-detectar banco si no viene explícito
+    let bancoCartola = (req.body.banco || '').toUpperCase().trim();
+    if (!bancoCartola) {
+      const fname = req.file.originalname.toLowerCase();
+      if (fname.includes('santander'))          bancoCartola = 'SANTANDER';
+      else if (fname.includes('bci'))            bancoCartola = 'BCI';
+      else bancoCartola = fname.endsWith('.xlsx') ? 'SANTANDER' : 'BCI';
+    }
+
+    // Parsear cartola
+    let movimientosRaw = [];
+    try {
+      if (bancoCartola === 'SANTANDER') movimientosRaw = parseSantanderCartola(req.file.buffer);
+      else                              movimientosRaw = parseBCICartola(req.file.buffer);
+    } catch(parseErr) {
+      return res.status(422).json({ error: 'Error al parsear archivo: ' + parseErr.message });
+    }
+
+    if (movimientosRaw.length === 0) {
+      return res.status(422).json({
+        error: `No se encontraron movimientos válidos en la cartola ${bancoCartola}. ` +
+               'Verifica que el archivo corresponda al banco seleccionado y tenga el formato correcto.'
+      });
+    }
+
+    const apiKey    = getSimpleApiKey(empresaId);
+    const empresas  = getAppData('empresas') || {};
+    const empConf   = empresas[empresaId];
+    const config    = getAppData('config') || {};
+    const now       = nowCL();
+
+    // Cargar clientes existentes en memoria (para matching rápido)
+    const allClientes = db.prepare('SELECT * FROM clientes WHERE empresa_id = ?').all(empresaId);
+    const clienteMap  = new Map();
+    for (const c of allClientes) {
+      if (c.rut_normalizado) clienteMap.set(c.rut_normalizado, c);
+    }
+
+    // ── Consultar SimpleAPI para RUTs de Santander desconocidos ──────────────
+    const simpleApiResults = {};  // rutNorm → datos normalizados
+    let simpleApiConsultados = 0;
+
+    if (bancoCartola === 'SANTANDER' && apiKey) {
+      // Recopilar RUTs únicos que no están en nuestra base
+      const rutsNuevos = new Set();
+      for (const mov of movimientosRaw) {
+        const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
+        if (rutNorm && !clienteMap.has(rutNorm)) rutsNuevos.add(rutNorm);
+      }
+
+      // Consultar en lotes de 3 (respetar rate limit ≤3 req/seg de SimpleAPI)
+      const rutArr = [...rutsNuevos];
+      for (let i = 0; i < rutArr.length; i += 3) {
+        const batch = rutArr.slice(i, i + 3);
+        const batchResults = await Promise.allSettled(
+          batch.map(rut => consultarRUTSimpleAPI(rut, apiKey).then(d => ({ rut, data: d })))
+        );
+        for (const br of batchResults) {
+          if (br.status === 'fulfilled' && br.value.data) {
+            const normalized = normalizarRespuestaSimpleAPI(br.value.data);
+            if (normalized?.razon_social) {
+              simpleApiResults[br.value.rut] = normalized;
+              simpleApiConsultados++;
+            }
+          }
+        }
+        if (i + 3 < rutArr.length) await new Promise(r => setTimeout(r, 400));
+      }
+      console.log(`[SIMPLEAPI] ${simpleApiConsultados} RUTs encontrados de ${rutArr.size || rutArr.length} consultados`);
+    }
+
+    // ── Procesar e insertar movimientos ───────────────────────────────────────
+    const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
+    const insertMov   = db.prepare(`
+      INSERT INTO movimientos
+        (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado,
+         nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto,
+         estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor,
+         nombre_item, descripcion_item, precio, monto_exento, monto_total,
+         fecha_carga, created_at, updated_at, lote_carga_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+    const insertCliente = db.prepare(`
+      INSERT OR IGNORE INTO clientes
+        (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion,
+         comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante,
+         created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+
+    const loteCargaId = `${empresaId}-${bancoCartola}-${Date.now()}`.toLowerCase().replace(/\s/g, '-');
+    let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0;
+    const resultDetails = [];
+
+    db.transaction(() => {
+      for (const mov of movimientosRaw) {
+        try {
+          const idTransf    = String(mov.id_transferencia || '').trim();
+          const idCompuesto = `${idTransf}_${bancoCartola}`;
+
+          // ── Verificar duplicado ──────────────────────────────────────────
+          const existing = checkDup.get(idCompuesto);
+          if (existing) {
+            duplicados++;
+            resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado });
+            continue;
+          }
+
+          // ── Determinar tipo de cliente y RUT ────────────────────────────
+          const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
+          let estado = 'pendiente', tipoDte = null;
+          let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
+          let clienteEsNuevo = false, fuenteRazonSocial = 'cartola';
+
+          if (rutNorm) {
+            tipoDte = getTipoDte(rutNorm, empConf);
+            const clienteExistente = clienteMap.get(rutNorm);
+
+            if (clienteExistente) {
+              // ✅ Cliente conocido en BD
+              estado       = 'listo';
+              razonSocial  = clienteExistente.razon_social || '';
+              giro         = clienteExistente.giro         || '';
+              direccion    = clienteExistente.direccion     || '';
+              comuna       = clienteExistente.comuna        || '';
+              ciudad       = clienteExistente.ciudad        || '';
+              emailReceptor= clienteExistente.email         || '';
+              fuenteRazonSocial = 'bd';
+            } else {
+              // 🆕 Cliente nuevo — determinar fuente del nombre
+              clienteEsNuevo = true;
+              const apiData  = simpleApiResults[rutNorm];
+
+              if (apiData?.razon_social) {
+                // ✅ SimpleAPI devolvió datos
+                razonSocial   = apiData.razon_social;
+                giro          = apiData.giro         || '';
+                direccion     = apiData.direccion     || '';
+                comuna        = apiData.comuna        || '';
+                ciudad        = apiData.ciudad        || '';
+                emailReceptor = apiData.email         || '';
+                estado        = 'listo';
+                fuenteRazonSocial = 'simpleapi';
+              } else if (bancoCartola === 'BCI') {
+                // BCI tiene nombre y RUT completo en la cartola
+                razonSocial = (mov.nombre_origen || '').trim();
+                estado      = tipoDte === 41 ? 'listo' : 'pendiente';
+                fuenteRazonSocial = 'cartola_bci';
+              } else {
+                // Santander sin datos API → limpiar nombre de glosa
+                razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();
+                estado      = tipoDte === 41 ? 'listo' : 'pendiente';
+                fuenteRazonSocial = 'glosa_limpia';
+              }
+
+              // Guardar nuevo cliente en BD
+              const tipo       = (tipoDte === 34) ? 'empresa' : 'persona';
+              const rutFormato = formatRutDigits(rutNorm) || mov.rut || '';
+              insertCliente.run(
+                empresaId, tipo, rutFormato, rutNorm,
+                razonSocial, giro, direccion, comuna, ciudad,
+                razonSocial, emailReceptor, '', '', '',
+                now, now
+              );
+              // Agregar al mapa para evitar duplicados dentro del mismo lote
+              clienteMap.set(rutNorm, {
+                rut_normalizado: rutNorm, rut: rutFormato,
+                razon_social: razonSocial, tipo,
+                giro, direccion, comuna, ciudad, email: emailReceptor
+              });
+              clientesNuevos++;
+            }
+          } else {
+            // Sin RUT: usar nombre limpio de la glosa
+            razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();
+            estado = 'pendiente';
+          }
+
+          const monto          = parseFloat(mov.monto) || 0;
+          const nombreItem     = config.nombre_item_default   || 'Venta paquete activo digital';
+          const descripcionItem= `${config.descripcion_item_default || 'Venta paquete activo digital'} Banco ${bancoCartola}`;
+
+          insertMov.run(
+            empresaId, idTransf, mov.fecha || '', monto,
+            mov.glosa || '', mov.rut || '', rutNorm,
+            mov.nombre_origen || '', mov.banco_origen || '', bancoCartola,
+            mov.cuenta_origen || '', idCompuesto,
+            estado, tipoDte,
+            razonSocial.substring(0,100),
+            giro.substring(0,80), direccion.substring(0,100),
+            comuna, ciudad, emailReceptor,
+            nombreItem, descripcionItem,
+            monto, monto, monto,   // precio, monto_exento, monto_total
+            now, now, now, loteCargaId
+          );
+          nuevos++;
+          resultDetails.push({
+            id_compuesto: idCompuesto,
+            status: estado,
+            rut: rutNorm,
+            razon_social: razonSocial,
+            tipo_dte: tipoDte,
+            cliente_nuevo: clienteEsNuevo,
+            fuente: fuenteRazonSocial
+          });
+        } catch(rowErr) {
+          errores++;
+          console.error('[CARTOLA ROW ERR]', rowErr.message, mov);
+          resultDetails.push({ id_transferencia: mov.id_transferencia, status: 'error', error: rowErr.message });
+        }
+      }
+    })();
+
+    res.json({
+      ok: true,
+      banco: bancoCartola,
+      total: movimientosRaw.length,
+      nuevos, duplicados, errores,
+      clientes_nuevos: clientesNuevos,
+      simpleapi_consultados: simpleApiConsultados,
+      lote_carga_id: loteCargaId,
+      filename: req.file.originalname,
+      results: resultDetails.slice(0, 200)   // limitar payload
+    });
+  } catch(err) {
+    console.error('[CARGAR-Y-PROCESAR FATAL]', err);
+    res.status(500).json({ error: 'Error al procesar cartola: ' + err.message });
+  }
+});
+
+// ── Consulta manual de RUT en SimpleAPI (desde la UI) ────────────────────────
+app.post('/api/simpleapi/consultar-rut', requireAuth, async (req, res) => {
+  const { rut, empresa_id } = req.body;
+  if (!rut) return res.status(400).json({ error: 'RUT requerido' });
+  const empresaId = req.user.role === 'admin' ? (empresa_id || req.user.empresa) : req.user.empresa;
+  const apiKey = getSimpleApiKey(empresaId);
+  if (!apiKey) return res.status(400).json({ error: 'SimpleAPI no configurado para esta empresa' });
+
+  const rutNorm = normalizeRut(rut);
+  const rawData = await consultarRUTSimpleAPI(rutNorm, apiKey);
+  if (!rawData) return res.json({ ok: false, message: 'RUT no encontrado en SimpleAPI o sin datos disponibles' });
+
+  const normalized = normalizarRespuestaSimpleAPI(rawData);
+  res.json({ ok: true, rut_normalizado: rutNorm, data: normalized, raw: rawData });
+});
+
+// ── Exportar base de datos en formato Excel original ─────────────────────────
+app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
+  if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no disponible' });
+  const empresaId = req.params.empresa_id;
+  if (req.user.role !== 'admin' && req.user.empresa !== empresaId) {
+    return res.status(403).json({ error: 'Sin acceso a esta empresa' });
+  }
+
+  const wb = XLSX_LIB.utils.book_new();
+
+  // ── Hoja RECIBIDAS ──────────────────────────────────────────────────────────
+  const movHeaders = ['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Origen','Cuenta Origen','Monto','Nombre Origen','Estado','Otros','Cartola'];
+  const movs = db.prepare('SELECT * FROM movimientos WHERE empresa_id = ? ORDER BY fecha DESC, id DESC').all(empresaId);
+  const movRows = [movHeaders];
+  for (const m of movs) {
+    const rutNorm = m.rut_normalizado || '';
+    const isEmp   = rutNorm ? parseInt(rutNorm.slice(0,-1)) >= 50000000 : false;
+    const fechaFmt= m.fecha ? m.fecha.split('T')[0] : '';
+    movRows.push([
+      m.id_transferencia || '',
+      fechaFmt,
+      isEmp ? (m.rut || '') : null,
+      !isEmp ? (m.rut || '') : null,
+      m.banco_origen   || '',
+      m.cuenta_origen  || '',
+      m.monto          || 0,
+      m.nombre_origen  || '',
+      m.estado         || 'pendiente',
+      null,
+      m.banco_cartola  || ''
+    ]);
+  }
+  XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(movRows), 'RECIBIDAS');
+
+  // ── Hoja DME RECIBIDAS (Directorio Maestro Empresas) ───────────────────────
+  const dmeH = ['Rut Empresa','Razón Social','Giro','Dirección','Comuna','Ciudad','Nombre','Correo','Teléfono','Representante Legal','Rut Representante Legal'];
+  const empresasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='empresa' ORDER BY razon_social").all(empresaId);
+  const dmeRows = [dmeH, ...empresasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono,c.representante_legal,c.rut_representante])];
+  XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmeRows), 'DME RECIBIDAS');
+
+  // ── Hoja RNE RECIBIDAS (vacía — por compatibilidad) ────────────────────────
+  XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmeH]), 'RNE RECIBIDAS');
+
+  // ── Hoja DMP RECIBIDAS (Directorio Maestro Personas) ───────────────────────
+  const dmpH = ['Rut Persona','Razón Social','Giro','Dirección','Comuna','Ciudad','Nombre','Correo','Teléfono'];
+  const personasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='persona' ORDER BY razon_social").all(empresaId);
+  const dmpRows = [dmpH, ...personasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono])];
+  XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmpRows), 'DMP RECIBIDAS');
+
+  // ── Hoja RNP RECIBIDAS (vacía — por compatibilidad) ────────────────────────
+  XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmpH]), 'RNP RECIBIDAS');
+
+  // ── Hojas vacías de ENVIADAS para mantener estructura ──────────────────────
+  const enviadaH = [['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Destino','Cuenta Destino','Monto','Nombre Destino','Estado','Otros','Cartola']];
+  for (const sname of ['ENVIADAS','DME ENVIADAS','RNE ENVIADAS','DMP ENVIADAS','RNP ENVIADAS']) {
+    XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(enviadaH), sname);
+  }
+
+  const xlsBuf = XLSX_LIB.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const emp    = getAppData('empresas')?.[empresaId];
+  const nombre = (emp?.nombre || empresaId).replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g,'');
+  const fecha  = todayCL().replace(/-/g,'');
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="Base_Datos_${nombre}_${fecha}.xlsx"`);
+  res.send(xlsBuf);
+});
+
+// ── Importar Excel Base de Datos existente ────────────────────────────────────
+app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, res) => {
+  if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subió archivo' });
+
+  const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
+  if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+
+  let wb;
+  try {
+    wb = XLSX_LIB.read(req.file.buffer, { type: 'buffer' });
+  } catch(e) {
+    return res.status(422).json({ error: 'Error leyendo Excel: ' + e.message });
+  }
+
+  const now = nowCL();
+  let importadosClientes = 0, omitidosClientes = 0;
+  let importadosMov = 0, omitidosMov = 0;
+
+  const checkCliente  = db.prepare('SELECT id FROM clientes WHERE rut_normalizado=? AND empresa_id=?');
+  const insertCliente = db.prepare(`
+    INSERT OR IGNORE INTO clientes
+      (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion,
+       comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+
+  // Helper: importar hoja de clientes
+  function importarHojaClientes(sheetName, tipo) {
+    if (!wb.SheetNames.includes(sheetName)) return;
+    const rows = XLSX_LIB.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+    db.transaction(() => {
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[0]) continue;
+        const rutNorm = normalizeRut(String(r[0]));
+        if (!rutNorm) continue;
+        if (checkCliente.get(rutNorm, empresaId)) { omitidosClientes++; continue; }
+        insertCliente.run(
+          empresaId, tipo, String(r[0]||''), rutNorm,
+          String(r[1]||''), String(r[2]||''), String(r[3]||''),
+          String(r[4]||''), String(r[5]||''),
+          String(r[6]||r[1]||''),   // nombre = col 6 o razon social
+          String(r[7]||''), String(r[8]||''),
+          String(r[9]||''), String(r[10]||''),
+          now, now
+        );
+        importadosClientes++;
+      }
+    })();
+  }
+
+  importarHojaClientes('DME RECIBIDAS', 'empresa');
+  importarHojaClientes('RNE RECIBIDAS', 'empresa');
+  importarHojaClientes('DMP RECIBIDAS', 'persona');
+  importarHojaClientes('RNP RECIBIDAS', 'persona');
+
+  // Importar hoja RECIBIDAS (movimientos históricos)
+  const importarMov = req.body.importar_movimientos === 'true';
+  if (importarMov && wb.SheetNames.includes('RECIBIDAS')) {
+    const rows      = XLSX_LIB.utils.sheet_to_json(wb.Sheets['RECIBIDAS'], { header: 1, defval: '' });
+    const checkDup  = db.prepare('SELECT id FROM movimientos WHERE id_compuesto=?');
+    const insertMov = db.prepare(`
+      INSERT OR IGNORE INTO movimientos
+        (empresa_id, id_transferencia, fecha, monto, rut, rut_normalizado,
+         banco_origen, cuenta_origen, nombre_origen, banco_cartola, id_compuesto,
+         estado, tipo_dte, razon_social, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+    db.transaction(() => {
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[0]) continue;
+        const idTransf    = String(r[0]).trim();
+        const bancoCol    = String(r[10]||'').toUpperCase().trim() || 'IMPORTADO';
+        const idCompuesto = `${idTransf}_${bancoCol}`;
+        if (checkDup.get(idCompuesto)) { omitidosMov++; continue; }
+
+        const rutEmp = String(r[2]||'').trim();
+        const rutPer = String(r[3]||'').trim();
+        const rut    = rutEmp || rutPer;
+        const rutNorm= normalizeRut(rut);
+        const tipoDte= rutEmp ? 34 : 41;
+
+        let fecha = String(r[1]||'').split('T')[0];
+        if (fecha.includes('/')) {
+          const [d, m, y] = fecha.split('/');
+          fecha = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+        }
+        const monto = parseFloat(String(r[6]||'0').replace(/[.,]/g,'')) || 0;
+
+        insertMov.run(
+          empresaId, idTransf, fecha, monto,
+          rut, rutNorm,
+          String(r[4]||''), String(r[5]||''),
+          String(r[7]||''), bancoCol, idCompuesto,
+          'facturado', tipoDte, String(r[7]||''),
+          now, now
+        );
+        importadosMov++;
+      }
+    })();
+  }
+
+  res.json({
+    ok: true,
+    clientes:    { importados: importadosClientes, omitidos: omitidosClientes },
+    movimientos: { importados: importadosMov,      omitidos: omitidosMov }
+  });
+});
+
+// ── Actualizar keys de SimpleAPI desde la UI (solo admin) ────────────────────
+app.put('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
+  const { keys } = req.body;  // { 'tg-inversiones': '...', 'mt-inversiones': '...' }
+  if (!keys || typeof keys !== 'object') return res.status(400).json({ error: 'Formato inválido' });
+  setAppData('simpleapi_keys', keys);
+  res.json({ ok: true });
+});
+
+app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
+  const stored = getAppData('simpleapi_keys') || {};
+  // Merge con defaults pero no revelar los valores completos si ya están
+  const result = {};
+  for (const empId of Object.keys(SIMPLEAPI_KEYS_DEFAULT)) {
+    const key = stored[empId] || SIMPLEAPI_KEYS_DEFAULT[empId] || '';
+    result[empId] = key ? key.substring(0,4) + '****' + key.slice(-4) : '';
+  }
+  res.json(result);
+});
+
 // ── SPA catch-all ────────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

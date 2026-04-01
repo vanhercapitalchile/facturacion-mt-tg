@@ -1971,7 +1971,21 @@ async function marcarSeleccionadosFacturados() {
   });
   if (data?.ok) {
     showToast(`✅ ${ids.length} movimiento(s) marcados como facturados`, 'success');
-    loadFacturacion();
+    // Quitar de lista local de inmediato para feedback visual instantáneo
+    ALL_FACT_MOVS = ALL_FACT_MOVS.filter(m => !ids.includes(m.id));
+    renderFacturacionTable();
+    // Navegar a Movimientos > tab Facturados después de breve pausa
+    setTimeout(() => {
+      MOV_FILTER = 'facturado';
+      if (isAdmin()) adminNav('movimientos'); else empNav('movimientos');
+      // Actualizar resaltado de tabs una vez que el DOM del view esté activo
+      requestAnimationFrame(() => {
+        const tabsId = isAdmin() ? 'mov-filter-tabs' : 'emp-mov-filter-tabs';
+        document.querySelectorAll(`#${tabsId} .tab`).forEach((t, i) => {
+          t.classList.toggle('active', i === 3); // 0=Todos 1=Pendientes 2=Listos 3=Facturados
+        });
+      });
+    }, 500);
   } else {
     showToast(data?.error || 'Error al actualizar estado', 'error');
   }

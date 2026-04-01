@@ -1162,13 +1162,16 @@ async function loadDashboard() {
   } else {
     const eid = getEmpresaId() || Object.keys(stats)[0];
     const s = stats[eid] || {};
+    // Operadores (role !== admin) no ven montos
+    const mostrarMontos = isAdmin();
     el.innerHTML = `
       <div class="stat-card"><div class="stat-label">Movimientos</div><div class="stat-value blue">${s.total || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value gold">${s.pendientes || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Listos</div><div class="stat-value green">${s.listos || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Facturados</div><div class="stat-value green">${s.facturados || 0}</div></div>
+      ${mostrarMontos ? `
       <div class="stat-card"><div class="stat-label">Monto total</div><div class="stat-value">${fmtShort(s.montoTotal || 0)}</div></div>
-      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(s.montoFacturado || 0)}</div></div>
+      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(s.montoFacturado || 0)}</div></div>` : ''}
       <div class="stat-card"><div class="stat-label">Clientes en base</div><div class="stat-value blue">${s.totalClientes || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Lotes emitidos</div><div class="stat-value">${s.totalLotes || 0}</div></div>
     `;
@@ -1394,6 +1397,7 @@ async function loadHistorialCartolas() {
         <th style="text-align:left;padding:8px 4px;">Empresa</th>
         <th style="text-align:left;padding:8px 4px;">Banco</th>
         <th style="text-align:left;padding:8px 4px;">Fecha carga</th>
+        <th style="text-align:left;padding:8px 4px;">Subida por</th>
         <th style="text-align:right;padding:8px 4px;">Movs.</th>
         <th style="text-align:right;padding:8px 4px;">Monto total</th>
         <th style="text-align:center;padding:8px 4px;">Acción</th>
@@ -1402,6 +1406,7 @@ async function loadHistorialCartolas() {
         <td style="padding:8px 4px;">${r.empresa_id}</td>
         <td style="padding:8px 4px;">${r.banco_cartola}</td>
         <td style="padding:8px 4px;">${(r.fecha_carga||'').substring(0,16)}</td>
+        <td style="padding:8px 4px;font-weight:600;color:var(--accent);">${r.cargado_por || '—'}</td>
         <td style="text-align:right;padding:8px 4px;">${r.cantidad}</td>
         <td style="text-align:right;padding:8px 4px;">$${Number(r.monto_total||0).toLocaleString('es-CL')}</td>
         <td style="text-align:center;padding:8px 4px;">
@@ -1804,6 +1809,13 @@ async function loadMovimientos(page) {
   let url = `/api/movimientos?pag=1&limit=${MOV_PER_PAGE}&offset=${MOV_PAGE * MOV_PER_PAGE}`;
   if (empId) url += `&empresa_id=${empId}`;
   if (MOV_FILTER !== 'todos') url += `&estado=${MOV_FILTER}`;
+  // Operadores: solo ven movimientos de los últimos 45 días
+  if (!isAdmin()) {
+    const d = new Date();
+    d.setDate(d.getDate() - 45);
+    const desde = d.toISOString().slice(0, 10);
+    url += `&fecha_desde=${desde}`;
+  }
 
   const res = await apiFetch(url);
   ALL_MOVIMIENTOS = res?.movimientos || [];

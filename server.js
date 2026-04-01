@@ -112,6 +112,16 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)')
 // ── Schema migrations ─────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
+try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
+
+// ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
+const RUTS_INTERNOS = ['778593769', '778856980']; // TG Inversiones SPA / MT Inversiones SPA
+try {
+  db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+           WHERE rut_normalizado IN ('778593769','778856980')
+           AND estado IN ('pendiente','listo')`);
+  console.log('[STARTUP] RUTs internos marcados como interno');
+} catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
 
 // ── Cleanup: eliminar intentos fallidos de facturación anteriores al deploy ──
 // Resetea movimientos y borra lotes con estado 'error'. Seguro de correr múltiples veces.
@@ -537,10 +547,11 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
   // Generate unique ID for this cartola upload batch
   const loteCargaId = `${empresaId}-${banco_cartola}-${Date.now()}`.toLowerCase().replace(/\s/g,'-');
 
+  const cargadoPor = req.user.username || 'sistema';
   const checkDup = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
   const insertMov = db.prepare(`
-    INSERT INTO movimientos (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado, nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto, estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor, nombre_item, descripcion_item, precio, monto_exento, monto_total, fecha_carga, created_at, updated_at, lote_carga_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO movimientos (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado, nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto, estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor, nombre_item, descripcion_item, precio, monto_exento, monto_total, fecha_carga, created_at, updated_at, lote_carga_id, cargado_por)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
 
   // Load clientes for matching
@@ -570,8 +581,11 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
-        if (rutNorm) {
+        // RUT interno: transferencia entre empresas propias → no facturar
+        if (RUTS_INTERNOS.includes(rutNorm)) {
+          estado = 'interno';
+        } else if (rutNorm) {
+          // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
           const empConf = getAppData('empresas')?.[empresaId];
           tipoDte = getTipoDte(rutNorm, empConf);
 
@@ -608,8 +622,8 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
           razonSocial, giro ? giro.substring(0, 80) : '', direccion ? direccion.substring(0, 100) : '',
           comuna, ciudad, emailReceptor,
           nombreItem, descripcionItem,
-          monto, tipoDte ? monto : 0, monto,  // ambos tipo 34 y 41 son exentos
-          now, now, now, loteCargaId
+          monto, tipoDte ? monto : 0, monto,
+          now, now, now, loteCargaId, cargadoPor
         );
         nuevos++;
         results.push({ id_compuesto: idCompuesto, status: estado, rut: rutNorm });
@@ -649,6 +663,7 @@ app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
 app.get('/api/cartolas/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let sql = `SELECT lote_carga_id, empresa_id, banco_cartola, fecha_carga,
+    MAX(cargado_por) as cargado_por,
     COUNT(*) as cantidad, SUM(monto) as monto_total
     FROM movimientos WHERE lote_carga_id IS NOT NULL AND lote_carga_id != ''`;
   const params = [];

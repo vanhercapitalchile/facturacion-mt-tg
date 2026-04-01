@@ -2350,6 +2350,170 @@ app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   res.json(result);
 });
 
+// ── Importar base histórica de DTE emitidos ───────────────────────────────────
+// Acepta el Excel con hojas "FACTURAS INGRESADAS" y "BOLETAS INGRESADAS"
+// Inserta cada fila como movimiento facturado, deduplica por id_compuesto
+app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (req, res) => {
+  if (!XLSX_LIB)  return res.status(500).json({ error: 'Módulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subió archivo' });
+
+  const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
+  if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+
+  let wb;
+  try { wb = XLSX_LIB.read(req.file.buffer, { type: 'buffer' }); }
+  catch(e) { return res.status(422).json({ error: 'No se pudo leer el archivo Excel: ' + e.message }); }
+
+  const HOJAS_OBJETIVO = ['FACTURAS INGRESADAS', 'BOLETAS INGRESADAS'];
+  const now = nowCL();
+
+  // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÚSCULAS)
+  function normalizarIdCompuesto(idTransf, cartola) {
+    const banco = String(cartola || '').trim().toUpperCase();
+    const id    = String(idTransf || '').trim();
+    return id && banco ? `${id}_${banco}` : '';
+  }
+
+  // Determinar tipo por RUT: >= 50.000.000 → empresa (34) · < 50M → persona (41)
+  function tipoPorRut(rutNorm) {
+    const digits = rutNorm.replace(/[^0-9]/g, '');
+    if (!digits) return 'empresa';
+    return parseInt(digits.slice(0, -1)) >= 50000000 ? 'empresa' : 'persona';
+  }
+
+  // Leer id_compuesto existentes en esta empresa (para deduplicar en memoria)
+  const existentesSet = new Set(
+    db.prepare("SELECT id_compuesto FROM movimientos WHERE empresa_id = ? AND id_compuesto IS NOT NULL AND id_compuesto != ''")
+      .all(empresaId).map(r => r.id_compuesto.toUpperCase())
+  );
+
+  // Crear un lote registral para esta importación
+  const loteId   = generateLoteId(empresaId);
+  const nombreLote = `Base histórica ${empresaId}`;
+
+  const stmtInsertMov = db.prepare(`
+    INSERT OR IGNORE INTO movimientos
+      (empresa_id, id_transferencia, fecha, monto, monto_total, glosa,
+       rut, rut_normalizado, nombre_origen, razon_social, giro,
+       direccion, comuna, ciudad, email_receptor,
+       banco_cartola, banco_origen, id_compuesto,
+       estado, tipo_dte, fecha_facturacion, lote_id,
+       nombre_item, descripcion_item, precio,
+       fecha_carga, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+
+  const stmtInsertCliente = db.prepare(`
+    INSERT OR IGNORE INTO clientes
+      (empresa_id, tipo, rut, rut_normalizado, razon_social, giro,
+       direccion, comuna, ciudad, email, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+
+  let insertados = 0, duplicados = 0, clientesNuevos = 0, errores = 0;
+  const nuevosIdCompuesto = new Set(); // para deduplicar dentro del propio Excel
+
+  const procesarHoja = (sheetName) => {
+    if (!wb.SheetNames.includes(sheetName)) return;
+    const ws   = wb.Sheets[sheetName];
+    const rows = XLSX_LIB.utils.sheet_to_json(ws, { defval: '' });
+
+    for (const row of rows) {
+      try {
+        const idTransf   = String(row['ID Transferencia'] || '').trim();
+        const cartola    = String(row['Cartola'] || '').trim();
+        const idComp     = normalizarIdCompuesto(idTransf, cartola);
+
+        if (!idComp) { errores++; continue; }
+
+        const idCompUpper = idComp.toUpperCase();
+        if (existentesSet.has(idCompUpper) || nuevosIdCompuesto.has(idCompUpper)) {
+          duplicados++;
+          continue;
+        }
+
+        // Fecha de emisión
+        let fechaStr = '';
+        const fechaRaw = row['FechaEmision'];
+        if (fechaRaw instanceof Date) {
+          const dd = String(fechaRaw.getDate()).padStart(2,'0');
+          const mm = String(fechaRaw.getMonth()+1).padStart(2,'0');
+          fechaStr = `${dd}/${mm}/${fechaRaw.getFullYear()}`;
+        } else if (typeof fechaRaw === 'number') {
+          // Excel serial date
+          const d = XLSX_LIB.SSF.parse_date_code(fechaRaw);
+          if (d) fechaStr = `${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`;
+        } else if (fechaRaw) {
+          fechaStr = String(fechaRaw).substring(0, 10);
+        }
+
+        const rutRaw   = String(row['RutRecep'] || '').trim();
+        const rutNorm  = normalizeRut(rutRaw);
+        const rutFmt   = rutNorm ? formatRut(rutNorm) : '';
+        const razon    = String(row['RazonSocialRecep'] || '').trim() || String(row['Contacto'] || '').trim();
+        const giro     = String(row['GiroRecep'] || '').trim();
+        const dir      = String(row['DirRecep'] || '').trim();
+        const comuna   = String(row['CmnaRecep'] || '').trim();
+        const ciudad   = String(row['CiudadRecep'] || '').trim();
+        const email    = String(row['CorreoRecep'] || '').trim();
+        const monto    = parseFloat(row['TotalProducto']) || parseFloat(row['PrecioProducto']) || 0;
+        const tipoDte  = parseInt(row['TipoDte']) || 34;
+        const tipoCliente = tipoPorRut(rutNorm);
+        const bancoUp  = cartola.toUpperCase();
+        const descProd = String(row['DescripcionProducto'] || '').trim();
+        const nombreProd = String(row['NombreProducto'] || '').trim();
+        const precio   = parseFloat(row['PrecioProducto']) || 0;
+
+        stmtInsertMov.run(
+          empresaId, idTransf, fechaStr, monto, monto, descProd || nombreProd,
+          rutFmt, rutNorm, razon, razon, giro,
+          dir, comuna, ciudad, email,
+          bancoUp, bancoUp, idComp,
+          'facturado', tipoDte, fechaStr, loteId,
+          nombreProd, descProd, precio,
+          now, now, now
+        );
+
+        // Insertar/ignorar cliente
+        if (rutNorm) {
+          const antes = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresaId);
+          if (!antes) {
+            stmtInsertCliente.run(
+              empresaId, tipoCliente, rutFmt, rutNorm, razon || null, giro || null,
+              dir || null, comuna || null, ciudad || null, email || null, now, now
+            );
+            clientesNuevos++;
+          }
+        }
+
+        nuevosIdCompuesto.add(idCompUpper);
+        insertados++;
+      } catch(rowErr) {
+        errores++;
+      }
+    }
+  };
+
+  try {
+    db.transaction(() => {
+      // Crear lote registral antes de insertar movimientos
+      db.prepare(
+        'INSERT OR IGNORE INTO lotes_facturacion (lote_id, empresa_id, nombre, cantidad, monto_total, estado, metodo, created_at, updated_at) VALUES (?,?,?,0,0,?,?,?,?)'
+      ).run(loteId, empresaId, nombreLote, 'facturado_manual', 'importacion_historica', now, now);
+
+      HOJAS_OBJETIVO.forEach(procesarHoja);
+
+      // Actualizar contadores del lote
+      db.prepare('UPDATE lotes_facturacion SET cantidad = ?, updated_at = ? WHERE lote_id = ?')
+        .run(insertados, now, loteId);
+    })();
+  } catch(txErr) {
+    return res.status(500).json({ error: 'Error en transacción: ' + txErr.message });
+  }
+
+  res.json({ ok: true, insertados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
+});
+
 // ── SPA catch-all ────────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 

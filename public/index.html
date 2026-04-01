@@ -244,6 +244,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-section-title">Datos</div>
           <div class="nav-item" onclick="adminNav('clientes')">&#x1F465; Base de Clientes</div>
           <div class="nav-item" onclick="adminNav('importar')">&#x1F4E5; Importar Clientes</div>
+          <div class="nav-item" onclick="adminNav('base-historica')">&#x1F4DA; Base Histórica DTE</div>
         </div>
         <div class="nav-section">
           <div class="nav-section-title">Sistema</div>
@@ -652,6 +653,70 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
       </div>
 
+      <!-- BASE HISTÓRICA DTE VIEW -->
+      <div class="view" id="view-base-historica">
+        <div class="topbar"><h1>Base Histórica DTE</h1></div>
+
+        <!-- Tarjetas de estado por empresa -->
+        <div class="stats-grid" id="bh-stats" style="margin-bottom:20px;"></div>
+
+        <!-- Panel de importación -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header">
+            <h3>&#x2B06; Importar base histórica desde Excel</h3>
+            <span style="font-size:12px;color:var(--txt2);">Hojas leídas: <strong>FACTURAS INGRESADAS</strong> y <strong>BOLETAS INGRESADAS</strong></span>
+          </div>
+          <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">
+            Sube el archivo Excel de cada empresa. El sistema importará todos los DTE emitidos históricos como
+            <strong>facturados</strong> y los usará como referencia de deduplicación al procesar cartolas futuras.
+            Registros ya existentes serán omitidos automáticamente.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+            <!-- TG Inversiones -->
+            <div style="border:1px solid var(--card-b);border-radius:var(--radius);padding:20px;">
+              <h4 style="margin-bottom:12px;color:var(--green);">TG Inversiones</h4>
+              <div class="upload-area" style="padding:20px;cursor:pointer;"
+                   ondragover="event.preventDefault();"
+                   ondrop="handleBHDrop(event,'tg-inversiones')"
+                   onclick="document.getElementById('bh-file-tg').click()">
+                <div class="upload-icon" style="font-size:24px;">&#x1F4C2;</div>
+                <p style="margin:4px 0 0;font-size:13px;">Arrastra o haz clic</p>
+                <p style="margin:2px 0 0;font-size:11px;color:var(--txt3);">.xlsx — Sistema de facturación TG</p>
+                <input type="file" id="bh-file-tg" accept=".xlsx,.xls" style="display:none"
+                       onchange="importarBaseHistorica('tg-inversiones', this.files[0])">
+              </div>
+              <div id="bh-status-tg" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- MT Inversiones -->
+            <div style="border:1px solid var(--card-b);border-radius:var(--radius);padding:20px;">
+              <h4 style="margin-bottom:12px;color:var(--blue);">MT Inversiones</h4>
+              <div class="upload-area" style="padding:20px;cursor:pointer;"
+                   ondragover="event.preventDefault();"
+                   ondrop="handleBHDrop(event,'mt-inversiones')"
+                   onclick="document.getElementById('bh-file-mt').click()">
+                <div class="upload-icon" style="font-size:24px;">&#x1F4C2;</div>
+                <p style="margin:4px 0 0;font-size:13px;">Arrastra o haz clic</p>
+                <p style="margin:2px 0 0;font-size:11px;color:var(--txt3);">.xlsx — Sistema de facturación MT</p>
+                <input type="file" id="bh-file-mt" accept=".xlsx,.xls" style="display:none"
+                       onchange="importarBaseHistorica('mt-inversiones', this.files[0])">
+              </div>
+              <div id="bh-status-mt" style="margin-top:12px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Historial de importaciones -->
+        <div class="card">
+          <div class="card-header">
+            <h3>&#x1F4CB; Importaciones realizadas</h3>
+            <button class="btn btn-secondary btn-sm" onclick="loadBaseHistoricaStats()">&#x21BB; Actualizar</button>
+          </div>
+          <div id="bh-historial" style="color:var(--txt2);font-size:13px;padding:8px 0;">Cargando…</div>
+        </div>
+      </div>
+
       <!-- CONFIG VIEW -->
       <div class="view" id="view-config">
         <div class="topbar"><h1>Configuración</h1></div>
@@ -978,6 +1043,7 @@ function adminNav(view) {
   else if (view === 'config') renderConfig();
   else if (view === 'usuarios') renderUsuarios();
   else if (view === 'cartolas') loadHistorialCartolas();
+  else if (view === 'base-historica') loadBaseHistoricaStats();
 }
 
 function empNav(view) {
@@ -2351,6 +2417,129 @@ async function marcarExportadoLote(loteId) {
   await apiFetch(`/api/facturacion/marcar-exportado/${loteId}`, { method: 'POST' });
   showToast('Lote marcado como exportado', 'success');
   loadLotes();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BASE HISTÓRICA DTE
+// ══════════════════════════════════════════════════════════════════════════════
+
+function handleBHDrop(e, empresaId) {
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (file) importarBaseHistorica(empresaId, file);
+}
+
+async function importarBaseHistorica(empresaId, file) {
+  if (!file) return;
+  const statusEl = document.getElementById(`bh-status-${empresaId === 'tg-inversiones' ? 'tg' : 'mt'}`);
+  statusEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg2);border-radius:8px;">
+      <div class="spinner" style="width:16px;height:16px;border:3px solid var(--card-b);border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+      <span style="font-size:13px;">Procesando <strong>${file.name}</strong>… puede tomar hasta 30 segundos.</span>
+    </div>`;
+
+  const fd = new FormData();
+  fd.append('base', file);
+  fd.append('empresa_id', empresaId);
+
+  try {
+    const token = localStorage.getItem('mttg_token');
+    const resp  = await fetch('/api/importar/base-historica', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd
+    });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      statusEl.innerHTML = `<div style="padding:10px;background:rgba(224,80,80,.1);border-radius:8px;color:var(--red);">❌ ${data.error || 'Error al importar'}</div>`;
+      return;
+    }
+
+    statusEl.innerHTML = `
+      <div style="border:1px solid var(--card-b);border-radius:8px;overflow:hidden;">
+        <div style="padding:8px 14px;background:rgba(0,212,170,.08);font-weight:600;font-size:13px;">✅ Importación completada — ${file.name}</div>
+        <div style="display:flex;gap:0;flex-wrap:wrap;">
+          <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
+            <div style="font-size:22px;font-weight:700;color:var(--green);">${data.insertados.toLocaleString('es-CL')}</div>
+            <div style="font-size:11px;color:var(--txt2);">DTE importados</div>
+          </div>
+          <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
+            <div style="font-size:22px;font-weight:700;color:var(--gold);">${data.duplicados.toLocaleString('es-CL')}</div>
+            <div style="font-size:11px;color:var(--txt2);">Ya existían</div>
+          </div>
+          <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
+            <div style="font-size:22px;font-weight:700;color:var(--blue);">${data.clientes_nuevos.toLocaleString('es-CL')}</div>
+            <div style="font-size:11px;color:var(--txt2);">Clientes nuevos</div>
+          </div>
+          ${data.errores > 0 ? `
+          <div style="flex:1;min-width:90px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:var(--red);">${data.errores}</div>
+            <div style="font-size:11px;color:var(--txt2);">Filas omitidas</div>
+          </div>` : ''}
+        </div>
+      </div>`;
+
+    showToast(`✅ ${data.insertados.toLocaleString('es-CL')} DTE importados en ${empresaId}`, 'success');
+    loadBaseHistoricaStats();
+  } catch(e) {
+    statusEl.innerHTML = `<div style="padding:10px;background:rgba(224,80,80,.1);border-radius:8px;color:var(--red);">❌ ${e.message}</div>`;
+  }
+}
+
+async function loadBaseHistoricaStats() {
+  const statsEl    = document.getElementById('bh-stats');
+  const historialEl = document.getElementById('bh-historial');
+  if (!statsEl) return;
+
+  // Stats por empresa (conteo de movimientos facturados en base histórica)
+  const empresas = [
+    { id: 'tg-inversiones', label: 'TG Inversiones', color: 'var(--green)' },
+    { id: 'mt-inversiones', label: 'MT Inversiones', color: 'var(--blue)'  }
+  ];
+
+  statsEl.innerHTML = '';
+  for (const emp of empresas) {
+    const res = await apiFetch(`/api/movimientos?pag=1&empresa_id=${emp.id}&estado=facturado&limit=1&offset=0`);
+    const total = res?.total ?? '—';
+    statsEl.innerHTML += `
+      <div class="stat-card">
+        <div class="stat-label">${emp.label}</div>
+        <div class="stat-value" style="color:${emp.color};">${typeof total === 'number' ? total.toLocaleString('es-CL') : total}</div>
+        <div class="stat-sub">DTE facturados en base</div>
+      </div>`;
+  }
+
+  // Lotes de importación histórica
+  if (!historialEl) return;
+  const lotes = await apiFetch('/api/facturacion/lotes') || [];
+  const bhLotes = lotes.filter(l => l.metodo === 'importacion_historica').sort((a,b) => b.id - a.id);
+
+  if (!bhLotes.length) {
+    historialEl.innerHTML = '<span style="color:var(--txt3);">Aún no se han realizado importaciones de base histórica.</span>';
+    return;
+  }
+
+  historialEl.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--card-b);">
+          <th style="text-align:left;padding:6px 8px;color:var(--txt2);">Nombre</th>
+          <th style="text-align:left;padding:6px 8px;color:var(--txt2);">Empresa</th>
+          <th style="text-align:right;padding:6px 8px;color:var(--txt2);">DTE importados</th>
+          <th style="text-align:left;padding:6px 8px;color:var(--txt2);">Fecha</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${bhLotes.map(l => `
+        <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="padding:6px 8px;">${l.nombre || '—'}</td>
+          <td style="padding:6px 8px;"><span class="badge badge-gray">${l.empresa_id}</span></td>
+          <td style="padding:6px 8px;text-align:right;font-weight:600;">${(l.cantidad||0).toLocaleString('es-CL')}</td>
+          <td style="padding:6px 8px;color:var(--txt3);">${(l.created_at||'').substring(0,16)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -976,6 +976,7 @@ async function doLogin() {
 function doLogout() {
   TOKEN = null; ME = {}; DB = { empresas: {}, config: {}, users: {} };
   localStorage.removeItem('mttg_token');
+  localStorage.removeItem('mttg_view');
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('admin-app').style.display = 'none';
   document.getElementById('empresa-app').style.display = 'none';
@@ -1013,7 +1014,10 @@ function showAdmin() {
   document.getElementById('empresa-app').style.display = 'none';
   document.getElementById('admin-avatar').textContent = ME.initials || 'AD';
   document.getElementById('admin-name').textContent = ME.nombre || ME.username;
-  loadDashboard();
+  // Restaurar última vista visitada (persiste F5)
+  const lastView = localStorage.getItem('mttg_view') || 'dashboard';
+  const adminViews = ['dashboard','movimientos','facturacion','lotes','historial','exportar','clientes','config','usuarios','cartolas','base-historica'];
+  adminNav(adminViews.includes(lastView) ? lastView : 'dashboard');
 }
 
 function showEmpresa() {
@@ -1027,7 +1031,10 @@ function showEmpresa() {
   document.getElementById('emp-avatar').textContent = ME.initials || '??';
   document.getElementById('emp-name').textContent = ME.nombre || ME.username;
   document.getElementById('emp-dash-title').textContent = `Dashboard — ${emp.nombre || ME.empresa}`;
-  loadDashboard();
+  // Restaurar última vista visitada (persiste F5)
+  const lastView = localStorage.getItem('mttg_view') || 'dashboard';
+  const empViews = ['dashboard','movimientos','facturacion','lotes','historial','exportar','clientes'];
+  empNav(empViews.includes(lastView) ? lastView : 'dashboard');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1035,6 +1042,7 @@ function showEmpresa() {
 // ══════════════════════════════════════════════════════════════════════════════
 function adminNav(view) {
   CURRENT_VIEW = view;
+  localStorage.setItem('mttg_view', view);
   document.querySelectorAll('#admin-main .view').forEach(v => v.classList.remove('active'));
   const el = document.getElementById('view-' + view);
   if (el) el.classList.add('active');
@@ -1057,6 +1065,7 @@ function adminNav(view) {
 
 function empNav(view) {
   CURRENT_VIEW = view;
+  localStorage.setItem('mttg_view', view);
   document.querySelectorAll('#empresa-main .view').forEach(v => v.classList.remove('active'));
   const el = document.getElementById('emp-view-' + view);
   if (el) el.classList.add('active');
@@ -2152,13 +2161,12 @@ async function marcarSeleccionadosFacturados() {
 
   if (data?.ok) {
     showToast(`✅ ${data.cantidad} doc(s) marcados — "${data.nombre}"`, 'success');
-    // Quitar de la lista local para feedback visual instantáneo
+    // Quitar de la lista local y recargar la página actual sin navegar
     ALL_FACT_MOVS = ALL_FACT_MOVS.filter(m => !ids.includes(m.id));
     renderFacturacionTable();
-    // Navegar a Historial donde ya aparecen con la marca "Marcado facturado manual"
-    setTimeout(() => {
-      if (isAdmin()) adminNav('historial'); else empNav('historial');
-    }, 600);
+    // Actualizar total y recargar desde servidor por si hay más páginas
+    FACT_TOTAL = Math.max(0, FACT_TOTAL - ids.length);
+    loadFacturacion(FACT_PAGE);
   } else {
     showToast(data?.error || 'Error al marcar como facturado', 'error');
   }

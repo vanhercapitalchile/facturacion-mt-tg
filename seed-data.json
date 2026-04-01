@@ -50,6 +50,24 @@
         "password": "",
         "rut_emisor": "77885698-0"
       }
+    },
+    "ts-capital": {
+      "nombre": "TS Capital SPA",
+      "rut": "77.506.343-2",
+      "giro": "FONDOS Y SOCIEDADES DE INVERSION Y ENTIDADES FINANCIERAS SIMILARES",
+      "direccion": "MANQUEHUE NORTE 151 OF 1205 PS 12",
+      "comuna": "Las Condes",
+      "ciudad": "SANTIAGO",
+      "email_facturacion": "facturas@tscapitalchile.cl",
+      "nombre_item_default": "Venta Activo Digital. Transferencia a Banco",
+      "proveedor_dte": "haulmer",
+      "haulmer": {
+        "api_key": "01c1214f31b0453081c222ba59ec0124"
+      },
+      "simplefactura": {
+        "tipo_dte_personas": 41,
+        "tipo_dte_empresas": 34
+      }
     }
   },
   "config": {

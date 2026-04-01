@@ -115,10 +115,10 @@ try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
-const RUTS_INTERNOS = ['778593769', '778856980']; // TG Inversiones SPA / MT Inversiones SPA
+const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
-           WHERE rut_normalizado IN ('778593769','778856980')
+           WHERE rut_normalizado IN ('778593769','778856980','775063432')
            AND estado IN ('pendiente','listo')`);
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
@@ -1153,6 +1153,247 @@ function buildSfCsv(movs, empresa) {
   return buildSfCsvContent(movs, empresa);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// MÓDULO: OPEN FACTURA (HAULMER) — TS CAPITAL
+// API Key: configurada en empresa.haulmer.api_key
+// Docs: https://docs.haulmer.com/
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Haulmer CSV format (semicolon-separated, 2-row header, no BOM needed)
+// Formato exacto obtenido de archivos CSV de TS Capital: Boletas 1 - Febrero 2026 TS.csv
+const HAULMER_CSV_ROW1  = 'generales;;;;;receptor;;;;;detalles;;;totales;;;';
+const HAULMER_CSV_ROW2  = [
+  'Tipo de documento (*)',
+  'Fecha de emisión (*)',
+  'Tipo de venta (*)',
+  'Forma de pago (*)',
+  'Tipo de servicio (*)',
+  'RUT Receptor (*)',
+  'Razón Social (*)',
+  'Giro (*)',
+  'Dirección (*)',
+  'Comuna (*)',
+  'Nombre de Item (*)',
+  'Cantidad (*)',
+  'Precio (*)',
+  'Monto Neto (*)',
+  'Monto Exento (*)',
+  'Monto IVA (*)',
+  'Monto Total (*)'
+].join(';');
+
+function escaparCsvHaulmer(val) {
+  const s = String(val ?? '');
+  // Envolver en comillas si contiene punto y coma o comillas
+  if (s.includes(';') || s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+// Formato fecha para Haulmer: YYYY-MM-DD
+function fechaParaHaulmer(fechaISO) {
+  if (!fechaISO) return new Date().toISOString().slice(0,10);
+  // Si viene DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(String(fechaISO))) {
+    const [d,m,y] = String(fechaISO).split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  return String(fechaISO).slice(0,10);
+}
+
+function buildHaulmerCsvContent(movs, empresa) {
+  const email = empresa.email_facturacion || 'facturas@tscapitalchile.cl';
+  const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital. Transferencia a Banco';
+  let csv = HAULMER_CSV_ROW1 + '\n' + HAULMER_CSV_ROW2 + '\n';
+  for (const m of movs) {
+    const tipoDte = getTipoDte(m.rut_normalizado, empresa);
+    const fecha   = fechaParaHaulmer(m.fecha);
+    const rut     = m.rut ? m.rut : '';   // con puntos y guión
+    const razon   = (m.razon_social || m.nombre_origen || '').substring(0, 100);
+    const giro    = (m.giro || 'NO INFORMADA').substring(0, 80);
+    const dir     = (m.direccion || 'NO INFORMADA').substring(0, 100);
+    const comuna  = m.comuna || 'NO INFORMADA';
+    const monto   = Math.round(m.monto_total || m.monto || 0);
+    const itemNombre = (m.nombre_item || `${nombreItem} ${m.banco_cartola || ''}`).trim();
+
+    const row = [
+      tipoDte,                    // 34 o 41
+      fecha,                      // YYYY-MM-DD
+      ' Ventas del Giro',
+      ' Contado',
+      '',                         // Tipo de servicio (vacío para TS Capital)
+      rut,
+      razon,
+      giro,
+      dir,
+      comuna,
+      itemNombre,                 // Nombre de Item
+      1,                          // Cantidad
+      monto,                      // Precio
+      0,                          // Monto Neto
+      monto,                      // Monto Exento
+      0,                          // Monto IVA
+      monto                       // Monto Total
+    ];
+    csv += row.map(escaparCsvHaulmer).join(';') + '\n';
+  }
+  // BOM UTF-8 para compatibilidad Excel
+  return '\uFEFF' + csv;
+}
+
+// ── Exportar CSV formato Haulmer para un lote ─────────────────────────────────
+app.get('/api/facturacion/exportar-haulmer-csv/:lote_id', requireAuth, (req, res) => {
+  const loteId = req.params.lote_id;
+  const movs = db.prepare('SELECT * FROM movimientos WHERE lote_id = ?').all(loteId);
+  if (!movs.length) return res.status(404).json({ error: 'Lote sin movimientos' });
+
+  const empresas = getAppData('empresas');
+  const lote     = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  const empresa  = empresas[lote?.empresa_id] || {};
+
+  const csv = buildHaulmerCsvContent(movs, empresa);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="Haulmer_${lote?.empresa_id}_${loteId}.csv"`);
+  res.send(csv);
+});
+
+// ── Exportar CSV Haulmer para selección manual (sin lote) ─────────────────────
+app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) => {
+  const { movimiento_ids, empresa_id } = req.body;
+  const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
+  if (!movimiento_ids?.length) return res.status(400).json({ error: 'Sin movimientos seleccionados' });
+
+  const placeholders = movimiento_ids.map(() => '?').join(',');
+  const movs = db.prepare(`SELECT * FROM movimientos WHERE id IN (${placeholders})`).all(...movimiento_ids);
+  const empresa = getAppData('empresas')?.[empresaId] || {};
+
+  const csv = buildHaulmerCsvContent(movs, empresa);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="Haulmer_${empresaId}_seleccion.csv"`);
+  res.send(csv);
+});
+
+// ── Emitir DTE vía Open Factura (Haulmer) API ────────────────────────────────
+// Haulmer acepta JSON individual o CSV masivo. Usamos JSON masivo (array de DTEs).
+// Endpoint: POST https://api.haulmer.com/v2/dte/document
+// Auth header: apikey: <api_key>
+app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, res) => {
+  const loteId  = req.params.lote_id;
+  const lote    = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+
+  const empresas = getAppData('empresas');
+  const empresa  = empresas[lote.empresa_id] || {};
+  const hConf    = empresa.haulmer || {};
+  const apiKey   = hConf.api_key || '';
+  if (!apiKey) return res.status(400).json({ error: 'API Key de Open Factura (Haulmer) no configurada' });
+
+  // Resetear movimientos en error antes de reintentar
+  const now = nowCL();
+  db.prepare("UPDATE movimientos SET estado='en_lote', updated_at=? WHERE lote_id=? AND estado IN ('error','listo')").run(now, loteId);
+  const movs = db.prepare("SELECT * FROM movimientos WHERE lote_id=? AND estado='en_lote'").all(loteId);
+  if (!movs.length) return res.status(400).json({ error: 'No hay movimientos en este lote' });
+
+  // Construir payload JSON para Haulmer API
+  // Formato de DTE individual según docs Haulmer v2
+  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos
+  const giroEmisor = empresa.giro || 'FONDOS Y SOCIEDADES DE INVERSION';
+  const emailFact  = empresa.email_facturacion || 'facturas@tscapitalchile.cl';
+  const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital';
+
+  const HAULMER_API_URL = 'https://api.haulmer.com/v2/dte/document';
+
+  let emitidos = 0, erroresEmision = 0;
+  const resultados = [];
+
+  try {
+    for (const m of movs) {
+      const tipoDte = getTipoDte(m.rut_normalizado, empresa);
+      const fecha   = fechaParaHaulmer(m.fecha);
+      const monto   = Math.round(m.monto_total || m.monto || 0);
+
+      const payload = {
+        Encabezado: {
+          IdDoc: {
+            TipoDTE:      tipoDte,
+            FchEmis:      fecha,
+            FmaPago:      1,    // Contado
+            IndServicio:  null
+          },
+          Emisor: {
+            RUTEmisor:  rutEmisor,
+            GiroEmis:   giroEmisor,
+            Contacto:   emailFact,
+            CorreoEmisor: emailFact
+          },
+          Receptor: {
+            RUTRecep:      (m.rut || '').replace(/\./g,''),
+            RznSocRecep:   (m.razon_social || m.nombre_origen || '').substring(0,100),
+            GiroRecep:     (m.giro || 'NO INFORMADA').substring(0,80),
+            DirRecep:      (m.direccion || 'NO INFORMADA').substring(0,100),
+            CmnaRecep:     m.comuna || 'NO INFORMADA',
+            CorreoRecep:   m.email_receptor || emailFact
+          }
+        },
+        Detalle: [{
+          NmbItem: (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
+          QtyItem: 1,
+          PrcItem: monto,
+          MontoItem: monto,
+          IndExe: 1   // exento
+        }],
+        Totales: {
+          MntExe: monto,
+          MntTotal: monto
+        }
+      };
+
+      try {
+        const resp = await fetch(HAULMER_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': apiKey
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15000)
+        });
+        const raw = await resp.text();
+        let data;
+        try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
+        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
+
+        if (resp.ok && !data?.error) {
+          db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, updated_at=? WHERE id=?")
+            .run(now, now, m.id);
+          emitidos++;
+          resultados.push({ id: m.id, status: 'emitido', folio: data?.folio || data?.Folio, resp: raw.substring(0,200) });
+        } else {
+          db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
+          erroresEmision++;
+          resultados.push({ id: m.id, status: 'error', httpStatus: resp.status, resp: raw.substring(0,200) });
+        }
+      } catch(dteErr) {
+        console.error(`[HAULMER] Error mov ${m.id}:`, dteErr.message);
+        db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
+        erroresEmision++;
+        resultados.push({ id: m.id, status: 'error', error: dteErr.message });
+      }
+    }
+
+    const loteEstado = emitidos === movs.length ? 'emitido' : (emitidos > 0 ? 'parcial' : 'error');
+    const mensaje = `Haulmer: ${emitidos} emitidos, ${erroresEmision} errores de ${movs.length} DTEs`;
+    db.prepare("UPDATE lotes_facturacion SET estado=?, response_api=?, updated_at=? WHERE lote_id=?")
+      .run(loteEstado, JSON.stringify({ mensaje, emitidos, erroresEmision, resultados: resultados.slice(0,50) }), now, loteId);
+
+    res.json({ ok: emitidos > 0, emitidos, errores: erroresEmision, total: movs.length, mensaje, resultados: resultados.slice(0,50) });
+  } catch (err) {
+    console.error('[HAULMER FATAL]', err);
+    db.prepare("UPDATE lotes_facturacion SET estado='error', response_api=?, updated_at=? WHERE lote_id=?")
+      .run(JSON.stringify({ error: err.message }), now, loteId);
+    res.status(500).json({ error: 'Error al emitir con Open Factura: ' + err.message });
+  }
+});
+
 // ── Debug: descargar el CSV que se enviaría a SF sin emitirlo ─────────────────
 app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
@@ -1675,7 +1916,7 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const stats = {};
 
-  const empresaIds = empresaId ? [empresaId] : ['tg-inversiones', 'mt-inversiones'];
+  const empresaIds = empresaId ? [empresaId] : ['tg-inversiones', 'mt-inversiones', 'ts-capital'];
 
   for (const eid of empresaIds) {
     const total = db.prepare('SELECT COUNT(*) as cnt FROM movimientos WHERE empresa_id = ?').get(eid).cnt;
@@ -1875,6 +2116,89 @@ function parseSantanderCartola(buffer) {
   return movimientos;
 }
 
+// ── Parser Banco Estado (.xlsx) ───────────────────────────────────────────────
+// Formato: sheet "Transferencias" con columnas:
+// N° Operación | Fecha - Hora | Cuenta Destino | Alias Destino | Rut Origen | Banco Origen | Nombre Origen | Cuenta Origen | Monto
+function parseBancoEstadoCartola(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+
+  // Buscar sheet "Transferencias" o usar el primero disponible
+  const sheetName = wb.SheetNames.includes('Transferencias') ? 'Transferencias' : wb.SheetNames[wb.SheetNames.length - 1];
+  const ws = wb.Sheets[sheetName];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const movimientos = [];
+  let headerIdx = -1;
+
+  // Buscar fila de encabezado
+  for (let i = 0; i < Math.min(5, data.length); i++) {
+    const rowStr = data[i].join('|');
+    if (rowStr.includes('Rut Origen') || rowStr.includes('N° Operación') || rowStr.includes('Operaci')) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) headerIdx = 0;
+
+  // Mapear índices de columnas desde la fila de cabecera
+  const headers = data[headerIdx].map(h => String(h || '').trim());
+  const colIdx = (name) => headers.findIndex(h => h.includes(name));
+
+  const idxId     = colIdx('Operaci');   // N° Operación
+  const idxFecha  = colIdx('Fecha');     // Fecha - Hora
+  const idxRut    = colIdx('Rut Origen');
+  const idxBanco  = colIdx('Banco Origen');
+  const idxNombre = colIdx('Nombre Origen');
+  const idxCuenta = colIdx('Cuenta Origen');
+  const idxMonto  = colIdx('Monto');
+
+  for (let i = headerIdx + 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || !row.length) continue;
+
+    const idRaw = String(row[idxId] !== undefined ? row[idxId] : '').trim();
+    if (!idRaw) continue;
+
+    // Fecha: "DD/MM/YYYY HH:MM" → YYYY-MM-DD
+    let fecha = '';
+    const fechaRaw = row[idxFecha];
+    if (typeof fechaRaw === 'number') {
+      const d = XLSX_LIB.SSF.parse_date_code(fechaRaw);
+      if (d) fecha = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } else {
+      const fs = String(fechaRaw || '').trim();
+      const matchFecha = fs.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (matchFecha) fecha = `${matchFecha[3]}-${matchFecha[2]}-${matchFecha[1]}`;
+    }
+    if (!fecha) continue;
+
+    let monto = row[idxMonto];
+    if (typeof monto === 'string') {
+      monto = parseFloat(monto.replace(/\./g, '').replace(',', '.').replace(/[$\s]/g, ''));
+    }
+    monto = parseFloat(monto) || 0;
+    if (monto <= 0) continue;
+
+    const rutRaw      = idxRut >= 0 ? String(row[idxRut] || '').trim() : '';
+    const bancoOrigen = idxBanco >= 0 ? String(row[idxBanco] || '').trim() : '';
+    const nombre      = idxNombre >= 0 ? String(row[idxNombre] || '').trim() : '';
+    const cuenta      = idxCuenta >= 0 ? String(row[idxCuenta] || '').trim() : '';
+
+    movimientos.push({
+      id_transferencia: idRaw,
+      fecha,
+      monto,
+      glosa: nombre,
+      rut: rutRaw,
+      nombre_origen: nombre,
+      banco_origen: bancoOrigen || 'Banco Estado',
+      cuenta_origen: cuenta
+    });
+  }
+  return movimientos;
+}
+
 // ── Consultar RUT en SimpleAPI ────────────────────────────────────────────────
 async function consultarRUTSimpleAPI(rutNorm, apiKey) {
   if (!apiKey || !rutNorm || rutNorm.length < 3) return null;
@@ -1930,16 +2254,21 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     let bancoCartola = (req.body.banco || '').toUpperCase().trim();
     if (!bancoCartola) {
       const fname = req.file.originalname.toLowerCase();
-      if (fname.includes('santander'))          bancoCartola = 'SANTANDER';
-      else if (fname.includes('bci'))            bancoCartola = 'BCI';
+      if (fname.includes('santander'))                            bancoCartola = 'SANTANDER';
+      else if (fname.includes('banco_estado') || fname.includes('bancoestado') || fname.includes('banco estado'))
+                                                                  bancoCartola = 'BANCO ESTADO';
+      else if (fname.includes('bci'))                             bancoCartola = 'BCI';
       else bancoCartola = fname.endsWith('.xlsx') ? 'SANTANDER' : 'BCI';
     }
+    // Normalizar variantes del nombre Banco Estado
+    if (['BANCOESTADO','BANCO_ESTADO','ESTADO'].includes(bancoCartola)) bancoCartola = 'BANCO ESTADO';
 
     // Parsear cartola
     let movimientosRaw = [];
     try {
-      if (bancoCartola === 'SANTANDER') movimientosRaw = parseSantanderCartola(req.file.buffer);
-      else                              movimientosRaw = parseBCICartola(req.file.buffer);
+      if (bancoCartola === 'SANTANDER')        movimientosRaw = parseSantanderCartola(req.file.buffer);
+      else if (bancoCartola === 'BANCO ESTADO') movimientosRaw = parseBancoEstadoCartola(req.file.buffer);
+      else                                      movimientosRaw = parseBCICartola(req.file.buffer);
     } catch(parseErr) {
       return res.status(422).json({ error: 'Error al parsear archivo: ' + parseErr.message });
     }
@@ -2466,7 +2795,7 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           if (existente && (existente.estado === 'listo' || existente.estado === 'pendiente')) {
             // Intentar leer fecha del Excel para la facturación
             let fechaReconcil = now;
-            const fechaRawR = row['FechaEmision'];
+            const fechaRawR = row['FechaEmision'] || row['Fecha de emisión (*)'] || row['Fecha de emisión'];
             if (fechaRawR instanceof Date) {
               const dd = String(fechaRawR.getDate()).padStart(2,'0');
               const mm = String(fechaRawR.getMonth()+1).padStart(2,'0');
@@ -2486,9 +2815,9 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           continue;
         }
 
-        // Fecha de emisión
+        // Fecha de emisión (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisión (*)')
         let fechaStr = '';
-        const fechaRaw = row['FechaEmision'];
+        const fechaRaw = row['FechaEmision'] || row['Fecha de emisión (*)'] || row['Fecha de emisión'];
         if (fechaRaw instanceof Date) {
           const dd = String(fechaRaw.getDate()).padStart(2,'0');
           const mm = String(fechaRaw.getMonth()+1).padStart(2,'0');
@@ -2501,17 +2830,21 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           fechaStr = String(fechaRaw).substring(0, 10);
         }
 
-        const rutRaw   = String(row['RutRecep'] || '').trim();
+        // Soporte multi-formato: SF CSV ('RutRecep', 'RazonSocialRecep'…)
+        //                     y TS Capital Excel ('RUT Receptor', 'Razón Social'…)
+        const rutRaw   = String(row['RutRecep'] || row['RUT Receptor'] || '').trim();
         const rutNorm  = normalizeRut(rutRaw);
         const rutFmt   = rutNorm ? formatRut(rutNorm) : '';
-        const razon    = String(row['RazonSocialRecep'] || '').trim() || String(row['Contacto'] || '').trim();
-        const giro     = String(row['GiroRecep'] || '').trim();
-        const dir      = String(row['DirRecep'] || '').trim();
-        const comuna   = String(row['CmnaRecep'] || '').trim();
-        const ciudad   = String(row['CiudadRecep'] || '').trim();
-        const email    = String(row['CorreoRecep'] || '').trim();
-        const monto    = parseFloat(row['TotalProducto']) || parseFloat(row['PrecioProducto']) || 0;
-        const tipoDte  = parseInt(row['TipoDte']) || 34;
+        const razon    = String(row['RazonSocialRecep'] || row['Razón Social'] || row['Contacto'] || '').trim();
+        const giro     = String(row['GiroRecep']  || row['Giro'] || '').trim();
+        const dir      = String(row['DirRecep']   || row['Dirección'] || '').trim();
+        const comuna   = String(row['CmnaRecep']  || row['Comuna'] || '').trim();
+        const ciudad   = String(row['CiudadRecep']|| row['Ciudad'] || '').trim();
+        const email    = String(row['CorreoRecep']|| row['Email Receptor'] || '').trim();
+        const monto    = parseFloat(row['TotalProducto'] || row['Monto total'] || row['Precio (*)'] || row['Precio (*) '] || 0) || 0;
+        // Columna '1' contiene '34: Factura exenta…' o '41: Boleta exenta…'
+        const tipoRaw  = String(row['TipoDte'] || row['1'] || '').trim();
+        const tipoDte  = tipoRaw ? (parseInt(tipoRaw) || (tipoRaw.startsWith('41') ? 41 : 34)) : 34;
         const tipoCliente = tipoPorRut(rutNorm);
         const bancoUp  = cartola.toUpperCase();
         const descProd = String(row['DescripcionProducto'] || '').trim();

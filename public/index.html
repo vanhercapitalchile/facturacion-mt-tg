@@ -271,6 +271,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <button class="empresa-btn active" onclick="selectEmpresa('all')" data-emp="all">Todas</button>
         <button class="empresa-btn" onclick="selectEmpresa('tg-inversiones')" data-emp="tg-inversiones">TG Inversiones</button>
         <button class="empresa-btn" onclick="selectEmpresa('mt-inversiones')" data-emp="mt-inversiones">MT Inversiones</button>
+        <button class="empresa-btn" onclick="selectEmpresa('ts-capital')" data-emp="ts-capital">TS Capital</button>
       </div>
 
       <!-- DASHBOARD VIEW -->
@@ -299,9 +300,10 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
             <div class="form-group" style="flex:1;min-width:160px;">
               <label>Empresa</label>
-              <select id="cartola-empresa" class="inline-input">
+              <select id="cartola-empresa" class="inline-input" onchange="actualizarBancosCartola()">
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
+                <option value="ts-capital">TS Capital</option>
               </select>
             </div>
             <div class="form-group" style="flex:1;min-width:160px;">
@@ -322,7 +324,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                onclick="document.getElementById('cartola-file-auto').click()">
             <div style="font-size:36px;margin-bottom:8px;">&#x1F4E4;</div>
             <p style="margin:0;font-weight:600;">Arrastra la cartola aquí o haz clic para seleccionar</p>
-            <p style="margin:4px 0 0;font-size:12px;color:var(--txt2);">Formatos: .xls (BCI) · .xlsx (Santander)</p>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--txt2);">Formatos: .xls (BCI) · .xlsx (Santander / Banco Estado)</p>
             <input type="file" id="cartola-file-auto" accept=".xls,.xlsx,.csv" style="display:none"
                    onchange="procesarCartolaAuto(this.files[0])">
           </div>
@@ -343,6 +345,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="btn btn-secondary btn-sm" onclick="exportarBaseDatos('tg-inversiones')">TG Inversiones</button>
                 <button class="btn btn-secondary btn-sm" onclick="exportarBaseDatos('mt-inversiones')">MT Inversiones</button>
+                <button class="btn btn-secondary btn-sm" onclick="exportarBaseDatos('ts-capital')">TS Capital</button>
               </div>
             </div>
             <!-- Importar -->
@@ -352,6 +355,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <select id="import-base-empresa" class="inline-input" style="margin-bottom:8px;font-size:12px;">
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
+                <option value="ts-capital">TS Capital</option>
               </select>
               <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="import-incluir-movimientos"> Incluir historial RECIBIDAS (marcar como facturados)
@@ -369,6 +373,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                 <select id="rut-consulta-empresa" class="inline-input" style="font-size:12px;width:auto;">
                   <option value="tg-inversiones">TG</option>
                   <option value="mt-inversiones">MT</option>
+                  <option value="ts-capital">TS</option>
                 </select>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="consultarRUTManual()">Consultar</button>
@@ -583,8 +588,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
         <div class="card">
-          <div class="card-header"><h3>Exportación manual para SimpleFactura</h3><span id="exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
-          <p style="color:var(--txt2);font-size:13px;margin-bottom:12px;">Selecciona movimientos listos y descarga el CSV en formato SimpleFactura para carga masiva manual.</p>
+          <div class="card-header"><h3 id="exp-title">Exportación manual</h3><span id="exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
+          <p id="exp-desc" style="color:var(--txt2);font-size:13px;margin-bottom:12px;">Selecciona movimientos listos y descarga el CSV para carga masiva manual.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="position:relative;flex:1;min-width:200px;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5;">🔍</span>
@@ -616,7 +621,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             </table>
           </div>
           <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
-            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">⬇ Descargar CSV SimpleFactura</button>
+            <button id="exp-csv-btn" class="btn btn-primary btn-sm" onclick="exportarCSVSeleccionDispatch()">⬇ Descargar CSV</button>
             <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar como facturados</button>
           </div>
         </div>
@@ -688,7 +693,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <strong>facturados</strong> y los usará como referencia de deduplicación al procesar cartolas futuras.
             Registros ya existentes serán omitidos automáticamente.
           </p>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
 
             <!-- TG Inversiones -->
             <div style="border:1px solid var(--card-b);border-radius:var(--radius);padding:20px;">
@@ -720,6 +725,22 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                        onchange="importarBaseHistorica('mt-inversiones', this.files[0])">
               </div>
               <div id="bh-status-mt" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- TS Capital -->
+            <div style="border:1px solid var(--card-b);border-radius:var(--radius);padding:20px;">
+              <h4 style="margin-bottom:12px;color:var(--purple);">TS Capital</h4>
+              <div class="upload-area" style="padding:20px;cursor:pointer;"
+                   ondragover="event.preventDefault();"
+                   ondrop="handleBHDrop(event,'ts-capital')"
+                   onclick="document.getElementById('bh-file-ts').click()">
+                <div class="upload-icon" style="font-size:24px;">&#x1F4C2;</div>
+                <p style="margin:4px 0 0;font-size:13px;">Arrastra o haz clic</p>
+                <p style="margin:2px 0 0;font-size:11px;color:var(--txt3);">.xlsx — Sistema de facturación TS 5.0</p>
+                <input type="file" id="bh-file-ts" accept=".xlsx,.xls" style="display:none"
+                       onchange="importarBaseHistorica('ts-capital', this.files[0])">
+              </div>
+              <div id="bh-status-ts" style="margin-top:12px;"></div>
             </div>
           </div>
         </div>
@@ -928,7 +949,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th>
           </tr></thead><tbody id="emp-exp-tbody"></tbody></table></div>
           <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
-            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">⬇ Descargar CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccionDispatch()">⬇ Descargar CSV</button>
             <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar facturados</button>
           </div>
         </div>
@@ -1360,6 +1381,19 @@ function parseCartolaData(workbook, banco) {
   }
 
   return movimientos;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BANCO DROPDOWN — actualiza según empresa seleccionada
+// ══════════════════════════════════════════════════════════════════════════════
+function actualizarBancosCartola() {
+  const empresa = document.getElementById('cartola-empresa').value;
+  const sel = document.getElementById('cartola-banco');
+  if (empresa === 'ts-capital') {
+    sel.innerHTML = `<option value="BCI">BCI</option><option value="BANCO ESTADO">Banco Estado</option>`;
+  } else {
+    sel.innerHTML = `<option value="BCI">BCI</option><option value="SANTANDER">Santander</option>`;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2275,21 +2309,22 @@ async function loadLotes() {
     const esEmitido = l.estado === 'emitido' || l.estado === 'exportado';
     const errMsg = loteErrorMsg(l.response_api);
     const borderColor = esError ? 'var(--red)' : esEmitido ? 'var(--green)' : 'var(--border)';
+    const esHaulmer = l.empresa_id === 'ts-capital';
     return `
     <div class="card" style="border-left:4px solid ${borderColor};">
       <div class="card-header">
         <h3 style="font-size:15px;">${l.nombre || ('Lote ' + l.lote_id)}</h3>
         <div class="card-actions" style="gap:6px;display:flex;align-items:center;">
           ${esPendiente ? `
-            <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">&#x1F4E4; Emitir vía API</button>
-            <button class="btn btn-secondary btn-sm" onclick="exportarCSVLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="${esHaulmer ? `emitirLoteHaulmer('${l.lote_id}')` : `emitirLote('${l.lote_id}')`}">&#x1F4E4; Emitir vía ${esHaulmer ? 'Open Factura' : 'SimpleFactura'}</button>
+            <button class="btn btn-secondary btn-sm" onclick="${esHaulmer ? `exportarCSVHaulmerLote('${l.lote_id}')` : `exportarCSVLote('${l.lote_id}')`}">&#x2B07; Descargar CSV ${esHaulmer ? 'Haulmer' : 'SF'}</button>
             <button class="btn btn-secondary btn-sm" onclick="marcarExportadoLote('${l.lote_id}')">&#x2705; Marcar exportado</button>
           ` : esError ? `
             ${estadoBadge('error')}
             <button class="btn btn-sm" style="background:#e67e22;color:#fff;font-weight:600;"
-              onclick="emitirLote('${l.lote_id}')">&#x1F504; Re-intentar emisión</button>
+              onclick="${esHaulmer ? `emitirLoteHaulmer('${l.lote_id}')` : `emitirLote('${l.lote_id}')`}">&#x1F504; Re-intentar emisión</button>
             <button class="btn btn-secondary btn-sm"
-              onclick="exportarCSVLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
+              onclick="${esHaulmer ? `exportarCSVHaulmerLote('${l.lote_id}')` : `exportarCSVLote('${l.lote_id}')`}">&#x2B07; Descargar CSV</button>
           ` : estadoBadge(l.estado)}
         </div>
       </div>
@@ -2528,6 +2563,26 @@ function exportarCSVLote(loteId) {
   window.open(`/api/facturacion/exportar-csv/${loteId}?token=${TOKEN}`, '_blank');
 }
 
+// ── HAULMER (TS Capital) ──────────────────────────────────────────────────────
+
+async function emitirLoteHaulmer(loteId) {
+  if (!confirm('Emitir este lote vía Open Factura (Haulmer)?')) return;
+  showToast('Enviando a Open Factura...', 'info');
+  const data = await apiFetch(`/api/facturacion/emitir-haulmer/${loteId}`, { method: 'POST' });
+  if (data?.ok) {
+    showToast(`✅ ${data.mensaje || 'Lote emitido en Open Factura'}`, 'success', 6000);
+    loadLotes();
+  } else {
+    const msg = data?.mensaje || data?.error || 'Error al emitir';
+    showToast(`Error Open Factura: ${msg}`, 'error', 10000);
+    loadLotes();
+  }
+}
+
+function exportarCSVHaulmerLote(loteId) {
+  window.open(`/api/facturacion/exportar-haulmer-csv/${loteId}?token=${TOKEN}`, '_blank');
+}
+
 async function marcarExportadoLote(loteId) {
   await apiFetch(`/api/facturacion/marcar-exportado/${loteId}`, { method: 'POST' });
   showToast('Lote marcado como exportado', 'success');
@@ -2546,7 +2601,8 @@ function handleBHDrop(e, empresaId) {
 
 async function importarBaseHistorica(empresaId, file) {
   if (!file) return;
-  const statusEl = document.getElementById(`bh-status-${empresaId === 'tg-inversiones' ? 'tg' : 'mt'}`);
+  const sufijo = empresaId === 'tg-inversiones' ? 'tg' : empresaId === 'mt-inversiones' ? 'mt' : 'ts';
+  const statusEl = document.getElementById(`bh-status-${sufijo}`);
   statusEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg2);border-radius:8px;">
       <div class="spinner" style="width:16px;height:16px;border:3px solid var(--card-b);border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
@@ -2777,6 +2833,16 @@ async function loadExportar() {
     const b = document.getElementById(isAdmin() ? `exp-filter-${t}` : `emp-exp-filter-${t}`);
     if (b) b.className = t === 'all' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
   });
+  // Adaptar título, descripción y botón según empresa
+  const esHaulmer = empId === 'ts-capital';
+  const titleEl = document.getElementById('exp-title');
+  const descEl  = document.getElementById('exp-desc');
+  const btnEl   = document.getElementById('exp-csv-btn');
+  if (titleEl) titleEl.textContent = esHaulmer ? 'Exportación manual para Haulmer (Open Factura)' : 'Exportación manual para SimpleFactura';
+  if (descEl)  descEl.textContent  = esHaulmer
+    ? 'Selecciona movimientos listos y descarga el CSV en formato Haulmer para carga masiva manual en Open Factura.'
+    : 'Selecciona movimientos listos y descarga el CSV en formato SimpleFactura para carga masiva manual.';
+  if (btnEl)   btnEl.textContent   = esHaulmer ? '⬇ Descargar CSV Haulmer' : '⬇ Descargar CSV SimpleFactura';
   renderExportar();
 }
 
@@ -2832,6 +2898,16 @@ function renderExportar() {
   `).join('');
 }
 
+// Dispatcher: llama SF o Haulmer según empresa actual
+async function exportarCSVSeleccionDispatch() {
+  const empId = getEmpresaId();
+  if (empId === 'ts-capital') {
+    await exportarCSVHaulmerSeleccion();
+  } else {
+    await exportarCSVSeleccion();
+  }
+}
+
 async function exportarCSVSeleccion() {
   const ids = [...document.querySelectorAll('.exp-check:checked')].map(c => parseInt(c.value));
   if (!ids.length) return showToast('Selecciona movimientos', 'error');
@@ -2850,6 +2926,26 @@ async function exportarCSVSeleccion() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('CSV descargado', 'success');
+}
+
+async function exportarCSVHaulmerSeleccion() {
+  const ids = [...document.querySelectorAll('.exp-check:checked')].map(c => parseInt(c.value));
+  if (!ids.length) return showToast('Selecciona movimientos', 'error');
+  const empId = getEmpresaId();
+
+  const res = await fetch('/api/facturacion/exportar-haulmer-seleccion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({ movimiento_ids: ids, empresa_id: empId })
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Haulmer_${empId || 'seleccion'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV Haulmer descargado', 'success');
 }
 
 async function marcarExportadosManual() {

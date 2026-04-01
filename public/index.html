@@ -2522,8 +2522,13 @@ async function importarBaseHistorica(empresaId, file) {
         <div style="display:flex;gap:0;flex-wrap:wrap;">
           <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
             <div style="font-size:22px;font-weight:700;color:var(--green);">${data.insertados.toLocaleString('es-CL')}</div>
-            <div style="font-size:11px;color:var(--txt2);">DTE importados</div>
+            <div style="font-size:11px;color:var(--txt2);">DTE nuevos</div>
           </div>
+          ${data.reconciliados > 0 ? `
+          <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
+            <div style="font-size:22px;font-weight:700;color:var(--accent);">${data.reconciliados.toLocaleString('es-CL')}</div>
+            <div style="font-size:11px;color:var(--txt2);">Reconciliados ✔</div>
+          </div>` : ''}
           <div style="flex:1;min-width:90px;padding:12px;text-align:center;border-right:1px solid var(--card-b);">
             <div style="font-size:22px;font-weight:700;color:var(--gold);">${data.duplicados.toLocaleString('es-CL')}</div>
             <div style="font-size:11px;color:var(--txt2);">Ya existían</div>
@@ -2538,9 +2543,15 @@ async function importarBaseHistorica(empresaId, file) {
             <div style="font-size:11px;color:var(--txt2);">Filas omitidas</div>
           </div>` : ''}
         </div>
+        ${data.reconciliados > 0 ? `<div style="padding:8px 14px;font-size:12px;color:var(--accent);border-top:1px solid var(--card-b);">
+          ⚡ ${data.reconciliados} movimiento(s) que estaban en Facturar fueron marcados como facturados y removidos de la cola.
+        </div>` : ''}
       </div>`;
 
-    showToast(`✅ ${data.insertados.toLocaleString('es-CL')} DTE importados en ${empresaId}`, 'success');
+    const msg = data.reconciliados > 0
+      ? `✅ ${data.insertados} importados · ${data.reconciliados} reconciliados (sacados de Facturar)`
+      : `✅ ${data.insertados.toLocaleString('es-CL')} DTE importados en ${empresaId}`;
+    showToast(msg, 'success');
     loadBaseHistoricaStats();
   } catch(e) {
     statusEl.innerHTML = `<div style="padding:10px;background:rgba(224,80,80,.1);border-radius:8px;color:var(--red);">❌ ${e.message}</div>`;

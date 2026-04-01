@@ -2430,8 +2430,16 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `);
 
-  let insertados = 0, duplicados = 0, clientesNuevos = 0, errores = 0;
+  let insertados = 0, duplicados = 0, reconciliados = 0, clientesNuevos = 0, errores = 0;
   const nuevosIdCompuesto = new Set(); // para deduplicar dentro del propio Excel
+
+  const stmtGetExistente = db.prepare(
+    "SELECT id, estado FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?"
+  );
+  const stmtReconciliar = db.prepare(
+    `UPDATE movimientos SET estado='facturado', lote_id=?, fecha_facturacion=?, updated_at=?
+     WHERE id=? AND estado IN ('listo','pendiente')`
+  );
 
   const procesarHoja = (sheetName) => {
     if (!wb.SheetNames.includes(sheetName)) return;
@@ -2447,8 +2455,34 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
         if (!idComp) { errores++; continue; }
 
         const idCompUpper = idComp.toUpperCase();
-        if (existentesSet.has(idCompUpper) || nuevosIdCompuesto.has(idCompUpper)) {
-          duplicados++;
+
+        // Deduplicar dentro del propio archivo
+        if (nuevosIdCompuesto.has(idCompUpper)) { duplicados++; continue; }
+
+        // Ya existe en la BD
+        if (existentesSet.has(idCompUpper)) {
+          // Reconciliar: si está listo/pendiente → marcar como facturado
+          const existente = stmtGetExistente.get(idComp, empresaId);
+          if (existente && (existente.estado === 'listo' || existente.estado === 'pendiente')) {
+            // Intentar leer fecha del Excel para la facturación
+            let fechaReconcil = now;
+            const fechaRawR = row['FechaEmision'];
+            if (fechaRawR instanceof Date) {
+              const dd = String(fechaRawR.getDate()).padStart(2,'0');
+              const mm = String(fechaRawR.getMonth()+1).padStart(2,'0');
+              fechaReconcil = `${dd}/${mm}/${fechaRawR.getFullYear()}`;
+            } else if (typeof fechaRawR === 'number') {
+              const d = XLSX_LIB.SSF.parse_date_code(fechaRawR);
+              if (d) fechaReconcil = `${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`;
+            } else if (fechaRawR) {
+              fechaReconcil = String(fechaRawR).substring(0, 10);
+            }
+            const r = stmtReconciliar.run(loteId, fechaReconcil, now, existente.id);
+            if (r.changes > 0) reconciliados++;
+            else duplicados++;
+          } else {
+            duplicados++;
+          }
           continue;
         }
 
@@ -2523,15 +2557,15 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 
       HOJAS_OBJETIVO.forEach(procesarHoja);
 
-      // Actualizar contadores del lote
+      // Actualizar contadores del lote (insertados nuevos + reconciliados)
       db.prepare('UPDATE lotes_facturacion SET cantidad = ?, updated_at = ? WHERE lote_id = ?')
-        .run(insertados, now, loteId);
+        .run(insertados + reconciliados, now, loteId);
     })();
   } catch(txErr) {
     return res.status(500).json({ error: 'Error en transacción: ' + txErr.message });
   }
 
-  res.json({ ok: true, insertados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
+  res.json({ ok: true, insertados, reconciliados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
 });
 
 // ── SPA catch-all ────────────────────────────────────────────────────────────

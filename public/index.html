@@ -1964,30 +1964,25 @@ async function crearLotePorTipo(tipoDte) {
 async function marcarSeleccionadosFacturados() {
   const ids = [...document.querySelectorAll('.fact-check:checked')].map(c => parseInt(c.value));
   if (!ids.length) return showToast('Selecciona al menos un movimiento', 'error');
-  if (!confirm(`¿Marcar ${ids.length} movimiento(s) como FACTURADO? Esta acción no se puede deshacer fácilmente.`)) return;
-  const data = await apiFetch('/api/movimientos/bulk-estado', {
-    method: 'PUT',
-    body: JSON.stringify({ ids, estado: 'facturado' })
+  if (!confirm(`¿Marcar ${ids.length} movimiento(s) como FACTURADO?\nQuedarán registrados en Historial como "Marcado facturado manual".`)) return;
+
+  const empId = getEmpresaId();
+  const data = await apiFetch('/api/facturacion/marcar-manual', {
+    method: 'POST',
+    body: JSON.stringify({ empresa_id: empId, movimiento_ids: ids })
   });
+
   if (data?.ok) {
-    showToast(`✅ ${ids.length} movimiento(s) marcados como facturados`, 'success');
-    // Quitar de lista local de inmediato para feedback visual instantáneo
+    showToast(`✅ ${data.cantidad} doc(s) marcados — "${data.nombre}"`, 'success');
+    // Quitar de la lista local para feedback visual instantáneo
     ALL_FACT_MOVS = ALL_FACT_MOVS.filter(m => !ids.includes(m.id));
     renderFacturacionTable();
-    // Navegar a Movimientos > tab Facturados después de breve pausa
+    // Navegar a Historial donde ya aparecen con la marca "Marcado facturado manual"
     setTimeout(() => {
-      MOV_FILTER = 'facturado';
-      if (isAdmin()) adminNav('movimientos'); else empNav('movimientos');
-      // Actualizar resaltado de tabs una vez que el DOM del view esté activo
-      requestAnimationFrame(() => {
-        const tabsId = isAdmin() ? 'mov-filter-tabs' : 'emp-mov-filter-tabs';
-        document.querySelectorAll(`#${tabsId} .tab`).forEach((t, i) => {
-          t.classList.toggle('active', i === 3); // 0=Todos 1=Pendientes 2=Listos 3=Facturados
-        });
-      });
-    }, 500);
+      if (isAdmin()) adminNav('historial'); else empNav('historial');
+    }, 600);
   } else {
-    showToast(data?.error || 'Error al actualizar estado', 'error');
+    showToast(data?.error || 'Error al marcar como facturado', 'error');
   }
 }
 
@@ -2030,7 +2025,7 @@ async function loadLotes() {
     return `
     <div class="card" style="border-left:4px solid ${borderColor};">
       <div class="card-header">
-        <h3 style="font-size:15px;">Lote ${l.lote_id}</h3>
+        <h3 style="font-size:15px;">${l.nombre || ('Lote ' + l.lote_id)}</h3>
         <div class="card-actions" style="gap:6px;display:flex;align-items:center;">
           ${esPendiente ? `
             <button class="btn btn-primary btn-sm" onclick="emitirLote('${l.lote_id}')">&#x1F4E4; Emitir vía API</button>
@@ -2344,7 +2339,7 @@ async function loadHistorial(page) {
         <td>${tipoDteBadge(m.tipo_dte)}</td>
         <td style="text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || ''}</span></td>
-        <td style="font-size:11px;color:var(--txt3);max-width:120px;overflow:hidden;text-overflow:ellipsis;" title="${m.lote_id || ''}">${m.lote_id ? m.lote_id.substring(0, 20) : ''}</td>
+        <td style="font-size:11px;color:var(--txt3);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.lote_nombre || m.lote_id || ''}">${m.lote_nombre || (m.lote_id ? m.lote_id.substring(0,20) : '')}</td>
       </tr>`;
     }).join('');
   }

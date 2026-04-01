@@ -111,6 +111,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)')
 
 // ── Schema migrations ─────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
+try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 
 // ── Re-classify existing movements on startup using empresa config ─────────────
 (function reclassifyMovimientos() {
@@ -250,6 +251,27 @@ function generateLoteId(empresaId) {
   const ts = Date.now().toString(36);
   const rnd = Math.random().toString(36).slice(2, 6);
   return `${empresaId}-${ts}-${rnd}`;
+}
+
+// Devuelve la fecha más reciente de un array de movimientos, formateada DD-MM-YYYY
+function maxFechaLote(movs) {
+  let max = null;
+  for (const m of movs) {
+    if (!m.fecha) continue;
+    const f = String(m.fecha).trim();
+    let d, match;
+    if ((match = f.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)))
+      d = new Date(`${match[3]}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`);
+    else if ((match = f.match(/^(\d{4})-(\d{2})-(\d{2})/)))
+      d = new Date(`${match[1]}-${match[2]}-${match[3]}`);
+    else if ((match = f.match(/^(\d{2})-(\d{2})-(\d{4})/)))
+      d = new Date(`${match[3]}-${match[2]}-${match[1]}`);
+    if (d && !isNaN(d.getTime()) && (!max || d > max)) max = d;
+  }
+  if (!max) return '';
+  const dd = String(max.getDate()).padStart(2, '0');
+  const mm = String(max.getMonth() + 1).padStart(2, '0');
+  return `${dd}-${mm}-${max.getFullYear()}`;
 }
 
 // ── Auth Routes ──────────────────────────────────────────────────────────────
@@ -676,17 +698,55 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos listos para facturar' });
 
   const montoTotal = movs.reduce((s, m) => s + (m.monto_total || 0), 0);
+  const ultimaFecha = maxFechaLote(movs);
+  const nombre = `Lote ${ultimaFecha} ${movs.length} DTE`.trim();
 
   db.transaction(() => {
-    // Create lote
-    db.prepare('INSERT INTO lotes_facturacion (lote_id, empresa_id, cantidad, monto_total, estado, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-      .run(loteId, empresaId, movs.length, montoTotal, 'pendiente', now, now);
+    // Create lote con nombre descriptivo
+    db.prepare('INSERT INTO lotes_facturacion (lote_id, empresa_id, nombre, cantidad, monto_total, estado, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(loteId, empresaId, nombre, movs.length, montoTotal, 'pendiente', now, now);
     // Update movimientos
     const updStmt = db.prepare("UPDATE movimientos SET lote_id = ?, estado = 'en_lote', updated_at = ? WHERE id = ?");
     for (const m of movs) updStmt.run(loteId, now, m.id);
   })();
 
-  res.json({ ok: true, lote_id: loteId, cantidad: movs.length, monto_total: montoTotal });
+  res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length, monto_total: montoTotal });
+});
+
+// Marcar movimientos como facturados manualmente (sin emitir vía API)
+// Crea un lote registral "Marcado facturado manual" y pasa los movimientos a estado 'facturado'
+app.post('/api/facturacion/marcar-manual', requireAuth, (req, res) => {
+  const { empresa_id, movimiento_ids } = req.body;
+  if (!Array.isArray(movimiento_ids) || !movimiento_ids.length)
+    return res.status(400).json({ error: 'Sin movimientos' });
+  const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
+  if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+
+  const now = nowCL();
+  const loteId = generateLoteId(empresaId);
+  const nombre = 'Marcado facturado manual';
+
+  const placeholders = movimiento_ids.map(() => '?').join(',');
+  const movs = db.prepare(
+    `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo'`
+  ).all(...movimiento_ids);
+
+  if (!movs.length) return res.status(400).json({ error: 'No hay movimientos listos para marcar' });
+
+  const montoTotal = movs.reduce((s, m) => s + (m.monto_total || 0), 0);
+
+  db.transaction(() => {
+    db.prepare(
+      'INSERT INTO lotes_facturacion (lote_id, empresa_id, nombre, cantidad, monto_total, estado, metodo, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run(loteId, empresaId, nombre, movs.length, montoTotal, 'facturado_manual', 'manual', now, now);
+
+    const updStmt = db.prepare(
+      "UPDATE movimientos SET lote_id = ?, estado = 'facturado', fecha_facturacion = ?, updated_at = ? WHERE id = ?"
+    );
+    for (const m of movs) updStmt.run(loteId, now, now, m.id);
+  })();
+
+  res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length });
 });
 
 // Get lotes
@@ -1472,16 +1532,19 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   const pageLimit = Math.min(parseInt(lim) || 100, 500);
   const pageOffset = parseInt(off) || 0;
 
-  let sql = `SELECT id, empresa_id, fecha, monto, monto_total, rut, rut_normalizado,
-             razon_social, nombre_origen, tipo_dte, estado, banco_cartola, email_receptor,
-             giro, direccion, comuna, ciudad, lote_id, fecha_facturacion, id_transferencia
-             FROM movimientos WHERE estado = 'facturado'`;
+  let sql = `SELECT m.id, m.empresa_id, m.fecha, m.monto, m.monto_total, m.rut, m.rut_normalizado,
+             m.razon_social, m.nombre_origen, m.tipo_dte, m.estado, m.banco_cartola, m.email_receptor,
+             m.giro, m.direccion, m.comuna, m.ciudad, m.lote_id, m.fecha_facturacion, m.id_transferencia,
+             lf.nombre as lote_nombre
+             FROM movimientos m
+             LEFT JOIN lotes_facturacion lf ON m.lote_id = lf.lote_id
+             WHERE m.estado = 'facturado'`;
   const params = [];
 
-  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
-  if (fecha_desde) { sql += ' AND fecha >= ?'; params.push(fecha_desde); }
-  if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
-  if (tipo_dte) { sql += ' AND tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
+  if (empresaId) { sql += ' AND m.empresa_id = ?'; params.push(empresaId); }
+  if (fecha_desde) { sql += ' AND m.fecha >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND m.fecha <= ?'; params.push(fecha_hasta); }
+  if (tipo_dte) { sql += ' AND m.tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
 
   // Buscador: por nombre, RUT o monto
   if (buscar) {
@@ -1490,11 +1553,11 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
     if (/^[\d.,]+$/.test(term)) {
       const montoNum = parseFloat(term.replace(/\./g, '').replace(',', '.'));
       if (!isNaN(montoNum)) {
-        sql += ' AND (monto_total = ? OR monto = ?)';
+        sql += ' AND (m.monto_total = ? OR m.monto = ?)';
         params.push(montoNum, montoNum);
       }
     } else {
-      sql += ` AND (razon_social LIKE ? OR nombre_origen LIKE ? OR rut LIKE ? OR rut_normalizado LIKE ?)`;
+      sql += ` AND (m.razon_social LIKE ? OR m.nombre_origen LIKE ? OR m.rut LIKE ? OR m.rut_normalizado LIKE ?)`;
       const like = `%${term}%`;
       params.push(like, like, like, like);
     }
@@ -1504,7 +1567,7 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   const countSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
   const total = db.prepare(countSql).get(...params)?.total || 0;
 
-  sql += ' ORDER BY fecha_facturacion DESC, id DESC LIMIT ? OFFSET ?';
+  sql += ' ORDER BY m.fecha_facturacion DESC, m.id DESC LIMIT ? OFFSET ?';
   params.push(pageLimit, pageOffset);
 
   const movs = db.prepare(sql).all(...params);

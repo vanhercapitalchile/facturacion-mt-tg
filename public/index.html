@@ -510,6 +510,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                   <th class="sortable-th" onclick="sortFact('razon_social')">Razón Social <span id="fact-arr-razon_social"></span></th>
                   <th>Tipo</th>
                   <th>Banco</th>
+                  <th style="width:40px;"></th>
                 </tr>
               </thead>
               <tbody id="fact-tbody"></tbody>
@@ -582,8 +583,22 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
         <div class="card">
-          <div class="card-header"><h3>Exportación manual para SimpleFactura</h3></div>
-          <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Selecciona movimientos listos y descarga el CSV en formato SimpleFactura para carga masiva manual.</p>
+          <div class="card-header"><h3>Exportación manual para SimpleFactura</h3><span id="exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
+          <p style="color:var(--txt2);font-size:13px;margin-bottom:12px;">Selecciona movimientos listos y descarga el CSV en formato SimpleFactura para carga masiva manual.</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="position:relative;flex:1;min-width:200px;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5;">🔍</span>
+              <input type="text" id="exp-buscar" class="inline-input" placeholder="Buscar por nombre o RUT…"
+                style="padding-left:32px;width:100%;box-sizing:border-box;"
+                oninput="renderExportar()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('exp-buscar').value='';renderExportar();">✕ Limpiar</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+            <button id="exp-filter-all" class="btn btn-primary btn-sm"   onclick="setExpFilter('all')">Todos</button>
+            <button id="exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas (34)</button>
+            <button id="exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas (41)</button>
+          </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
             <table>
               <thead>
@@ -600,8 +615,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <tbody id="exp-tbody"></tbody>
             </table>
           </div>
-          <div style="margin-top:16px;display:flex;gap:12px;">
-            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">Descargar CSV SimpleFactura</button>
+          <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">⬇ Descargar CSV SimpleFactura</button>
             <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar como facturados</button>
           </div>
         </div>
@@ -881,7 +896,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <th class="sortable-th" onclick="sortFact('monto')">Monto <span id="emp-fact-arr-monto"></span></th>
             <th class="sortable-th" onclick="sortFact('rut')">RUT <span id="emp-fact-arr-rut"></span></th>
             <th class="sortable-th" onclick="sortFact('razon_social')">Razón Social <span id="emp-fact-arr-razon_social"></span></th>
-            <th>Tipo</th><th>Banco</th>
+            <th>Tipo</th><th>Banco</th><th style="width:40px;"></th>
           </tr></thead><tbody id="emp-fact-tbody"></tbody></table></div>
           <div id="emp-fact-paginacion"></div>
         </div>
@@ -892,12 +907,31 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       </div>
       <div class="view" id="emp-view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
-        <div class="card"><p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Exportación manual CSV formato SimpleFactura</p>
-        <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr><th><input type="checkbox" onchange="toggleSelectAllExp(this)"></th><th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th></tr></thead><tbody id="emp-exp-tbody"></tbody></table></div>
-        <div style="margin-top:16px;display:flex;gap:12px;">
-          <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">Descargar CSV</button>
-          <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar facturados</button>
-        </div></div>
+        <div class="card">
+          <div class="card-header"><h3>Exportación manual SimpleFactura</h3><span id="emp-exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="position:relative;flex:1;min-width:200px;">
+              <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5;">🔍</span>
+              <input type="text" id="emp-exp-buscar" class="inline-input" placeholder="Buscar por nombre o RUT…"
+                style="padding-left:32px;width:100%;box-sizing:border-box;"
+                oninput="renderExportar()">
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-exp-buscar').value='';renderExportar();">✕ Limpiar</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+            <button id="emp-exp-filter-all" class="btn btn-primary btn-sm"   onclick="setExpFilter('all')">Todos</button>
+            <button id="emp-exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas (34)</button>
+            <button id="emp-exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas (41)</button>
+          </div>
+          <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr>
+            <th><input type="checkbox" onchange="toggleSelectAllExp(this)"></th>
+            <th>Fecha</th><th>Monto</th><th>RUT</th><th>Razón Social</th><th>Tipo</th><th>Banco</th>
+          </tr></thead><tbody id="emp-exp-tbody"></tbody></table></div>
+          <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="exportarCSVSeleccion()">⬇ Descargar CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="marcarExportadosManual()">Marcar facturados</button>
+          </div>
+        </div>
       </div>
       <div class="view" id="emp-view-clientes">
         <div class="topbar"><h1>Base de Clientes</h1></div>
@@ -2101,9 +2135,30 @@ function renderFacturacionTable() {
       <td>${m.razon_social || '—'}</td>
       <td>${tipoDteBadge(m.tipo_dte)}</td>
       <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
+      <td style="text-align:center;">
+        <button title="Quitar de la lista de facturar" onclick="quitarDeFacturar(${m.id})"
+          style="background:none;border:none;cursor:pointer;color:var(--txt3);font-size:16px;padding:2px 6px;border-radius:4px;line-height:1;"
+          onmouseover="this.style.color='#e74c3c'" onmouseout="this.style.color='var(--txt3)'">✕</button>
+      </td>
     </tr>
   `).join('');
   renderFactPaginacion(totalPages);
+}
+
+async function quitarDeFacturar(id) {
+  // Mueve el movimiento a 'pendiente' (sale de Facturar, queda en Movimientos para revisión)
+  const r = await apiFetch(`/api/movimientos/bulk-estado`, {
+    method: 'PUT',
+    body: JSON.stringify({ ids: [id], estado: 'pendiente' })
+  });
+  if (r?.ok) {
+    ALL_FACT_MOVS = ALL_FACT_MOVS.filter(m => m.id !== id);
+    FACT_TOTAL = Math.max(0, FACT_TOTAL - 1);
+    renderFacturacionTable();
+    showToast('Movimiento quitado de la lista de facturar', 'info');
+  } else {
+    showToast('Error al quitar movimiento', 'error');
+  }
 }
 
 function renderFactPaginacion(totalPages) {
@@ -2708,15 +2763,60 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════════════════════
 // EXPORT CSV (selection)
 // ══════════════════════════════════════════════════════════════════════════════
+let ALL_EXP_MOVS = [];
+let EXP_FILTER = 'all'; // 'all' | 34 | 41
+
 async function loadExportar() {
   const empId = getEmpresaId();
-  let url = '/api/movimientos?estado=listo&limit=500';
+  let url = '/api/movimientos?estado=listo&limit=2000';
   if (empId) url += `&empresa_id=${empId}`;
-  const movs = await apiFetch(url) || [];
+  ALL_EXP_MOVS = await apiFetch(url) || [];
+  EXP_FILTER = 'all';
+  // Resetear botones de filtro
+  ['all','34','41'].forEach(t => {
+    const b = document.getElementById(isAdmin() ? `exp-filter-${t}` : `emp-exp-filter-${t}`);
+    if (b) b.className = t === 'all' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderExportar();
+}
 
-  const tbody = document.getElementById(isAdmin() ? 'exp-tbody' : 'emp-exp-tbody');
+function setExpFilter(tipo) {
+  EXP_FILTER = tipo;
+  const prefix = isAdmin() ? 'exp' : 'emp-exp';
+  ['all',34,41].forEach(t => {
+    const b = document.getElementById(`${prefix}-filter-${t === 'all' ? 'all' : t}`);
+    if (b) b.className = t === tipo ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderExportar();
+}
+
+function renderExportar() {
+  const tbody  = document.getElementById(isAdmin() ? 'exp-tbody' : 'emp-exp-tbody');
+  const label  = document.getElementById(isAdmin() ? 'exp-count-label' : 'emp-exp-count-label');
+  const buscar = document.getElementById(isAdmin() ? 'exp-buscar' : 'emp-exp-buscar');
+  const q      = (buscar?.value || '').toLowerCase().trim();
+  // Para RUT: quitar puntos del término de búsqueda y del rut del movimiento
+  const qRut   = q.replace(/\./g, '');
+
+  let movs = EXP_FILTER === 'all' ? ALL_EXP_MOVS : ALL_EXP_MOVS.filter(m => m.tipo_dte === EXP_FILTER);
+
+  if (q) {
+    movs = movs.filter(m => {
+      const razon = (m.razon_social || '').toLowerCase();
+      const nombre = (m.nombre_origen || '').toLowerCase();
+      const rut   = (m.rut || '').toLowerCase().replace(/\./g, '');
+      return razon.includes(q) || nombre.includes(q) || rut.includes(qRut);
+    });
+  }
+
+  const total34 = ALL_EXP_MOVS.filter(m => m.tipo_dte === 34).length;
+  const total41 = ALL_EXP_MOVS.filter(m => m.tipo_dte === 41).length;
+  if (label) label.textContent = q
+    ? `${movs.length} filtrados de ${ALL_EXP_MOVS.length} — ${total34} Facturas / ${total41} Boletas`
+    : `${ALL_EXP_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
+
   if (!movs.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">No hay movimientos listos</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : 'No hay movimientos listos'}</td></tr>`;
     return;
   }
   tbody.innerHTML = movs.map(m => `

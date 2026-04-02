@@ -30,7 +30,31 @@
   --radius-sm: 8px;
   --shadow: 0 4px 24px rgba(0,0,0,.5);
   --transition: all .2s ease;
+  --surface2: var(--bg2);
   color-scheme: dark;
+}
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --bg2: #ffffff;
+  --card: #ffffff;
+  --card-b: rgba(0,0,0,.08);
+  --card-hover: #f5f7fa;
+  --txt: #1a1d23;
+  --txt2: #5f6672;
+  --txt3: #9ca3af;
+  --green: #059669;
+  --green-bg: rgba(5,150,105,.06);
+  --gold: #b8860b;
+  --blue: #2563eb;
+  --blue-bg: rgba(37,99,235,.06);
+  --red: #dc2626;
+  --red-bg: rgba(220,38,38,.06);
+  --orange: #d97706;
+  --orange-bg: rgba(217,119,6,.06);
+  --purple: #7c3aed;
+  --shadow: 0 4px 24px rgba(0,0,0,.08);
+  --surface2: #f5f7fa;
+  color-scheme: light;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--txt); min-height: 100vh; }
@@ -149,6 +173,19 @@ tbody tr.selected { background: rgba(0,212,170,.06); }
 @keyframes slideIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Theme toggle ──────────────────────────────────── */
+.theme-toggle { position:relative; width:52px; height:28px; border-radius:14px; background:var(--bg2); border:1px solid var(--card-b); cursor:pointer; transition:var(--transition); display:inline-flex; align-items:center; padding:0 4px; }
+.theme-toggle .toggle-thumb { width:20px; height:20px; border-radius:50%; background:var(--green); transition:transform .3s ease; display:flex; align-items:center; justify-content:center; font-size:11px; }
+[data-theme="light"] .theme-toggle .toggle-thumb { transform:translateX(24px); }
+.theme-toggle-wrapper { display:flex; align-items:center; gap:8px; }
+.theme-toggle-label { font-size:11px; color:var(--txt3); }
+
+/* ── Password toggle ──────────────────────────────── */
+.password-wrapper { position:relative; }
+.password-wrapper input { padding-right:42px; }
+.password-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; font-size:18px; line-height:1; padding:2px; color:var(--txt3); transition:var(--transition); }
+.password-toggle:hover { color:var(--txt); }
+
 /* ── Checkbox ───────────────────────────────────────── */
 .checkbox-wrapper { display:flex; align-items:center; gap:8px; cursor:pointer; }
 .checkbox-wrapper input[type="checkbox"] { width:16px; height:16px; accent-color: var(--green); }
@@ -170,6 +207,14 @@ tbody tr.selected { background: rgba(0,212,170,.06); }
 .empty-state .icon { font-size:48px; margin-bottom:16px; opacity:.3; }
 .empty-state h3 { color:var(--txt2); margin-bottom:8px; }
 
+/* ── Light mode login gradient ─────────────────────── */
+[data-theme="light"] #login-screen { background: linear-gradient(135deg, #e8ecf4 0%, #f0f2f5 50%, #e2e6ee 100%); }
+[data-theme="light"] .login-box { box-shadow: 0 8px 32px rgba(0,0,0,.1); }
+[data-theme="light"] .toast-success { background:#eafaf5; border:1px solid var(--green); color:var(--green); }
+[data-theme="light"] .toast-error { background:#fef2f2; border:1px solid var(--red); color:var(--red); }
+[data-theme="light"] .toast-info { background:#eff6ff; border:1px solid var(--blue); color:var(--blue); }
+[data-theme="light"] .stat-card { box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+
 /* ── Responsive ─────────────────────────────────────── */
 .mobile-toggle { display:none; position:fixed; top:12px; left:12px; z-index:200; background:var(--card); border:1px solid var(--card-b); border-radius:8px; padding:8px 12px; color:var(--txt); cursor:pointer; font-size:18px; }
 @media (max-width:768px) {
@@ -178,6 +223,10 @@ tbody tr.selected { background: rgba(0,212,170,.06); }
   .sidebar.open { transform:translateX(0); }
   .main-content { margin-left:0; padding:16px; padding-top:52px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width:900px) {
+  #view-dashboard [style*="grid-template-columns:2fr 1fr"],
+  #view-dashboard [style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
 }
 
 /* ── View containers ────────────────────────────────── */
@@ -212,10 +261,21 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
     </div>
     <div class="form-group">
       <label>Contraseña</label>
-      <input type="password" id="inp-pass" placeholder="Ingrese su contraseña" autocomplete="current-password">
+      <div class="password-wrapper">
+        <input type="password" id="inp-pass" placeholder="Ingrese su contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button type="button" class="password-toggle" onclick="togglePasswordVisibility()" id="pass-toggle-btn" title="Mostrar contraseña">&#x1F648;</button>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="doLogin()">Iniciar sesión</button>
     <div class="login-error" id="login-error"></div>
+    <div style="margin-top:16px;display:flex;justify-content:center;">
+      <div class="theme-toggle-wrapper">
+        <span class="theme-toggle-label">Tema</span>
+        <div class="theme-toggle" onclick="toggleTheme()">
+          <div class="toggle-thumb" id="theme-thumb">&#127769;</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -255,6 +315,15 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
       </nav>
       <div class="sidebar-footer">
+        <div style="display:flex;justify-content:center;margin-bottom:10px;">
+          <div class="theme-toggle-wrapper">
+            <span class="theme-toggle-label" id="admin-theme-label">&#127769;</span>
+            <div class="theme-toggle" onclick="toggleTheme()">
+              <div class="toggle-thumb" id="admin-theme-thumb">&#127769;</div>
+            </div>
+            <span class="theme-toggle-label" id="admin-theme-label2">&#9728;&#65039;</span>
+          </div>
+        </div>
         <div class="user-info">
           <div class="user-avatar" id="admin-avatar">HT</div>
           <div class="user-details">
@@ -274,13 +343,56 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <button class="empresa-btn" onclick="selectEmpresa('ts-capital')" data-emp="ts-capital">TS Capital</button>
       </div>
 
-      <!-- DASHBOARD VIEW -->
+      <!-- DASHBOARD VIEW (ADMIN) -->
       <div class="view active" id="view-dashboard">
-        <div class="topbar"><h1>Dashboard</h1></div>
+        <div class="topbar">
+          <h1>Dashboard</h1>
+          <div class="topbar-actions">
+            <select id="dash-month-select" class="inline-input" style="width:auto;font-size:13px;" onchange="loadDashboard()">
+              <option value="">Últimos 12 meses</option>
+            </select>
+          </div>
+        </div>
+        <!-- KPI Cards -->
         <div class="stats-grid" id="dashboard-stats"></div>
-        <div class="card">
-          <div class="card-header"><h3>Resumen por empresa</h3></div>
-          <div id="dashboard-chart-container" style="height:300px;"><canvas id="chart-dashboard"></canvas></div>
+        <!-- Charts Row 1 -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>DTE emitidos por mes</h3></div>
+            <div style="height:280px;position:relative;"><canvas id="chart-monthly-dte"></canvas></div>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>Distribución por tipo DTE</h3></div>
+            <div style="height:280px;position:relative;"><canvas id="chart-dte-type"></canvas></div>
+          </div>
+        </div>
+        <!-- Charts Row 2 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>Monto facturado mensual</h3></div>
+            <div style="height:260px;position:relative;"><canvas id="chart-monthly-monto"></canvas></div>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>Estado de movimientos</h3></div>
+            <div style="height:260px;position:relative;"><canvas id="chart-estado"></canvas></div>
+          </div>
+        </div>
+        <!-- Bottom row: Top clients + Recent lotes -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>Top 10 clientes por DTE</h3></div>
+            <div class="table-wrapper" style="max-height:320px;overflow-y:auto;">
+              <table><thead><tr><th>#</th><th>Cliente</th><th>RUT</th><th>DTE</th><th>Monto</th></tr></thead>
+              <tbody id="dash-top-clients"></tbody></table>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:0;">
+            <div class="card-header"><h3>Últimos lotes emitidos</h3></div>
+            <div class="table-wrapper" style="max-height:320px;overflow-y:auto;">
+              <table><thead><tr><th>Lote</th><th>Empresa</th><th>Cant.</th><th>Monto</th><th>Estado</th></tr></thead>
+              <tbody id="dash-recent-lotes"></tbody></table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -822,6 +934,15 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
       </nav>
       <div class="sidebar-footer">
+        <div style="display:flex;justify-content:center;margin-bottom:10px;">
+          <div class="theme-toggle-wrapper">
+            <span class="theme-toggle-label">&#127769;</span>
+            <div class="theme-toggle" onclick="toggleTheme()">
+              <div class="toggle-thumb">&#127769;</div>
+            </div>
+            <span class="theme-toggle-label">&#9728;&#65039;</span>
+          </div>
+        </div>
         <div class="user-info">
           <div class="user-avatar" id="emp-avatar">DB</div>
           <div class="user-details">
@@ -834,7 +955,14 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
     </aside>
     <main class="main-content" id="empresa-main">
       <!-- Empresa users see same views but filtered - we reuse rendering functions -->
-      <div class="view active" id="emp-view-dashboard"><div class="topbar"><h1 id="emp-dash-title">Dashboard</h1></div><div class="stats-grid" id="emp-dashboard-stats"></div></div>
+      <div class="view active" id="emp-view-dashboard">
+        <div class="topbar"><h1 id="emp-dash-title">Dashboard</h1></div>
+        <div class="stats-grid" id="emp-dashboard-stats"></div>
+        <div class="card">
+          <div class="card-header"><h3>DTE emitidos — Últimos 12 meses</h3></div>
+          <div style="height:300px;position:relative;"><canvas id="chart-emp-monthly"></canvas></div>
+        </div>
+      </div>
       <div class="view" id="emp-view-cartolas">
         <div class="topbar"><h1>Cargar Cartola</h1></div>
         <div class="card">
@@ -989,6 +1117,50 @@ let ALL_CLIENTES = [];
 let PARSED_CARTOLA = null;
 const isAdmin = () => ME.role === 'admin';
 const getEmpresaId = () => isAdmin() ? (CURRENT_EMPRESA === 'all' ? '' : CURRENT_EMPRESA) : ME.empresa;
+
+// Chart.js instances cache
+let dashCharts = {};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// THEME TOGGLE
+// ══════════════════════════════════════════════════════════════════════════════
+function initTheme() {
+  const saved = localStorage.getItem('mttg_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  updateThemeIcons(saved);
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('mttg_theme', next);
+  updateThemeIcons(next);
+  // Update Chart.js colors if charts exist
+  if (dashCharts.monthly) refreshDashboardChartColors();
+}
+function updateThemeIcons(theme) {
+  document.querySelectorAll('.toggle-thumb').forEach(el => {
+    el.textContent = theme === 'dark' ? '\u{1F319}' : '\u2600\uFE0F';
+  });
+}
+initTheme();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PASSWORD VISIBILITY TOGGLE
+// ══════════════════════════════════════════════════════════════════════════════
+function togglePasswordVisibility() {
+  const inp = document.getElementById('inp-pass');
+  const btn = document.getElementById('pass-toggle-btn');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    btn.textContent = '\u{1F649}';  // see-no-evil monkey
+    btn.title = 'Ocultar contraseña';
+  } else {
+    inp.type = 'password';
+    btn.textContent = '\u{1F648}';  // hear-no-evil monkey
+    btn.title = 'Mostrar contraseña';
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // AUTH
@@ -1193,45 +1365,229 @@ function tipoDteBadge(tipo) {
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadDashboard() {
   const empParam = getEmpresaId();
-  const url = empParam ? `/api/dashboard?empresa_id=${empParam}` : '/api/dashboard';
-  const stats = await apiFetch(url);
+
+  // Fetch both basic stats and advanced data in parallel
+  const urlBase = empParam ? `/api/dashboard?empresa_id=${empParam}` : '/api/dashboard';
+  const urlAdv  = empParam ? `/api/dashboard/advanced?empresa_id=${empParam}` : '/api/dashboard/advanced';
+  const [stats, adv] = await Promise.all([apiFetch(urlBase), apiFetch(urlAdv)]);
   if (!stats) return;
 
-  const container = isAdmin() ? 'dashboard-stats' : 'emp-dashboard-stats';
-  const el = document.getElementById(container);
-
-  if (isAdmin() && CURRENT_EMPRESA === 'all') {
-    let totalMov = 0, totalPend = 0, totalListos = 0, totalFact = 0, totalMonto = 0, totalMontoFact = 0;
-    for (const eid of Object.keys(stats)) {
-      const s = stats[eid];
-      totalMov += s.total; totalPend += s.pendientes; totalListos += s.listos;
-      totalFact += s.facturados; totalMonto += s.montoTotal; totalMontoFact += s.montoFacturado;
-    }
-    el.innerHTML = `
-      <div class="stat-card"><div class="stat-label">Total movimientos</div><div class="stat-value blue">${totalMov}</div></div>
-      <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value gold">${totalPend}</div></div>
-      <div class="stat-card"><div class="stat-label">Listos para facturar</div><div class="stat-value green">${totalListos}</div></div>
-      <div class="stat-card"><div class="stat-label">Facturados</div><div class="stat-value green">${totalFact}</div></div>
-      <div class="stat-card"><div class="stat-label">Monto total</div><div class="stat-value">${fmtShort(totalMonto)}</div></div>
-      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(totalMontoFact)}</div></div>
-    `;
-  } else {
+  // ── OPERATOR DASHBOARD (simple bar chart) ────────────────────────
+  if (!isAdmin()) {
     const eid = getEmpresaId() || Object.keys(stats)[0];
     const s = stats[eid] || {};
-    // Operadores (role !== admin) no ven montos
-    const mostrarMontos = isAdmin();
+    const el = document.getElementById('emp-dashboard-stats');
     el.innerHTML = `
       <div class="stat-card"><div class="stat-label">Movimientos</div><div class="stat-value blue">${s.total || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Pendientes</div><div class="stat-value gold">${s.pendientes || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Listos</div><div class="stat-value green">${s.listos || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Facturados</div><div class="stat-value green">${s.facturados || 0}</div></div>
-      ${mostrarMontos ? `
-      <div class="stat-card"><div class="stat-label">Monto total</div><div class="stat-value">${fmtShort(s.montoTotal || 0)}</div></div>
-      <div class="stat-card"><div class="stat-label">Monto facturado</div><div class="stat-value green">${fmtShort(s.montoFacturado || 0)}</div></div>` : ''}
       <div class="stat-card"><div class="stat-label">Clientes en base</div><div class="stat-value blue">${s.totalClientes || 0}</div></div>
       <div class="stat-card"><div class="stat-label">Lotes emitidos</div><div class="stat-value">${s.totalLotes || 0}</div></div>
     `;
+    // Bar chart for operator
+    if (adv && adv.monthlySeries) {
+      renderOperatorChart(adv.monthlySeries, eid);
+    }
+    return;
   }
+
+  // ── ADMIN DASHBOARD ──────────────────────────────────────────────
+  const el = document.getElementById('dashboard-stats');
+
+  // Aggregate KPI
+  let totalMov = 0, totalPend = 0, totalListos = 0, totalFact = 0, totalMonto = 0, totalMontoFact = 0, totalClients = 0, totalLotes = 0;
+  const eids = Object.keys(stats);
+  for (const eid of eids) {
+    const s = stats[eid];
+    totalMov += s.total; totalPend += s.pendientes; totalListos += s.listos;
+    totalFact += s.facturados; totalMonto += s.montoTotal; totalMontoFact += s.montoFacturado;
+    totalClients += s.totalClientes; totalLotes += s.totalLotes;
+  }
+
+  const pctFact = totalMov > 0 ? ((totalFact / totalMov) * 100).toFixed(1) : '0.0';
+
+  el.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total movimientos</div>
+      <div class="stat-value blue">${totalMov.toLocaleString('es-CL')}</div>
+      <div class="stat-sub">${totalPend} pendientes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Listos para facturar</div>
+      <div class="stat-value gold">${totalListos.toLocaleString('es-CL')}</div>
+      <div class="stat-sub">Esperando emisión</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Facturados</div>
+      <div class="stat-value green">${totalFact.toLocaleString('es-CL')}</div>
+      <div class="stat-sub">${pctFact}% del total</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Monto total</div>
+      <div class="stat-value">${fmtShort(totalMonto)}</div>
+      <div class="stat-sub">${fmtShort(totalMontoFact)} facturado</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Clientes</div>
+      <div class="stat-value blue">${totalClients.toLocaleString('es-CL')}</div>
+      <div class="stat-sub">En base de datos</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Lotes emitidos</div>
+      <div class="stat-value">${totalLotes.toLocaleString('es-CL')}</div>
+    </div>
+  `;
+
+  // ── Render charts if advanced data available ──
+  if (!adv) return;
+
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const gridColor = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+  const tickColor = isDark ? '#9ba3b2' : '#5f6672';
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: tickColor, font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } },
+      y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } }
+    }
+  };
+
+  // 1. Monthly DTE stacked bar chart
+  const labels = adv.monthlySeries.map(m => m.label);
+  const empresaColors = {
+    'tg-inversiones': { bg: 'rgba(0,212,170,.7)', border: '#00d4aa' },
+    'mt-inversiones': { bg: 'rgba(74,158,255,.7)', border: '#4a9eff' },
+    'ts-capital':     { bg: 'rgba(160,120,240,.7)', border: '#a078f0' }
+  };
+  const empresaNames = { 'tg-inversiones': 'TG Inversiones', 'mt-inversiones': 'MT Inversiones', 'ts-capital': 'TS Capital' };
+
+  const monthlyDatasets = (adv.empresaIds || []).map(eid => ({
+    label: empresaNames[eid] || eid,
+    data: adv.monthlySeries.map(m => m.byEmpresa[eid] || 0),
+    backgroundColor: empresaColors[eid]?.bg || 'rgba(150,150,150,.5)',
+    borderColor: empresaColors[eid]?.border || '#999',
+    borderWidth: 1, borderRadius: 4
+  }));
+
+  destroyChart('monthly');
+  dashCharts.monthly = new Chart(document.getElementById('chart-monthly-dte'), {
+    type: 'bar',
+    data: { labels, datasets: monthlyDatasets },
+    options: { ...chartDefaults, scales: { ...chartDefaults.scales, x: { ...chartDefaults.scales.x, stacked: true }, y: { ...chartDefaults.scales.y, stacked: true, beginAtZero: true } } }
+  });
+
+  // 2. DTE type doughnut
+  const typeLabels = adv.dteBreakdown.map(d => d.tipo_dte === 34 ? 'Factura Exenta (34)' : d.tipo_dte === 41 ? 'Boleta Exenta (41)' : d.tipo_dte === 33 ? 'Factura (33)' : d.tipo_dte === 39 ? 'Boleta (39)' : `Tipo ${d.tipo_dte}`);
+  const typeData = adv.dteBreakdown.map(d => d.cnt);
+  const typeColors = adv.dteBreakdown.map(d => d.tipo_dte === 34 ? '#4a9eff' : d.tipo_dte === 41 ? '#a078f0' : d.tipo_dte === 33 ? '#00d4aa' : d.tipo_dte === 39 ? '#d4af37' : '#e05050');
+  destroyChart('dteType');
+  dashCharts.dteType = new Chart(document.getElementById('chart-dte-type'), {
+    type: 'doughnut',
+    data: { labels: typeLabels, datasets: [{ data: typeData, backgroundColor: typeColors, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: tickColor, font: { size: 11 }, padding: 12 } } } }
+  });
+
+  // 3. Monthly monto line chart
+  destroyChart('monthlyMonto');
+  dashCharts.monthlyMonto = new Chart(document.getElementById('chart-monthly-monto'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Monto facturado',
+        data: adv.monthlySeries.map(m => m.monto),
+        borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,.1)',
+        fill: true, tension: 0.3, pointRadius: 4, pointHoverRadius: 6
+      }]
+    },
+    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, beginAtZero: true, ticks: { ...chartDefaults.scales.y.ticks, callback: v => fmtShort(v) } } },
+      plugins: { ...chartDefaults.plugins, tooltip: { callbacks: { label: ctx => ' ' + fmt(ctx.parsed.y) } } }
+    }
+  });
+
+  // 4. Estado breakdown doughnut
+  const estadoAgg = {};
+  for (const eid in adv.estadoBreakdown) {
+    for (const e of adv.estadoBreakdown[eid]) {
+      estadoAgg[e.estado] = (estadoAgg[e.estado] || 0) + e.cnt;
+    }
+  }
+  const estadoColors = { pendiente: '#f0a030', listo: '#00d4aa', facturado: '#4a9eff', en_lote: '#a078f0', interno: '#5a6070', error: '#e05050' };
+  const estadoLabels = Object.keys(estadoAgg).filter(k => k !== 'interno');
+  const estadoData = estadoLabels.map(k => estadoAgg[k]);
+  const estadoClrs = estadoLabels.map(k => estadoColors[k] || '#999');
+  destroyChart('estado');
+  dashCharts.estado = new Chart(document.getElementById('chart-estado'), {
+    type: 'doughnut',
+    data: { labels: estadoLabels.map(l => l.charAt(0).toUpperCase() + l.slice(1)), datasets: [{ data: estadoData, backgroundColor: estadoClrs, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: tickColor, font: { size: 11 }, padding: 12 } } } }
+  });
+
+  // 5. Top clients table
+  const topTbody = document.getElementById('dash-top-clients');
+  if (topTbody) {
+    topTbody.innerHTML = adv.topClients.map((c, i) => `<tr>
+      <td>${i + 1}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.razon_social || c.nombre_origen || '—'}</td>
+      <td>${c.rut || '—'}</td>
+      <td><strong>${c.cnt}</strong></td>
+      <td>${fmtShort(c.total_monto || 0)}</td>
+    </tr>`).join('');
+  }
+
+  // 6. Recent lotes table
+  const lotesTbody = document.getElementById('dash-recent-lotes');
+  if (lotesTbody) {
+    lotesTbody.innerHTML = adv.recentLotes.map(l => `<tr>
+      <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${l.lote_id}">${l.lote_id}</td>
+      <td><span class="badge badge-${l.empresa_id === 'tg-inversiones' ? 'green' : l.empresa_id === 'mt-inversiones' ? 'blue' : 'purple'}">${empresaNames[l.empresa_id] || l.empresa_id}</span></td>
+      <td>${l.cantidad}</td>
+      <td>${fmtShort(l.monto_total || 0)}</td>
+      <td>${estadoBadge(l.estado)}</td>
+    </tr>`).join('');
+  }
+}
+
+// ── Operator bar chart ──────────────────────────────────────────────────────
+function renderOperatorChart(series, empresaId) {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const tickColor = isDark ? '#9ba3b2' : '#5f6672';
+  const gridColor = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+  const canvas = document.getElementById('chart-emp-monthly');
+  if (!canvas) return;
+  destroyChart('empMonthly');
+  dashCharts.empMonthly = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: series.map(m => m.label),
+      datasets: [{
+        label: 'DTE emitidos',
+        data: series.map(m => m.byEmpresa[empresaId] || m.total || 0),
+        backgroundColor: 'rgba(0,212,170,.6)',
+        borderColor: '#00d4aa',
+        borderWidth: 1, borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: tickColor, font: { size: 11 } }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: tickColor, font: { size: 11 } }, grid: { color: gridColor } }
+      }
+    }
+  });
+}
+
+// ── Chart helpers ────────────────────────────────────────────────────────────
+function destroyChart(key) {
+  if (dashCharts[key]) { dashCharts[key].destroy(); dashCharts[key] = null; }
+}
+function refreshDashboardChartColors() {
+  // Re-render by reloading
+  if (CURRENT_VIEW === 'dashboard') loadDashboard();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

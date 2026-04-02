@@ -2081,6 +2081,123 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   res.json(stats);
 });
 
+// ── Advanced Dashboard stats (monthly breakdown, trends) ────────────────────
+app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
+  const empresaId = filterByEmpresa(req);
+  const empresaIds = empresaId ? [empresaId] : ['tg-inversiones', 'mt-inversiones', 'ts-capital'];
+
+  // Last 12 months data
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      label: d.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' }),
+      start: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,
+      end: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-31`
+    });
+  }
+
+  // Helper to normalize date to YYYY-MM for grouping
+  function extractYM(fecha) {
+    if (!fecha) return null;
+    const s = String(fecha).trim().split('T')[0].split(' ')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0, 7);
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+      const [d, m, y] = s.split('/');
+      return `${y}-${m.padStart(2, '0')}`;
+    }
+    if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
+      const [d, m, y] = s.split('-');
+      return `${y}-${m.padStart(2, '0')}`;
+    }
+    return null;
+  }
+
+  // Monthly DTE emissions (facturados) per empresa
+  const monthlyByEmpresa = {};
+  const monthlyTotals = {};
+  // Monthly monto facturado
+  const monthlyMonto = {};
+
+  for (const eid of empresaIds) {
+    monthlyByEmpresa[eid] = {};
+    const facturados = db.prepare(
+      "SELECT fecha, monto FROM movimientos WHERE empresa_id = ? AND estado = 'facturado'"
+    ).all(eid);
+
+    for (const f of facturados) {
+      const ym = extractYM(f.fecha);
+      if (!ym) continue;
+      monthlyByEmpresa[eid][ym] = (monthlyByEmpresa[eid][ym] || 0) + 1;
+      monthlyTotals[ym] = (monthlyTotals[ym] || 0) + 1;
+      monthlyMonto[ym] = (monthlyMonto[ym] || 0) + (f.monto || 0);
+    }
+  }
+
+  // Build monthly series
+  const monthlySeries = months.map(m => {
+    const ym = `${m.year}-${String(m.month).padStart(2,'0')}`;
+    const byEmpresa = {};
+    for (const eid of empresaIds) {
+      byEmpresa[eid] = monthlyByEmpresa[eid]?.[ym] || 0;
+    }
+    return {
+      label: m.label,
+      ym,
+      total: monthlyTotals[ym] || 0,
+      monto: monthlyMonto[ym] || 0,
+      byEmpresa
+    };
+  });
+
+  // Top 10 clients by facturado count
+  const topClients = db.prepare(`
+    SELECT rut, razon_social, nombre_origen, empresa_id, COUNT(*) as cnt, SUM(monto) as total_monto
+    FROM movimientos
+    WHERE estado = 'facturado' AND empresa_id IN (${empresaIds.map(() => '?').join(',')})
+    GROUP BY rut_normalizado
+    ORDER BY cnt DESC
+    LIMIT 10
+  `).all(...empresaIds);
+
+  // DTE type breakdown
+  const dteBreakdown = db.prepare(`
+    SELECT tipo_dte, COUNT(*) as cnt, SUM(monto) as total_monto
+    FROM movimientos
+    WHERE estado = 'facturado' AND empresa_id IN (${empresaIds.map(() => '?').join(',')})
+    GROUP BY tipo_dte
+  `).all(...empresaIds);
+
+  // Recent lotes (last 10)
+  const recentLotes = db.prepare(`
+    SELECT lote_id, empresa_id, cantidad, monto_total, estado, metodo, created_at
+    FROM lotes_facturacion
+    WHERE empresa_id IN (${empresaIds.map(() => '?').join(',')})
+    ORDER BY created_at DESC
+    LIMIT 10
+  `).all(...empresaIds);
+
+  // Estado breakdown
+  const estadoBreakdown = {};
+  for (const eid of empresaIds) {
+    estadoBreakdown[eid] = db.prepare(`
+      SELECT estado, COUNT(*) as cnt FROM movimientos WHERE empresa_id = ? GROUP BY estado
+    `).all(eid);
+  }
+
+  res.json({
+    monthlySeries,
+    topClients,
+    dteBreakdown,
+    recentLotes,
+    estadoBreakdown,
+    empresaIds
+  });
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MÓDULO: PROCESAMIENTO AUTOMÁTICO DE CARTOLAS CON SIMPLEAPI
 // ══════════════════════════════════════════════════════════════════════════════

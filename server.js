@@ -688,10 +688,18 @@ app.put('/api/movimientos/:id', requireAuth, (req, res) => {
 app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
   const { ids, estado } = req.body;
   const now = nowCL();
-  const stmt = db.prepare('UPDATE movimientos SET estado = ?, updated_at = ? WHERE id = ?');
-  db.transaction(() => {
-    for (const id of ids) stmt.run(estado, now, id);
-  })();
+  if (estado === 'facturado') {
+    // Al marcar facturado, usar la fecha de la transferencia como fecha_facturacion
+    const stmt = db.prepare('UPDATE movimientos SET estado = ?, fecha_facturacion = COALESCE(fecha, ?), updated_at = ? WHERE id = ?');
+    db.transaction(() => {
+      for (const id of ids) stmt.run(estado, now, now, id);
+    })();
+  } else {
+    const stmt = db.prepare('UPDATE movimientos SET estado = ?, updated_at = ? WHERE id = ?');
+    db.transaction(() => {
+      for (const id of ids) stmt.run(estado, now, id);
+    })();
+  }
   res.json({ ok: true, updated: ids.length });
 });
 
@@ -821,7 +829,7 @@ app.post('/api/facturacion/marcar-manual', requireAuth, (req, res) => {
     const updStmt = db.prepare(
       "UPDATE movimientos SET lote_id = ?, estado = 'facturado', fecha_facturacion = ?, updated_at = ? WHERE id = ?"
     );
-    for (const m of movs) updStmt.run(loteId, now, now, m.id);
+    for (const m of movs) updStmt.run(loteId, m.fecha || now, now, m.id);
   })();
 
   res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length });

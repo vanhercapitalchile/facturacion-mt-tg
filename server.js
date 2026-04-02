@@ -1328,12 +1328,17 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   const movs = db.prepare("SELECT * FROM movimientos WHERE lote_id=? AND estado='en_lote'").all(loteId);
   if (!movs.length) return res.status(400).json({ error: 'No hay movimientos en este lote' });
 
-  // Construir payload JSON para Haulmer API
-  // Formato de DTE individual según docs Haulmer v2
-  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos
-  const giroEmisor = empresa.giro || 'FONDOS Y SOCIEDADES DE INVERSION';
+  // Construir payload JSON para Haulmer API v2
+  // Formato: { response: [...], dte: { Encabezado: {...}, Detalle: [...] } }
+  // Docs: docsapi-openfactura.haulmer.com
+  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos, con guión
+  const giroEmisor = empresa.giro || 'FONDOS Y SOCIEDADES DE INVERSION Y ENTIDADES FINANCIERAS SIMILARES';
   const emailFact  = empresa.email_facturacion || 'facturas@tscapitalchile.cl';
   const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital';
+  const dirOrigen  = empresa.direccion || 'MANQUEHUE NORTE 151 OF 1205 PS 12';
+  const cmnaOrigen = empresa.comuna || 'Las Condes';
+  const ciudadOrigen = empresa.ciudad || 'SANTIAGO';
+  const rznSocEmisor = empresa.nombre || 'TS Capital SPA';
 
   const HAULMER_API_URL = 'https://api.haulmer.com/v2/dte/document';
 
@@ -1346,48 +1351,61 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const fecha   = fechaParaHaulmer(m.fecha);
       const monto   = Math.round(m.monto_total || m.monto || 0);
 
+      // Payload con wrapper dte{} según formato Haulmer v2
       const payload = {
-        Encabezado: {
-          IdDoc: {
-            TipoDTE:      tipoDte,
-            FchEmis:      fecha,
-            FmaPago:      1,    // Contado
-            IndServicio:  null
+        response: ['FOLIO'],
+        dte: {
+          Encabezado: {
+            IdDoc: {
+              TipoDTE:  tipoDte,
+              FchEmis:  fecha,
+              FmaPago:  1         // Contado
+            },
+            Emisor: {
+              RUTEmisor:    rutEmisor,
+              RznSocEmisor: rznSocEmisor,
+              GiroEmisor:   giroEmisor,
+              DirOrigen:    dirOrigen,
+              CmnaOrigen:   cmnaOrigen,
+              CiudadOrigen: ciudadOrigen,
+              Contacto:     emailFact,
+              CorreoEmisor: emailFact
+            },
+            Receptor: {
+              RUTRecep:    (m.rut || '').replace(/\./g, ''),
+              RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
+              GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
+              DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
+              CmnaRecep:   m.comuna || 'NO INFORMADA',
+              CiudadRecep: m.ciudad || ciudadOrigen,
+              CorreoRecep: m.email_receptor || emailFact
+            },
+            Totales: {
+              MntExe:   monto,
+              MntTotal: monto
+            }
           },
-          Emisor: {
-            RUTEmisor:  rutEmisor,
-            GiroEmis:   giroEmisor,
-            Contacto:   emailFact,
-            CorreoEmisor: emailFact
-          },
-          Receptor: {
-            RUTRecep:      (m.rut || '').replace(/\./g,''),
-            RznSocRecep:   (m.razon_social || m.nombre_origen || '').substring(0,100),
-            GiroRecep:     (m.giro || 'NO INFORMADA').substring(0,80),
-            DirRecep:      (m.direccion || 'NO INFORMADA').substring(0,100),
-            CmnaRecep:     m.comuna || 'NO INFORMADA',
-            CorreoRecep:   m.email_receptor || emailFact
-          }
-        },
-        Detalle: [{
-          NmbItem: (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
-          QtyItem: 1,
-          PrcItem: monto,
-          MontoItem: monto,
-          IndExe: 1   // exento
-        }],
-        Totales: {
-          MntExe: monto,
-          MntTotal: monto
+          Detalle: [{
+            NroLinDet: 1,
+            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
+            QtyItem:   1,
+            PrcItem:   monto,
+            MontoItem: monto,
+            IndExe:    1   // exento
+          }]
         }
       };
+
+      // Idempotency-Key para evitar duplicados (basada en mov ID + lote)
+      const idempKey = `${loteId}-mov-${m.id}-${Date.now()}`;
 
       try {
         const resp = await fetch(HAULMER_API_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'apikey': apiKey
+            'apikey': apiKey,
+            'Idempotency-Key': idempKey
           },
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(15000)

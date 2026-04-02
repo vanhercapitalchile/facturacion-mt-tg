@@ -1372,30 +1372,52 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         idDoc.FmaPago = 1;       // 1 = Contado (solo facturas)
       }
 
+      // Emisor y Receptor tienen campos diferentes para Boletas vs Facturas
+      // Boletas (EnvioBOLETA_v11.xsd): RznSocEmisor, GiroEmisor, CdgSIISucur, DirOrigen...
+      // Facturas (DTE_v10.xsd): RznSoc, GiroEmis, CorreoEmisor, Acteco, DirOrigen...
+      const emisor = esBoleta ? {
+        RUTEmisor:    rutEmisor,
+        RznSocEmisor: rznSocEmisor,
+        GiroEmisor:   giroEmisor,
+        DirOrigen:    dirOrigen,
+        CmnaOrigen:   cmnaOrigen,
+        CiudadOrigen: ciudadOrigen
+      } : {
+        RUTEmisor:    rutEmisor,
+        RznSoc:       rznSocEmisor,
+        GiroEmis:     giroEmisor,
+        CorreoEmisor: emailFact,
+        Acteco:       empresa.acteco || 643000,
+        DirOrigen:    dirOrigen,
+        CmnaOrigen:   cmnaOrigen,
+        CiudadOrigen: ciudadOrigen
+      };
+
+      // Receptor Boleta: RUTRecep, RznSocRecep, DirRecep, CmnaRecep, CiudadRecep
+      // Receptor Factura: RUTRecep, RznSocRecep, GiroRecep, CorreoRecep, DirRecep, CmnaRecep, CiudadRecep
+      const receptor = esBoleta ? {
+        RUTRecep:    (m.rut || '').replace(/\./g, ''),
+        RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
+        DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
+        CmnaRecep:   m.comuna || 'NO INFORMADA',
+        CiudadRecep: m.ciudad || ciudadOrigen
+      } : {
+        RUTRecep:    (m.rut || '').replace(/\./g, ''),
+        RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
+        GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
+        CorreoRecep: m.email_receptor || emailFact,
+        DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
+        CmnaRecep:   m.comuna || 'NO INFORMADA',
+        CiudadRecep: m.ciudad || ciudadOrigen
+      };
+
       const payload = {
         response: ['FOLIO'],
         dte: {
           Encabezado: {
             IdDoc: idDoc,
-            Emisor: {
-              RUTEmisor:    rutEmisor,
-              RznSoc:       rznSocEmisor,
-              GiroEmis:     giroEmisor,
-              CorreoEmisor: emailFact,
-              Acteco:       empresa.acteco || 643000,
-              DirOrigen:    dirOrigen,
-              CmnaOrigen:   cmnaOrigen,
-              CiudadOrigen: ciudadOrigen
-            },
-            Receptor: {
-              RUTRecep:     (m.rut || '').replace(/\./g, ''),
-              RznSocRecep:  (m.razon_social || m.nombre_origen || '').substring(0, 100),
-              GiroRecep:    (m.giro || 'NO INFORMADA').substring(0, 80),
-              CorreoRecep:  m.email_receptor || emailFact,
-              DirRecep:     (m.direccion || 'NO INFORMADA').substring(0, 100),
-              CmnaRecep:    m.comuna || 'NO INFORMADA',
-              CiudadRecep:  m.ciudad || ciudadOrigen
-            },
+            Emisor: emisor,
+            Receptor: receptor,
             Totales: {
               MntExe:   monto,
               MntTotal: monto

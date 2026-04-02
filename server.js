@@ -1233,6 +1233,29 @@ function escaparCsvHaulmer(val) {
   return s;
 }
 
+// Formato fecha DD-MM-YYYY para exportación Excel
+// Acepta: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YYYY HH:MM
+function formatoFechaDDMMYYYY(fecha) {
+  if (!fecha) return '';
+  const s = String(fecha).trim().split('T')[0].split(' ')[0]; // quitar hora si hay
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-');
+    return `${d}-${m}-${y}`;
+  }
+  // DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('/');
+    return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
+  }
+  // DD-MM-YYYY (ya está en el formato correcto)
+  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('-');
+    return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
+  }
+  return s; // fallback
+}
+
 // Formato fecha para Haulmer: YYYY-MM-DD
 function fechaParaHaulmer(fechaISO) {
   if (!fechaISO) return new Date().toISOString().slice(0,10);
@@ -2642,13 +2665,7 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
   for (const m of movs) {
     const rutNorm = m.rut_normalizado || '';
     const isEmp   = rutNorm ? parseInt(rutNorm.slice(0,-1)) >= 50000000 : false;
-    // Formato DD-MM-YYYY
-    let fechaFmt = '';
-    if (m.fecha) {
-      const iso = m.fecha.split('T')[0]; // YYYY-MM-DD
-      const [y, mo, d] = iso.split('-');
-      fechaFmt = `${d}-${mo}-${y}`;
-    }
+    const fechaFmt = formatoFechaDDMMYYYY(m.fecha);
     movRows.push([
       m.id_transferencia || '',
       fechaFmt,

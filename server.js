@@ -1365,6 +1365,8 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
               RUTEmisor:    rutEmisor,
               RznSoc:       rznSocEmisor,
               GiroEmis:     giroEmisor,
+              CorreoEmisor: emailFact,
+              Acteco:       empresa.acteco || 649200,
               DirOrigen:    dirOrigen,
               CmnaOrigen:   cmnaOrigen,
               CiudadOrigen: ciudadOrigen

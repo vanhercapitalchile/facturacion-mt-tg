@@ -612,9 +612,9 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
             <button id="fact-filter-all"   class="btn btn-primary btn-sm"   onclick="setFactFilter('all')">Todos</button>
-            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas (34)</button>
-            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas (41)</button>
-            <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
+            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas</button>
+            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas</button>
+            <span id="fact-count-label" style="font-size:13px;margin-left:8px;display:inline-flex;align-items:center;gap:8px;"></span>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
             <table>
@@ -700,7 +700,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
         <div class="card">
-          <div class="card-header"><h3 id="exp-title">Exportación manual</h3><span id="exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
+          <div class="card-header"><h3 id="exp-title">Exportación manual</h3><span id="exp-count-label" style="font-size:13px;margin-left:8px;display:inline-flex;align-items:center;gap:8px;"></span></div>
           <p id="exp-desc" style="color:var(--txt2);font-size:13px;margin-bottom:12px;">Selecciona movimientos listos y descarga el CSV para carga masiva manual.</p>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="position:relative;flex:1;min-width:200px;">
@@ -713,8 +713,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           </div>
           <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
             <button id="exp-filter-all" class="btn btn-primary btn-sm"   onclick="setExpFilter('all')">Todos</button>
-            <button id="exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas (34)</button>
-            <button id="exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas (41)</button>
+            <button id="exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas</button>
+            <button id="exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas</button>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;">
             <table>
@@ -1042,9 +1042,9 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
             <button id="fact-filter-all"   class="btn btn-primary btn-sm"   onclick="setFactFilter('all')">Todos</button>
-            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas (34)</button>
-            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas (41)</button>
-            <span id="fact-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span>
+            <button id="fact-filter-34"    class="btn btn-secondary btn-sm" onclick="setFactFilter(34)">Facturas</button>
+            <button id="fact-filter-41"    class="btn btn-secondary btn-sm" onclick="setFactFilter(41)">Boletas</button>
+            <span id="fact-count-label" style="font-size:13px;margin-left:8px;display:inline-flex;align-items:center;gap:8px;"></span>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead id="emp-fact-thead"><tr>
             <th><input type="checkbox" id="emp-fact-select-all" onchange="toggleSelectAllFact(this)"></th>
@@ -1064,7 +1064,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="emp-view-exportar">
         <div class="topbar"><h1>Exportar CSV</h1></div>
         <div class="card">
-          <div class="card-header"><h3>Exportación manual SimpleFactura</h3><span id="emp-exp-count-label" style="font-size:12px;color:var(--txt2);margin-left:8px;"></span></div>
+          <div class="card-header"><h3>Exportación manual SimpleFactura</h3><span id="emp-exp-count-label" style="font-size:13px;margin-left:8px;display:inline-flex;align-items:center;gap:8px;"></span></div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="position:relative;flex:1;min-width:200px;">
               <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.5;">🔍</span>
@@ -1076,8 +1076,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           </div>
           <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
             <button id="emp-exp-filter-all" class="btn btn-primary btn-sm"   onclick="setExpFilter('all')">Todos</button>
-            <button id="emp-exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas (34)</button>
-            <button id="emp-exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas (41)</button>
+            <button id="emp-exp-filter-34"  class="btn btn-secondary btn-sm" onclick="setExpFilter(34)">Solo Facturas</button>
+            <button id="emp-exp-filter-41"  class="btn btn-secondary btn-sm" onclick="setExpFilter(41)">Solo Boletas</button>
           </div>
           <div class="table-wrapper" style="max-height:50vh;overflow-y:auto;"><table><thead><tr>
             <th><input type="checkbox" onchange="toggleSelectAllExp(this)"></th>
@@ -2416,7 +2416,18 @@ async function buscarClientePorRut(movId) {
   if (!rut) return showToast('Ingrese un RUT', 'error');
   const rutNorm = rut.replace(/[.\-\s]/g, '').toUpperCase();
   const data = await apiFetch(`/api/clientes/buscar/${rutNorm}`);
-  if (!data) return showToast('Cliente no encontrado en la base', 'error');
+  if (!data) {
+    // Cliente no encontrado en BD — usar nombre_origen de la cartola como fallback
+    const mov = ALL_MOVIMIENTOS.find(x => x.id === movId);
+    if (mov && mov.nombre_origen) {
+      document.getElementById('edit-razon').value = mov.nombre_origen;
+      const rutNum = parseInt(rutNorm);
+      document.getElementById('edit-tipo').value = rutNum >= 50000000 ? '34' : '41';
+      showToast('Cliente no está en la base. Se usó el nombre de la cartola bancaria.', 'info');
+      return;
+    }
+    return showToast('Cliente no encontrado en la base', 'error');
+  }
   document.getElementById('edit-razon').value = data.razon_social || '';
   document.getElementById('edit-giro').value = data.giro || '';
   document.getElementById('edit-dir').value = data.direccion || '';
@@ -2543,9 +2554,10 @@ function renderFacturacionTable() {
     const total34 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 34).length;
     const total41 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 41).length;
     const visibles = movs.length;
-    label.textContent = q
-      ? `${visibles} filtrados de ${FACT_TOTAL} total — ${total34} Facturas / ${total41} Boletas`
-      : `${FACT_TOTAL} total — ${total34} Facturas / ${total41} Boletas`;
+    const prefix = q ? `${visibles} filtrados de ${FACT_TOTAL}` : `${FACT_TOTAL} total`;
+    label.innerHTML = `<span style="color:var(--txt2);">${prefix}</span>`
+      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${total34} Facturas</span>`
+      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${total41} Boletas</span>`;
   }
   if (!movs.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
@@ -3294,9 +3306,12 @@ function renderExportar() {
 
   const total34 = ALL_EXP_MOVS.filter(m => m.tipo_dte === 34).length;
   const total41 = ALL_EXP_MOVS.filter(m => m.tipo_dte === 41).length;
-  if (label) label.textContent = q
-    ? `${movs.length} filtrados de ${ALL_EXP_MOVS.length} — ${total34} Facturas / ${total41} Boletas`
-    : `${ALL_EXP_MOVS.length} total — ${total34} Facturas / ${total41} Boletas`;
+  if (label) {
+    const prefix = q ? `${movs.length} filtrados de ${ALL_EXP_MOVS.length}` : `${ALL_EXP_MOVS.length} total`;
+    label.innerHTML = `<span style="color:var(--txt2);">${prefix}</span>`
+      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${total34} Facturas</span>`
+      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${total41} Boletas</span>`;
+  }
 
   if (!movs.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : 'No hay movimientos listos'}</td></tr>`;

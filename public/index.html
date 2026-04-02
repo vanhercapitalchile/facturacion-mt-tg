@@ -2282,8 +2282,18 @@ function loteErrorMsg(responseApiStr) {
   if (!responseApiStr) return '';
   try {
     const r = JSON.parse(responseApiStr);
+    // Haulmer: mostrar mensaje + detalle del primer error
+    if (r.mensaje) {
+      let msg = r.mensaje;
+      if (r.resultados?.length) {
+        const primerError = r.resultados.find(x => x.status === 'error');
+        if (primerError?.resp) msg += ' | Respuesta API: ' + primerError.resp;
+        if (primerError?.error) msg += ' | ' + primerError.error;
+      }
+      return msg;
+    }
     return r.message || r.error || '';
-  } catch(e) { return ''; }
+  } catch(e) { return responseApiStr.substring(0, 300); }
 }
 
 function escHtml(str) {

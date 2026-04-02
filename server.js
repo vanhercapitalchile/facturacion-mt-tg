@@ -1360,18 +1360,23 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const fecha   = fechaParaHaulmer(m.fecha);
       const monto   = Math.round(m.monto_total || m.monto || 0);
 
-      // Payload Haulmer v2 — orden de campos sigue esquema SII DTE_v10.xsd estricto
-      // Ref: github.com/niclabs/DTE/blob/master/schemas/DTE_v10.xsd
+      // Payload Haulmer v2 — orden de campos sigue esquema SII estricto
+      // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd → NO tiene FmaPago
+      // Facturas (33/34): DTE_v10.xsd → tiene FmaPago
+      const esBoleta = (tipoDte === 39 || tipoDte === 41);
+      const idDoc = { TipoDTE: tipoDte, FchEmis: fecha };
+      if (esBoleta) {
+        idDoc.IndServicio = 3;   // 3 = Ventas y Servicios
+      } else {
+        idDoc.IndServicio = 3;
+        idDoc.FmaPago = 1;       // 1 = Contado (solo facturas)
+      }
+
       const payload = {
         response: ['FOLIO'],
         dte: {
           Encabezado: {
-            IdDoc: {
-              TipoDTE:      tipoDte,
-              FchEmis:      fecha,
-              IndServicio:  3,       // 3 = Ventas y Servicios (no factura de compra)
-              FmaPago:      1        // 1 = Contado
-            },
+            IdDoc: idDoc,
             Emisor: {
               RUTEmisor:    rutEmisor,
               RznSoc:       rznSocEmisor,

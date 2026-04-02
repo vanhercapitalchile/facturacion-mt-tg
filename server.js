@@ -510,14 +510,20 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   const sortCol = COLS_FACT[orden] || 'fecha';
   const sortDir = dir === 'desc' ? 'DESC' : 'ASC';
 
-  // Modo paginado: devuelve { movimientos, total }
+  // Modo paginado: devuelve { movimientos, total, total_34, total_41 }
   if (pag === '1') {
     const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
     const total = db.prepare(countSql).get(...params)?.total || 0;
+    // Conteo por tipo DTE (sin filtro de tipo_dte para obtener totales reales)
+    const baseSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1');
+    const baseParams = [...params];
+    const dteCounts = db.prepare(baseSql + ' GROUP BY tipo_dte').all(...baseParams);
+    const total_34 = dteCounts.find(r => r.tipo_dte === 34)?.cnt || 0;
+    const total_41 = dteCounts.find(r => r.tipo_dte === 41)?.cnt || 0;
     sql += ` ORDER BY ${sortCol} ${sortDir}, id ${sortDir}`;
     if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
     if (off) { sql += ' OFFSET ?'; params.push(parseInt(off)); }
-    return res.json({ movimientos: db.prepare(sql).all(...params), total });
+    return res.json({ movimientos: db.prepare(sql).all(...params), total, total_34, total_41 });
   }
 
   // Modo legado: devuelve array directo (usado por exportar, reclasificar, etc.)

@@ -60,6 +60,7 @@
       "ciudad": "SANTIAGO",
       "email_facturacion": "facturas@tscapitalchile.cl",
       "nombre_item_default": "Venta Activo Digital. Transferencia a Banco",
+      "acteco": 643000,
       "proveedor_dte": "haulmer",
       "haulmer": {
         "api_key": "01c1214f31b0453081c222ba59ec0124"

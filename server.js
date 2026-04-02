@@ -193,7 +193,7 @@ try {
           console.log('[MIGRATE] ts-capital insertado desde seed-data.json');
         }
       }
-    } else if (!ts.haulmer || !ts.haulmer.api_key) {
+    } else if (!ts.haulmer || !ts.haulmer.api_key || !ts.acteco) {
       // ts-capital existe pero le falta la config Haulmer — restaurar desde seed
       const seedPath = path.join(__dirname, 'seed-data.json');
       if (fs.existsSync(seedPath)) {
@@ -202,9 +202,10 @@ try {
         if (seedTs?.haulmer) {
           ts.haulmer = { ...seedTs.haulmer, ...(ts.haulmer || {}) };
           ts.proveedor_dte = ts.proveedor_dte || seedTs.proveedor_dte || 'haulmer';
+          ts.acteco = ts.acteco || seedTs.acteco || 643000;
           empresas['ts-capital'] = ts;
           setAppData('empresas', empresas);
-          console.log('[MIGRATE] Restaurada config Haulmer para ts-capital');
+          console.log('[MIGRATE] Restaurada config Haulmer + acteco para ts-capital');
         }
       }
     }
@@ -1366,7 +1367,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
               RznSoc:       rznSocEmisor,
               GiroEmis:     giroEmisor,
               CorreoEmisor: emailFact,
-              Acteco:       empresa.acteco || 649200,
+              Acteco:       empresa.acteco || 643000,
               DirOrigen:    dirOrigen,
               CmnaOrigen:   cmnaOrigen,
               CiudadOrigen: ciudadOrigen

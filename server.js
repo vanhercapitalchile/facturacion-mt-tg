@@ -176,6 +176,41 @@ try {
   console.log('[SEED] Database initialised from seed-data.json');
 })();
 
+// ── Migration: asegurar que ts-capital tenga config Haulmer en la BD ──────────
+(function ensureHaulmerConfig() {
+  try {
+    const empresas = getAppData('empresas');
+    if (!empresas) return;
+    const ts = empresas['ts-capital'];
+    if (!ts) {
+      // Si ts-capital no existe en BD pero sí en seed, insertarlo
+      const seedPath = path.join(__dirname, 'seed-data.json');
+      if (fs.existsSync(seedPath)) {
+        const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        if (seed.empresas?.['ts-capital']) {
+          empresas['ts-capital'] = seed.empresas['ts-capital'];
+          setAppData('empresas', empresas);
+          console.log('[MIGRATE] ts-capital insertado desde seed-data.json');
+        }
+      }
+    } else if (!ts.haulmer || !ts.haulmer.api_key) {
+      // ts-capital existe pero le falta la config Haulmer — restaurar desde seed
+      const seedPath = path.join(__dirname, 'seed-data.json');
+      if (fs.existsSync(seedPath)) {
+        const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        const seedTs = seed.empresas?.['ts-capital'];
+        if (seedTs?.haulmer) {
+          ts.haulmer = { ...seedTs.haulmer, ...(ts.haulmer || {}) };
+          ts.proveedor_dte = ts.proveedor_dte || seedTs.proveedor_dte || 'haulmer';
+          empresas['ts-capital'] = ts;
+          setAppData('empresas', empresas);
+          console.log('[MIGRATE] Restaurada config Haulmer para ts-capital');
+        }
+      }
+    }
+  } catch(e) { console.warn('[MIGRATE] ensureHaulmerConfig error:', e.message); }
+})();
+
 // ── Password migration: actualizar credenciales y renombrar hturra→admin ─────
 (function migratePasswords() {
   try {
@@ -1391,6 +1426,39 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
     db.prepare("UPDATE lotes_facturacion SET estado='error', response_api=?, updated_at=? WHERE lote_id=?")
       .run(JSON.stringify({ error: err.message }), now, loteId);
     res.status(500).json({ error: 'Error al emitir con Open Factura: ' + err.message });
+  }
+});
+
+// ── Test conexión Haulmer ─────────────────────────────────────────────────────
+app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, res) => {
+  const empresas = getAppData('empresas');
+  const empresa = empresas[req.params.empresa_id];
+  const hConf = empresa?.haulmer || {};
+  if (!hConf.api_key) return res.status(400).json({ error: 'API Key de Haulmer no configurada' });
+
+  try {
+    // Haulmer no tiene un endpoint de "ping" oficial, pero un GET al endpoint de documentos
+    // con la API key devuelve un error controlado si la key es válida vs 401 si no lo es
+    const resp = await fetch('https://api.haulmer.com/v2/dte/document', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': hConf.api_key
+      },
+      body: JSON.stringify({}), // payload vacío — esperamos error de validación, no 401
+      signal: AbortSignal.timeout(10000)
+    });
+    const raw = await resp.text();
+    console.log(`[HAULMER TEST] HTTP ${resp.status}: ${raw.substring(0,300)}`);
+
+    if (resp.status === 401 || resp.status === 403) {
+      return res.json({ ok: false, error: 'API Key inválida o sin permisos (HTTP ' + resp.status + ')' });
+    }
+    // Cualquier otro status (400, 422, etc) indica que la key es válida pero el payload está vacío
+    res.json({ ok: true, mensaje: 'API Key válida — conexión OK', httpStatus: resp.status });
+  } catch (err) {
+    console.error('[HAULMER TEST ERROR]', err.message);
+    res.json({ ok: false, error: 'Error de conexión: ' + err.message });
   }
 });
 

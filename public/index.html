@@ -2473,6 +2473,8 @@ let FACT_FILTER = 'all'; // 'all' | 34 | 41
 let ALL_FACT_MOVS = [];
 let FACT_PAGE = 0;
 let FACT_TOTAL = 0;
+let FACT_TOTAL_34 = 0;
+let FACT_TOTAL_41 = 0;
 const FACT_PER_PAGE = 300;
 let FACT_SORT_COL = 'fecha';   // columna activa de orden
 let FACT_SORT_DIR = 'asc';     // 'asc' | 'desc' — por defecto más antigua primero
@@ -2485,6 +2487,8 @@ async function loadFacturacion(page) {
   const res = await apiFetch(url);
   ALL_FACT_MOVS = res?.movimientos || [];
   FACT_TOTAL = res?.total || 0;
+    FACT_TOTAL_34 = res?.total_34 || 0;
+      FACT_TOTAL_41 = res?.total_41 || 0;
   renderFacturacionTable();
 }
 
@@ -2551,13 +2555,11 @@ function renderFacturacionTable() {
   const label = document.getElementById('fact-count-label');
   const totalPages = Math.ceil(FACT_TOTAL / FACT_PER_PAGE);
   if (label) {
-    const total34 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 34).length;
-    const total41 = ALL_FACT_MOVS.filter(m => m.tipo_dte === 41).length;
     const visibles = movs.length;
     const prefix = q ? `${visibles} filtrados de ${FACT_TOTAL}` : `${FACT_TOTAL} total`;
     label.innerHTML = `<span style="color:var(--txt2);">${prefix}</span>`
-      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${total34} Facturas</span>`
-      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${total41} Boletas</span>`;
+      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_34} Facturas</span>`
+      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_41} Boletas</span>`;
   }
   if (!movs.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;
@@ -2590,8 +2592,11 @@ async function quitarDeFacturar(id) {
     body: JSON.stringify({ ids: [id], estado: 'pendiente' })
   });
   if (r?.ok) {
+        const removed = ALL_FACT_MOVS.find(m => m.id === id);
     ALL_FACT_MOVS = ALL_FACT_MOVS.filter(m => m.id !== id);
     FACT_TOTAL = Math.max(0, FACT_TOTAL - 1);
+        if (removed?.tipo_dte === 34) FACT_TOTAL_34 = Math.max(0, FACT_TOTAL_34 - 1);
+            if (removed?.tipo_dte === 41) FACT_TOTAL_41 = Math.max(0, FACT_TOTAL_41 - 1);
     renderFacturacionTable();
     showToast('Movimiento quitado de la lista de facturar', 'info');
   } else {

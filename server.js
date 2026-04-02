@@ -1363,13 +1363,11 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
             },
             Emisor: {
               RUTEmisor:    rutEmisor,
-              RznSocEmisor: rznSocEmisor,
-              GiroEmisor:   giroEmisor,
+              RznSoc:       rznSocEmisor,
+              GiroEmis:     giroEmisor,
               DirOrigen:    dirOrigen,
               CmnaOrigen:   cmnaOrigen,
-              CiudadOrigen: ciudadOrigen,
-              Contacto:     emailFact,
-              CorreoEmisor: emailFact
+              CiudadOrigen: ciudadOrigen
             },
             Receptor: {
               RUTRecep:    (m.rut || '').replace(/\./g, ''),

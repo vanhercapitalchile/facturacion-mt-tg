@@ -1352,15 +1352,17 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const fecha   = fechaParaHaulmer(m.fecha);
       const monto   = Math.round(m.monto_total || m.monto || 0);
 
-      // Payload con wrapper dte{} según formato Haulmer v2
+      // Payload Haulmer v2 — orden de campos sigue esquema SII DTE_v10.xsd estricto
+      // Ref: github.com/niclabs/DTE/blob/master/schemas/DTE_v10.xsd
       const payload = {
         response: ['FOLIO'],
         dte: {
           Encabezado: {
             IdDoc: {
-              TipoDTE:  tipoDte,
-              FchEmis:  fecha,
-              FmaPago:  1         // Contado
+              TipoDTE:      tipoDte,
+              FchEmis:      fecha,
+              IndServicio:  3,       // 3 = Ventas y Servicios (no factura de compra)
+              FmaPago:      1        // 1 = Contado
             },
             Emisor: {
               RUTEmisor:    rutEmisor,
@@ -1373,13 +1375,13 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
               CiudadOrigen: ciudadOrigen
             },
             Receptor: {
-              RUTRecep:    (m.rut || '').replace(/\./g, ''),
-              RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
-              GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
-              DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
-              CmnaRecep:   m.comuna || 'NO INFORMADA',
-              CiudadRecep: m.ciudad || ciudadOrigen,
-              CorreoRecep: m.email_receptor || emailFact
+              RUTRecep:     (m.rut || '').replace(/\./g, ''),
+              RznSocRecep:  (m.razon_social || m.nombre_origen || '').substring(0, 100),
+              GiroRecep:    (m.giro || 'NO INFORMADA').substring(0, 80),
+              CorreoRecep:  m.email_receptor || emailFact,
+              DirRecep:     (m.direccion || 'NO INFORMADA').substring(0, 100),
+              CmnaRecep:    m.comuna || 'NO INFORMADA',
+              CiudadRecep:  m.ciudad || ciudadOrigen
             },
             Totales: {
               MntExe:   monto,

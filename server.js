@@ -2637,12 +2637,18 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
 
   // ── Hoja RECIBIDAS ──────────────────────────────────────────────────────────
   const movHeaders = ['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Origen','Cuenta Origen','Monto','Nombre Origen','Estado','Otros','Cartola'];
-  const movs = db.prepare('SELECT * FROM movimientos WHERE empresa_id = ? ORDER BY fecha DESC, id DESC').all(empresaId);
+  const movs = db.prepare('SELECT * FROM movimientos WHERE empresa_id = ? ORDER BY fecha ASC, id ASC').all(empresaId);
   const movRows = [movHeaders];
   for (const m of movs) {
     const rutNorm = m.rut_normalizado || '';
     const isEmp   = rutNorm ? parseInt(rutNorm.slice(0,-1)) >= 50000000 : false;
-    const fechaFmt= m.fecha ? m.fecha.split('T')[0] : '';
+    // Formato DD-MM-YYYY
+    let fechaFmt = '';
+    if (m.fecha) {
+      const iso = m.fecha.split('T')[0]; // YYYY-MM-DD
+      const [y, mo, d] = iso.split('-');
+      fechaFmt = `${d}-${mo}-${y}`;
+    }
     movRows.push([
       m.id_transferencia || '',
       fechaFmt,

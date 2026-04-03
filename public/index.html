@@ -1347,9 +1347,10 @@ function closeSidebar() {
 // ══════════════════════════════════════════════════════════════════════════════
 const fmt = v => '$' + Math.round(v || 0).toLocaleString('es-CL');
 const fmtShort = v => {
-  if (v >= 1e9) return '$' + (v/1e9).toFixed(1) + 'B';
-  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
-  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  v = v || 0;
+  if (v >= 1e6) return '$' + Math.round(v/1e6).toLocaleString('es-CL') + ' MM';
+  if (v >= 1e3) return '$' + Math.round(v/1e3).toLocaleString('es-CL') + ' mil';
+  
   return '$' + Math.round(v).toLocaleString('es-CL');
 };
 

@@ -608,6 +608,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             </div>
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fact-buscar').value='';renderFacturacionTable();">✕ Limpiar</button>
           </div>
+          <!-- Filtros por fecha y banco -->
+          <div id="fact-extra-filters" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end;"><div><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Fecha desde</label><input type="date" id="fact-fecha-desde" class="inline-input" style="font-size:12px;" onchange="applyFactDateFilter()"></div><div><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Fecha hasta</label><input type="date" id="fact-fecha-hasta" class="inline-input" style="font-size:12px;" onchange="applyFactDateFilter()"></div><button class="btn btn-secondary btn-sm" onclick="clearFactDateFilter()" style="height:32px;font-size:11px;">✕ Limpiar fechas</button><div id="fact-banco-filter" style="display:none;margin-left:12px;border-left:1px solid var(--border);padding-left:12px;"><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Banco</label><div style="display:flex;gap:4px;"><button id="fact-banco-all" class="btn btn-primary btn-sm" onclick="setFactBanco('')" style="font-size:11px;">Todos</button><button id="fact-banco-BCI" class="btn btn-secondary btn-sm" onclick="setFactBanco('BCI')" style="font-size:11px;">Solo BCI</button><button id="fact-banco-SANTANDER" class="btn btn-secondary btn-sm" onclick="setFactBanco('SANTANDER')" style="font-size:11px;">Solo Santander</button></div></div></div>
           <!-- Filtros por tipo -->
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
@@ -1039,6 +1041,8 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             </div>
             <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-fact-buscar').value='';renderFacturacionTable();">✕ Limpiar</button>
           </div>
+          <!-- Filtros fecha/banco operador -->
+          <div id="emp-fact-extra-filters" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:flex-end;"><div><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Fecha desde</label><input type="date" id="emp-fact-fecha-desde" class="inline-input" style="font-size:12px;" onchange="applyFactDateFilter()"></div><div><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Fecha hasta</label><input type="date" id="emp-fact-fecha-hasta" class="inline-input" style="font-size:12px;" onchange="applyFactDateFilter()"></div><button class="btn btn-secondary btn-sm" onclick="clearFactDateFilter()" style="height:32px;font-size:11px;">✕ Limpiar fechas</button><div id="emp-fact-banco-filter" style="display:none;margin-left:12px;border-left:1px solid var(--border);padding-left:12px;"><label style="font-size:11px;color:var(--txt3);display:block;margin-bottom:3px;">Banco</label><div style="display:flex;gap:4px;"><button id="emp-fact-banco-all" class="btn btn-primary btn-sm" onclick="setFactBanco('')" style="font-size:11px;">Todos</button><button id="emp-fact-banco-BCI" class="btn btn-secondary btn-sm" onclick="setFactBanco('BCI')" style="font-size:11px;">Solo BCI</button><button id="emp-fact-banco-SANTANDER" class="btn btn-secondary btn-sm" onclick="setFactBanco('SANTANDER')" style="font-size:11px;">Solo Santander</button></div></div></div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:12px;color:var(--txt2);">Filtrar:</span>
             <button id="fact-filter-all"   class="btn btn-primary btn-sm"   onclick="setFactFilter('all')">Todos</button>
@@ -1319,6 +1323,9 @@ function empNav(view) {
 function selectEmpresa(emp) {
   CURRENT_EMPRESA = emp;
   document.querySelectorAll('.empresa-btn').forEach(b => b.classList.toggle('active', b.dataset.emp === emp));
+  FACT_BANCO = ''; FACT_FECHA_DESDE = ''; FACT_FECHA_HASTA = '';
+  const fd = document.getElementById('fact-fecha-desde'); if (fd) fd.value = '';
+  const fh = document.getElementById('fact-fecha-hasta'); if (fh) fh.value = '';
   if (CURRENT_VIEW === 'dashboard') loadDashboard();
   else if (CURRENT_VIEW === 'movimientos') loadMovimientos();
   else if (CURRENT_VIEW === 'facturacion') loadFacturacion();
@@ -2470,6 +2477,9 @@ async function saveMovimiento(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 // Estado del filtro de facturación
 let FACT_FILTER = 'all'; // 'all' | 34 | 41
+let FACT_BANCO = '';
+let FACT_FECHA_DESDE = '';
+let FACT_FECHA_HASTA = '';
 let ALL_FACT_MOVS = [];
 let FACT_PAGE = 0;
 let FACT_TOTAL = 0;
@@ -2484,6 +2494,9 @@ async function loadFacturacion(page) {
   const empId = getEmpresaId();
   let url = `/api/movimientos?pag=1&estado=listo&limit=${FACT_PER_PAGE}&offset=${FACT_PAGE * FACT_PER_PAGE}&orden=${FACT_SORT_COL}&dir=${FACT_SORT_DIR}`;
   if (empId) url += `&empresa_id=${empId}`;
+  if (FACT_BANCO) url += `&banco=${encodeURIComponent(FACT_BANCO)}`;
+  if (FACT_FECHA_DESDE) url += `&fecha_desde=${FACT_FECHA_DESDE}`;
+  if (FACT_FECHA_HASTA) url += `&fecha_hasta=${FACT_FECHA_HASTA}`;
   const res = await apiFetch(url);
   ALL_FACT_MOVS = res?.movimientos || [];
   FACT_TOTAL = res?.total || 0;
@@ -2523,7 +2536,50 @@ function setFactFilter(tipo) {
   loadFacturacion(0);
 }
 
+function setFactBanco(banco) {
+  FACT_BANCO = banco;
+  FACT_PAGE = 0;
+  const prefix = isAdmin() ? 'fact-banco' : 'emp-fact-banco';
+  ['', 'BCI', 'SANTANDER'].forEach(b => {
+    const btn = document.getElementById(`${prefix}-${b || 'all'}`);
+    if (!btn) return;
+    btn.className = b === banco ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  loadFacturacion(0);
+}
+
+function applyFactDateFilter() {
+  const desde = document.getElementById(isAdmin() ? 'fact-fecha-desde' : 'emp-fact-fecha-desde');
+  const hasta = document.getElementById(isAdmin() ? 'fact-fecha-hasta' : 'emp-fact-fecha-hasta');
+  FACT_FECHA_DESDE = desde?.value || '';
+  FACT_FECHA_HASTA = hasta?.value || '';
+  FACT_PAGE = 0;
+  loadFacturacion(0);
+}
+
+function clearFactDateFilter() {
+  const desdeEl = document.getElementById(isAdmin() ? 'fact-fecha-desde' : 'emp-fact-fecha-desde');
+  const hastaEl = document.getElementById(isAdmin() ? 'fact-fecha-hasta' : 'emp-fact-fecha-hasta');
+  if (desdeEl) desdeEl.value = '';
+  if (hastaEl) hastaEl.value = '';
+  FACT_FECHA_DESDE = '';
+  FACT_FECHA_HASTA = '';
+  FACT_PAGE = 0;
+  loadFacturacion(0);
+}
+
+function showBancoFilter() {
+  const empId = getEmpresaId();
+  const emp = DB.empresas[empId];
+  if (!emp) return true;
+  const nombre = (emp.nombre || '').toLowerCase();
+  return nombre.includes('tg') || nombre.includes('mt');
+}
+
 function renderFacturacionTable() {
+  const bancoFilterEl = document.getElementById(isAdmin() ? 'fact-banco-filter' : 'emp-fact-banco-filter');
+  if (bancoFilterEl) bancoFilterEl.style.display = showBancoFilter() ? 'block' : 'none';
+
   // Actualizar flechas de orden en headers (admin y emp)
   ['fecha','monto','rut','razon_social'].forEach(col => {
     const arrow = FACT_SORT_COL === col
@@ -2557,9 +2613,13 @@ function renderFacturacionTable() {
   if (label) {
     const visibles = movs.length;
     const prefix = q ? `${visibles} filtrados de ${FACT_TOTAL}` : `${FACT_TOTAL} total`;
+    let filterTags = '';
+    if (FACT_BANCO) filterTags += `<span class="badge badge-gray" style="font-size:11px;padding:2px 8px;">Banco: ${FACT_BANCO}</span>`;
+    if (FACT_FECHA_DESDE || FACT_FECHA_HASTA) filterTags += `<span class="badge badge-gray" style="font-size:11px;padding:2px 8px;">Fecha: ${FACT_FECHA_DESDE || '…'} → ${FACT_FECHA_HASTA || '…'}</span>`;
     label.innerHTML = `<span style="color:var(--txt2);">${prefix}</span>`
       + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_34} Facturas</span>`
-      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_41} Boletas</span>`;
+      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_41} Boletas</span>`
+      + filterTags;
   }
   if (!movs.length) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--txt3)">${q ? `Sin resultados para "${q}"` : FACT_FILTER === 'all' ? 'No hay movimientos listos para facturar' : `No hay movimientos de tipo ${FACT_FILTER}`}</td></tr>`;

@@ -750,14 +750,27 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           </div>
         </div>
         <div class="card">
-          <div class="card-header">
+          <div class="card-header" style="flex-wrap:wrap;gap:10px;">
             <h3 id="clientes-count">Clientes</h3>
-            <div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar por RUT o nombre..." id="clientes-search" oninput="filterClientes()"></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <div style="display:flex;gap:4px;">
+                <button id="cli-tipo-all" class="btn btn-primary btn-sm" onclick="setClienteTipo('all')" style="font-size:11px;">Todos</button>
+                <button id="cli-tipo-empresa" class="btn btn-secondary btn-sm" onclick="setClienteTipo('empresa')" style="font-size:11px;">Persona Jurídica</button>
+                <button id="cli-tipo-persona" class="btn btn-secondary btn-sm" onclick="setClienteTipo('persona')" style="font-size:11px;">Persona Natural</button>
+              </div>
+              <div style="border-left:1px solid var(--border);height:24px;"></div>
+              <div style="display:flex;gap:4px;">
+                <button id="cli-sort-alpha" class="btn btn-secondary btn-sm" onclick="setClienteSort('alpha')" style="font-size:11px;">A→Z</button>
+                <button id="cli-sort-rut" class="btn btn-secondary btn-sm" onclick="setClienteSort('rut')" style="font-size:11px;">RUT</button>
+              </div>
+              <div style="border-left:1px solid var(--border);height:24px;"></div>
+              <div style="width:280px"><input type="text" class="inline-input" placeholder="Buscar por RUT, nombre o email..." id="clientes-search" oninput="filterClientes()"></div>
+            </div>
           </div>
           <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
             <table>
               <thead>
-                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th></tr>
+                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th><th style="width:70px;">Acciones</th></tr>
               </thead>
               <tbody id="clientes-tbody"></tbody>
             </table>
@@ -1095,8 +1108,28 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       </div>
       <div class="view" id="emp-view-clientes">
         <div class="topbar"><h1>Base de Clientes</h1></div>
-        <div class="card"><div class="card-header"><h3 id="emp-clientes-count">Clientes</h3><div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar..." id="emp-clientes-search" oninput="filterClientes()"></div></div>
-        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
+        <div class="card">
+          <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+            <h3 id="emp-clientes-count">Clientes</h3>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <div style="display:flex;gap:4px;">
+                <button id="emp-cli-tipo-all" class="btn btn-primary btn-sm" onclick="setClienteTipo('all')" style="font-size:11px;">Todos</button>
+                <button id="emp-cli-tipo-empresa" class="btn btn-secondary btn-sm" onclick="setClienteTipo('empresa')" style="font-size:11px;">Persona Jurídica</button>
+                <button id="emp-cli-tipo-persona" class="btn btn-secondary btn-sm" onclick="setClienteTipo('persona')" style="font-size:11px;">Persona Natural</button>
+              </div>
+              <div style="border-left:1px solid var(--border);height:24px;"></div>
+              <div style="display:flex;gap:4px;">
+                <button id="emp-cli-sort-alpha" class="btn btn-secondary btn-sm" onclick="setClienteSort('alpha')" style="font-size:11px;">A→Z</button>
+                <button id="emp-cli-sort-rut" class="btn btn-secondary btn-sm" onclick="setClienteSort('rut')" style="font-size:11px;">RUT</button>
+              </div>
+              <div style="border-left:1px solid var(--border);height:24px;"></div>
+              <div style="width:280px"><input type="text" class="inline-input" placeholder="Buscar por RUT, nombre o email..." id="emp-clientes-search" oninput="filterClientes()"></div>
+            </div>
+          </div>
+          <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
+            <table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -3460,53 +3493,90 @@ async function marcarExportadosManual() {
 // ══════════════════════════════════════════════════════════════════════════════
 // CLIENTES
 // ══════════════════════════════════════════════════════════════════════════════
+let CLI_TIPO_FILTER = 'all';
+let CLI_SORT = 'alpha';
+
 async function loadClientes() {
   const empId = getEmpresaId();
   let url = '/api/clientes';
-  if (empId) url += `?empresa_id=${empId}`;
+  if (empId) url += '?empresa_id=' + empId;
   ALL_CLIENTES = await apiFetch(url) || [];
   renderClientes();
 }
 
-function filterClientes() {
-  const search = (document.getElementById(isAdmin() ? 'clientes-search' : 'emp-clientes-search')?.value || '').toLowerCase();
-  renderClientes(search);
+function setClienteTipo(tipo) {
+  CLI_TIPO_FILTER = tipo;
+  const prefix = isAdmin() ? 'cli-tipo' : 'emp-cli-tipo';
+  ['all', 'empresa', 'persona'].forEach(t => {
+    const btn = document.getElementById(prefix + '-' + t);
+    if (btn) btn.className = t === tipo ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderClientes();
 }
 
-function renderClientes(search = '') {
+function setClienteSort(sort) {
+  CLI_SORT = sort;
+  const prefix = isAdmin() ? 'cli-sort' : 'emp-cli-sort';
+  ['alpha', 'rut'].forEach(s => {
+    const btn = document.getElementById(prefix + '-' + s);
+    if (btn) btn.className = s === sort ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderClientes();
+}
+
+function filterClientes() {
+  renderClientes();
+}
+
+function renderClientes() {
+  const search = (document.getElementById(isAdmin() ? 'clientes-search' : 'emp-clientes-search')?.value || '').toLowerCase();
   let filtered = ALL_CLIENTES;
+  if (CLI_TIPO_FILTER !== 'all') {
+    filtered = filtered.filter(c => c.tipo === CLI_TIPO_FILTER);
+  }
   if (search) {
     filtered = filtered.filter(c =>
       (c.rut || '').toLowerCase().includes(search) ||
       (c.razon_social || '').toLowerCase().includes(search) ||
-      (c.nombre || '').toLowerCase().includes(search)
+      (c.nombre || '').toLowerCase().includes(search) ||
+      (c.email || '').toLowerCase().includes(search)
     );
   }
-
+  if (CLI_SORT === 'alpha') {
+    filtered = [...filtered].sort((a, b) => (a.razon_social || a.nombre || '').localeCompare(b.razon_social || b.nombre || ''));
+  } else if (CLI_SORT === 'rut') {
+    filtered = [...filtered].sort((a, b) => (a.rut || '').localeCompare(b.rut || ''));
+  }
+  const totalAll = ALL_CLIENTES.length;
+  const totalEmpresas = ALL_CLIENTES.filter(c => c.tipo === 'empresa').length;
+  const totalPersonas = ALL_CLIENTES.filter(c => c.tipo === 'persona').length;
   const countEl = document.getElementById(isAdmin() ? 'clientes-count' : 'emp-clientes-count');
-  if (countEl) countEl.textContent = `${filtered.length} clientes`;
-
+  if (countEl) {
+    const showing = filtered.length;
+    let label = showing + ' clientes';
+    if (CLI_TIPO_FILTER !== 'all' || search) label += ' (de ' + totalAll + ' total)';
+    countEl.innerHTML = '<span>' + label + '</span> '
+      + '<span class="badge badge-blue" style="font-size:11px;padding:2px 8px;">' + totalEmpresas + ' Jurídicas</span> '
+      + '<span class="badge badge-purple" style="font-size:11px;padding:2px 8px;">' + totalPersonas + ' Naturales</span>';
+  }
+  const cols = isAdmin() ? 9 : 7;
   const tbody = document.getElementById(isAdmin() ? 'clientes-tbody' : 'emp-clientes-tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt3)">No hay clientes</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + cols + '" style="text-align:center;padding:40px;color:var(--txt3)">No hay clientes</td></tr>';
     return;
   }
-
-  tbody.innerHTML = filtered.slice(0, 200).map(c => `
-    <tr>
-      <td style="font-size:12px;font-family:monospace;">${c.rut || '—'}</td>
-      <td>${c.razon_social || '—'}</td>
-      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${c.giro || '—'}</td>
-      <td style="font-size:11px;">${c.direccion || '—'}</td>
-      <td>${c.comuna || '—'}</td>
-      <td style="font-size:11px;">${c.email || '—'}</td>
-      <td><span class="badge badge-${c.tipo === 'empresa' ? 'blue' : 'purple'}">${c.tipo === 'empresa' ? 'Empresa' : 'Persona'}</span></td>
-      ${isAdmin() ? `<td><span class="badge badge-gray">${c.empresa_id}</span></td>` : ''}
-    </tr>
-  `).join('');
+  tbody.innerHTML = filtered.slice(0, 300).map(c => '<tr>'
+    + '<td style="font-size:12px;font-family:monospace;">' + (c.rut || '—') + '</td>'
+    + '<td>' + (c.razon_social || '—') + '</td>'
+    + '<td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">' + (c.giro || '—') + '</td>'
+    + '<td style="font-size:11px;">' + (c.direccion || '—') + '</td>'
+    + '<td>' + (c.comuna || '—') + '</td>'
+    + '<td style="font-size:11px;">' + (c.email || '<span style="color:var(--red);">Sin email</span>') + '</td>'
+    + '<td><span class="badge badge-' + (c.tipo === 'empresa' ? 'blue' : 'purple') + '">' + (c.tipo === 'empresa' ? 'Jurídica' : 'Natural') + '</span></td>'
+    + (isAdmin() ? '<td><span class="badge badge-gray">' + c.empresa_id + '</span></td>' : '')
+    + (isAdmin() ? '<td><button class="btn btn-secondary btn-sm" onclick="showEditCliente(' + c.id + ')" style="font-size:10px;padding:2px 8px;">Editar</button></td>' : '')
+    + '</tr>').join('');
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
 // IMPORTAR CLIENTES
 // ══════════════════════════════════════════════════════════════════════════════
 async function handleImportFile(input) {
@@ -3875,12 +3945,13 @@ function showAddCliente() {
       <div class="form-group"><label>Dirección</label><input type="text" id="nc-dir" class="inline-input"></div>
       <div class="form-group"><label>Comuna</label><input type="text" id="nc-comuna" class="inline-input"></div>
       <div class="form-group"><label>Ciudad</label><input type="text" id="nc-ciudad" class="inline-input"></div>
-      <div class="form-group"><label>Email</label><input type="text" id="nc-email" class="inline-input"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="nc-email" class="inline-input"></div>
+      <div class="form-group"><label>Teléfono</label><input type="text" id="nc-telefono" class="inline-input"></div>
       <div class="form-group"><label>Tipo</label>
-        <select id="nc-tipo" class="inline-input"><option value="empresa">Empresa</option><option value="persona">Persona</option></select>
+        <select id="nc-tipo" class="inline-input"><option value="empresa">Persona Jurídica</option><option value="persona">Persona Natural</option></select>
       </div>
       <div class="form-group"><label>Empresa</label>
-        <select id="nc-empresa" class="inline-input"><option value="tg-inversiones">TG Inversiones</option><option value="mt-inversiones">MT Inversiones</option></select>
+        <select id="nc-empresa" class="inline-input"></select>
       </div>
     </div>
     <div class="modal-actions">
@@ -3888,6 +3959,8 @@ function showAddCliente() {
       <button class="btn btn-primary" onclick="saveNewCliente()">Crear</button>
     </div>`;
   showModal();
+  const empSel = document.getElementById('nc-empresa');
+  if (empSel) { empSel.innerHTML = Object.entries(DB.empresas).map(([k,v]) => '<option value="' + k + '">' + v.nombre + '</option>').join(''); }
 }
 
 async function saveNewCliente() {
@@ -3901,11 +3974,58 @@ async function saveNewCliente() {
       comuna: document.getElementById('nc-comuna').value,
       ciudad: document.getElementById('nc-ciudad').value,
       email: document.getElementById('nc-email').value,
+      telefono: document.getElementById('nc-telefono').value,
       tipo: document.getElementById('nc-tipo').value,
       empresa_id: document.getElementById('nc-empresa').value
     })
   });
   if (data?.ok) { closeModal(); showToast('Cliente creado', 'success'); loadClientes(); }
+}
+
+function showEditCliente(id) {
+  const c = ALL_CLIENTES.find(x => x.id === id);
+  if (!c) return;
+  const modal = document.getElementById('modal-content');
+  const esc = s => (s || '').replace(/"/g, '&quot;');
+  modal.innerHTML = '<h3>Editar cliente</h3>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>RUT</label><input type="text" id="ec-rut" class="inline-input" value="' + (c.rut || '') + '"></div>'
+    + '<div class="form-group"><label>Razón Social</label><input type="text" id="ec-razon" class="inline-input" value="' + esc(c.razon_social) + '"></div>'
+    + '<div class="form-group"><label>Giro</label><input type="text" id="ec-giro" class="inline-input" value="' + esc(c.giro) + '"></div>'
+    + '<div class="form-group"><label>Dirección</label><input type="text" id="ec-dir" class="inline-input" value="' + esc(c.direccion) + '"></div>'
+    + '<div class="form-group"><label>Comuna</label><input type="text" id="ec-comuna" class="inline-input" value="' + esc(c.comuna) + '"></div>'
+    + '<div class="form-group"><label>Ciudad</label><input type="text" id="ec-ciudad" class="inline-input" value="' + esc(c.ciudad) + '"></div>'
+    + '<div class="form-group"><label>Email</label><input type="email" id="ec-email" class="inline-input" value="' + (c.email || '') + '" style="' + (!c.email ? 'border-color:var(--red);' : '') + '"></div>'
+    + '<div class="form-group"><label>Teléfono</label><input type="text" id="ec-telefono" class="inline-input" value="' + (c.telefono || '') + '"></div>'
+    + '<div class="form-group"><label>Nombre Contacto</label><input type="text" id="ec-nombre" class="inline-input" value="' + esc(c.nombre) + '"></div>'
+    + '<div class="form-group"><label>Tipo</label>'
+    + '<select id="ec-tipo" class="inline-input"><option value="empresa"' + (c.tipo === 'empresa' ? ' selected' : '') + '>Persona Jurídica</option><option value="persona"' + (c.tipo === 'persona' ? ' selected' : '') + '>Persona Natural</option></select></div>'
+    + '</div>'
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
+    + '<button class="btn btn-primary" onclick="saveEditCliente(' + c.id + ')">Guardar</button>'
+    + '</div>';
+  showModal();
+}
+
+async function saveEditCliente(id) {
+  const data = await apiFetch('/api/clientes/' + id, {
+    method: 'PUT',
+    body: JSON.stringify({
+      rut: document.getElementById('ec-rut').value,
+      razon_social: document.getElementById('ec-razon').value,
+      giro: document.getElementById('ec-giro').value,
+      direccion: document.getElementById('ec-dir').value,
+      comuna: document.getElementById('ec-comuna').value,
+      ciudad: document.getElementById('ec-ciudad').value,
+      email: document.getElementById('ec-email').value,
+      telefono: document.getElementById('ec-telefono').value,
+      nombre: document.getElementById('ec-nombre').value,
+      tipo: document.getElementById('ec-tipo').value
+    })
+  });
+  if (data?.ok) { closeModal(); showToast('Cliente actualizado', 'success'); loadClientes(); }
+  else showToast('Error al guardar', 'error');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

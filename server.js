@@ -10,7 +10,7 @@ const multer   = require('multer');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// Ã¢ÂÂÃ¢ÂÂ Config Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Config ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 const JWT_SECRET = process.env.JWT_SECRET || 'facturacion-mt-tg-dev-secret-change-me';
 const DATA_DIR   = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -21,7 +21,7 @@ db.pragma('journal_mode = WAL');
 // Upload config
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-// Ã¢ÂÂÃ¢ÂÂ Schema Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Schema ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_data (
     key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -109,13 +109,13 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_estado ON movimientos(estado)'
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_rut ON clientes(rut_normalizado, empresa_id)'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)'); } catch(e){}
 
-// Ã¢ÂÂÃ¢ÂÂ Schema migrations Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Schema migrations ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN folio_dte TEXT'); } catch(e){}
 
-// Ã¢ÂÂÃ¢ÂÂ RUTs internos excluidos de facturaciÃÂ³n (transferencias entre empresas propias) Ã¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ RUTs internos excluidos de facturaciÃÂÃÂ³n (transferencias entre empresas propias) ÃÂ¢ÃÂÃÂ
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
@@ -124,8 +124,8 @@ try {
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
 
-// Ã¢ÂÂÃ¢ÂÂ Cleanup: eliminar intentos fallidos de facturaciÃÂ³n anteriores al deploy Ã¢ÂÂÃ¢ÂÂ
-// Resetea movimientos y borra lotes con estado 'error'. Seguro de correr mÃÂºltiples veces.
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Cleanup: eliminar intentos fallidos de facturaciÃÂÃÂ³n anteriores al deploy ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// Resetea movimientos y borra lotes con estado 'error'. Seguro de correr mÃÂÃÂºltiples veces.
 try {
   db.transaction(() => {
     // Devolver movimientos de lotes fallidos a estado 'listo'
@@ -137,7 +137,7 @@ try {
   console.log('[STARTUP] Limpieza de lotes con error completada');
 } catch(e) { console.warn('[STARTUP] Error en limpieza de lotes:', e.message); }
 
-// Ã¢ÂÂÃ¢ÂÂ Re-classify existing movements on startup using empresa config Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Re-classify existing movements on startup using empresa config ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 (function reclassifyMovimientos() {
   try {
     const empresas = getAppData('empresas') || {};
@@ -162,7 +162,7 @@ try {
   } catch(e) { console.error('[MIGRATE] Error en reclassify:', e.message); }
 })();
 
-// Ã¢ÂÂÃ¢ÂÂ Seed Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Seed ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 (function seedIfEmpty() {
   if (db.prepare('SELECT value FROM app_data WHERE key = ?').get('users')) return;
   const seedPath = path.join(__dirname, 'seed-data.json');
@@ -177,14 +177,14 @@ try {
   console.log('[SEED] Database initialised from seed-data.json');
 })();
 
-// Ã¢ÂÂÃ¢ÂÂ Migration: asegurar que ts-capital tenga config Haulmer en la BD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Migration: asegurar que ts-capital tenga config Haulmer en la BD ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 (function ensureHaulmerConfig() {
   try {
     const empresas = getAppData('empresas');
     if (!empresas) return;
     const ts = empresas['ts-capital'];
     if (!ts) {
-      // Si ts-capital no existe en BD pero sÃÂ­ en seed, insertarlo
+      // Si ts-capital no existe en BD pero sÃÂÃÂ­ en seed, insertarlo
       const seedPath = path.join(__dirname, 'seed-data.json');
       if (fs.existsSync(seedPath)) {
         const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
@@ -195,7 +195,7 @@ try {
         }
       }
     } else if (!ts.haulmer || !ts.haulmer.api_key || !ts.acteco) {
-      // ts-capital existe pero le falta la config Haulmer Ã¢ÂÂ restaurar desde seed
+      // ts-capital existe pero le falta la config Haulmer ÃÂ¢ÃÂÃÂ restaurar desde seed
       const seedPath = path.join(__dirname, 'seed-data.json');
       if (fs.existsSync(seedPath)) {
         const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
@@ -213,20 +213,20 @@ try {
   } catch(e) { console.warn('[MIGRATE] ensureHaulmerConfig error:', e.message); }
 })();
 
-// Ã¢ÂÂÃ¢ÂÂ Password migration: actualizar credenciales y renombrar hturraÃ¢ÂÂadmin Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Password migration: actualizar credenciales y renombrar hturraÃÂ¢ÃÂÃÂadmin ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 (function migratePasswords() {
   try {
     const users = getAppData('users');
     if (!users) return;
     let changed = false;
-    // Revertir admin Ã¢ÂÂ hturra si se renombrÃÂ³ por error
+    // Revertir admin ÃÂ¢ÃÂÃÂ hturra si se renombrÃÂÃÂ³ por error
     if (users.admin && !users.hturra) {
       users.hturra = { ...users.admin };
       delete users.admin;
       changed = true;
-      console.log('[MIGRATE] Revertido usuario admin Ã¢ÂÂ hturra');
+      console.log('[MIGRATE] Revertido usuario admin ÃÂ¢ÃÂÃÂ hturra');
     }
-    // Actualizar hashes de contraseÃÂ±as
+    // Actualizar hashes de contraseÃÂÃÂ±as
     const newHashes = {
       hturra:    '1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc',
       dbravo:    'f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69',
@@ -236,7 +236,7 @@ try {
       if (users[uname] && users[uname].passHash !== hash) {
         users[uname].passHash = hash;
         changed = true;
-        console.log(`[MIGRATE] ContraseÃÂ±a actualizada para ${uname}`);
+        console.log(`[MIGRATE] ContraseÃÂÃÂ±a actualizada para ${uname}`);
       }
     }
     if (changed) {
@@ -245,7 +245,7 @@ try {
   } catch(e) { console.error('[MIGRATE] Error en migratePasswords:', e.message); }
 })();
 
-// Ã¢ÂÂÃ¢ÂÂ Helpers Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Helpers ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -280,7 +280,7 @@ function requireAuth(req, res, next) {
   try {
     req.user = jwt.verify(h.slice(7), JWT_SECRET);
     next();
-  } catch { res.status(401).json({ error: 'Token invÃÂ¡lido o expirado' }); }
+  } catch { res.status(401).json({ error: 'Token invÃÂÃÂ¡lido o expirado' }); }
 }
 
 function requireAdmin(req, res, next) {
@@ -313,7 +313,7 @@ function generateLoteId(empresaId) {
   return `${empresaId}-${ts}-${rnd}`;
 }
 
-// Devuelve la fecha mÃÂ¡s reciente de un array de movimientos, formateada DD-MM-YYYY
+// Devuelve la fecha mÃÂÃÂ¡s reciente de un array de movimientos, formateada DD-MM-YYYY
 function maxFechaLote(movs) {
   let max = null;
   for (const m of movs) {
@@ -334,17 +334,17 @@ function maxFechaLote(movs) {
   return `${dd}-${mm}-${max.getFullYear()}`;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Auth Routes Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Auth Routes ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Faltan credenciales' });
 
   const users = getAppData('users');
   const user = users[username.toLowerCase()];
-  if (!user) return res.status(401).json({ error: 'Credenciales invÃÂ¡lidas' });
+  if (!user) return res.status(401).json({ error: 'Credenciales invÃÂÃÂ¡lidas' });
 
   const hash = sha256(password);
-  if (hash !== user.passHash) return res.status(401).json({ error: 'Credenciales invÃÂ¡lidas' });
+  if (hash !== user.passHash) return res.status(401).json({ error: 'Credenciales invÃÂÃÂ¡lidas' });
 
   const payload = { username: username.toLowerCase(), role: user.role, empresa: user.empresa };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '4h' });
@@ -360,7 +360,7 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Notification routes Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Notification routes ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/notifications/login', requireAuth, (req, res) => {
   const { displayName } = req.body;
   db.prepare('INSERT INTO login_logs (username, display_name, empresa, timestamp_cl) VALUES (?,?,?,?)')
@@ -379,7 +379,7 @@ app.put('/api/notifications/read', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Data routes (app_data CRUD) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Data routes (app_data CRUD) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/data', requireAuth, (req, res) => {
   const empresas = getAppData('empresas');
   const config = getAppData('config');
@@ -401,7 +401,7 @@ app.put('/api/data', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Users management Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Users management ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
   res.json(getAppData('users'));
 });
@@ -411,7 +411,7 @@ app.put('/api/users', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Clientes (base de datos tributaria) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Clientes (base de datos tributaria) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/clientes', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let rows;
@@ -491,7 +491,7 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
   res.json(row || null);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Movimientos (transferencias de cartola) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Movimientos (transferencias de cartola) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag, orden, dir } = req.query;
@@ -515,7 +515,7 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (pag === '1') {
     const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
     const total = db.prepare(countSql).get(...params)?.total || 0;
-    // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte Ã¢ÂÂ muestra ambos totales siempre)
+    // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte ÃÂ¢ÃÂÃÂ muestra ambos totales siempre)
     let typeSql = 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1';
     const typeParams = [];
     if (empresaId)   { typeSql += ' AND empresa_id = ?';    typeParams.push(empresaId); }
@@ -561,7 +561,7 @@ app.get('/api/movimientos/stats', requireAuth, (req, res) => {
 // Upload cartola and process
 app.post('/api/movimientos/cargar-cartola', requireAuth, upload.single('cartola'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se subiÃÂ³ archivo' });
+    if (!req.file) return res.status(400).json({ error: 'No se subiÃÂÃÂ³ archivo' });
     const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
     const bancoCartola = (req.body.banco || '').toUpperCase();
@@ -630,7 +630,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // RUT interno: transferencia entre empresas propias Ã¢ÂÂ no facturar
+        // RUT interno: transferencia entre empresas propias ÃÂ¢ÃÂÃÂ no facturar
         if (RUTS_INTERNOS.includes(rutNorm)) {
           estado = 'interno';
         } else if (rutNorm) {
@@ -654,7 +654,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
             estado = 'listo';
           } else {
             // Factura/DTE que no sea boleta sin cliente en BD: usar nombre_origen como razon_social
-            // El movimiento queda pendiente para revisiÃÂ³n manual (completar datos)
+            // El movimiento queda pendiente para revisiÃÂÃÂ³n manual (completar datos)
             razonSocial = (mov.nombre_origen || '').substring(0, 100);
           }
         }
@@ -716,7 +716,7 @@ app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
   res.json({ ok: true, updated: ids.length });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Historial de cargas de cartola Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Historial de cargas de cartola ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/cartolas/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let sql = `SELECT lote_carga_id, empresa_id, banco_cartola, fecha_carga,
@@ -732,7 +732,7 @@ app.get('/api/cartolas/historial', requireAuth, (req, res) => {
 app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   const { lote_carga_id } = req.params;
   const empresaId = filterByEmpresa(req);
-  // Only allow deletion of movements not yet in a facturaciÃÂ³n lote
+  // Only allow deletion of movements not yet in a facturaciÃÂÃÂ³n lote
   let sql = "DELETE FROM movimientos WHERE lote_carga_id = ? AND estado NOT IN ('facturado','en_lote')";
   const params = [lote_carga_id];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
@@ -740,24 +740,24 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   res.json({ ok: true, eliminados: result.changes });
 });
 
-// Helper: determinar tipo_dte segÃÂºn RUT y config de empresa
-// Default: 34 (Factura Exenta) para TODOS Ã¢ÂÂ tipo 41 solo si estÃÂ¡ explÃÂ­citamente configurado
-// (SF requiere que el tipo 41 tenga plantilla activa configurada Ã¢ÂÂ si no existe usar 34)
+// Helper: determinar tipo_dte segÃÂÃÂºn RUT y config de empresa
+// Default: 34 (Factura Exenta) para TODOS ÃÂ¢ÃÂÃÂ tipo 41 solo si estÃÂÃÂ¡ explÃÂÃÂ­citamente configurado
+// (SF requiere que el tipo 41 tenga plantilla activa configurada ÃÂ¢ÃÂÃÂ si no existe usar 34)
 function getTipoDte(rutNormalizado, empresaConfig) {
   if (!rutNormalizado) return 34;
   const rutNum = parseInt(rutNormalizado.slice(0, -1));
   const sf = empresaConfig?.simplefactura || {};
   if (rutNum >= 76000000) {
-    // Empresa/Persona jurÃÂ­dica Ã¢ÂÂ Factura Exenta (34) por defecto
+    // Empresa/Persona jurÃÂÃÂ­dica ÃÂ¢ÃÂÃÂ Factura Exenta (34) por defecto
     return parseInt(sf.tipo_dte_empresas) || 34;
   } else {
-    // Persona natural Ã¢ÂÂ default 41 (Boleta Exenta), configurable por empresa
-    // IMPORTANTE: TG usa DTE 41, MT puede usar DTE 34 Ã¢ÂÂ configurar en cada empresa
+    // Persona natural ÃÂ¢ÃÂÃÂ default 41 (Boleta Exenta), configurable por empresa
+    // IMPORTANTE: TG usa DTE 41, MT puede usar DTE 34 ÃÂ¢ÃÂÃÂ configurar en cada empresa
     return parseInt(sf.tipo_dte_personas) || 41;
   }
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Re-classify all pending movements (manual trigger) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Re-classify all pending movements (manual trigger) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresas = getAppData('empresas') || {};
@@ -773,7 +773,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
       if (!m.rut_normalizado) continue;
       const empConfig = empresas[m.empresa_id];
       const correcto = getTipoDte(m.rut_normalizado, empConfig);
-      // Estado: si es boleta (41) Ã¢ÂÂ listo (no requiere revisiÃÂ³n), si es factura Ã¢ÂÂ mantener estado actual
+      // Estado: si es boleta (41) ÃÂ¢ÃÂÃÂ listo (no requiere revisiÃÂÃÂ³n), si es factura ÃÂ¢ÃÂÃÂ mantener estado actual
       const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
       db.prepare('UPDATE movimientos SET tipo_dte=?, estado=?, updated_at=? WHERE id=?')
         .run(correcto, nuevoEstado, now, m.id);
@@ -783,7 +783,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   res.json({ ok: true, reclasificados: fixed });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ FacturaciÃÂ³n (crear lote + enviar a SimpleFactura) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ FacturaciÃÂÃÂ³n (crear lote + enviar a SimpleFactura) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -812,7 +812,7 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length, monto_total: montoTotal });
 });
 
-// Marcar movimientos como facturados manualmente (sin emitir vÃÂ­a API)
+// Marcar movimientos como facturados manualmente (sin emitir vÃÂÃÂ­a API)
 // Crea un lote registral "Marcado facturado manual" y pasa los movimientos a estado 'facturado'
 app.post('/api/facturacion/marcar-manual', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids } = req.body;
@@ -863,19 +863,19 @@ app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) =
   const movs = db.prepare(
     `SELECT id, fecha, monto, monto_total, rut, razon_social, nombre_origen, tipo_dte,
             estado, banco_cartola, email_receptor, giro, direccion, comuna, ciudad,
-            id_transferencia, id_compuesto
+            id_transferencia, id_compuesto, folio_dte
      FROM movimientos WHERE lote_id = ? ORDER BY id`
   ).all(req.params.lote_id);
   res.json(movs);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ SimpleFactura helpers Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-// API pÃÂºblica documentada: https://documentacion.simplefactura.cl/
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ SimpleFactura helpers ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// API pÃÂÃÂºblica documentada: https://documentacion.simplefactura.cl/
 const SF_API  = 'https://api.simplefactura.cl';
-// API backend (endpoints internos que no estÃÂ¡n en la doc pÃÂºblica pero aÃÂºn funcionan)
+// API backend (endpoints internos que no estÃÂÃÂ¡n en la doc pÃÂÃÂºblica pero aÃÂÃÂºn funcionan)
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
-// Construye un cuerpo multipart/form-data manualmente como Buffer (mÃÂ¡s confiable
+// Construye un cuerpo multipart/form-data manualmente como Buffer (mÃÂÃÂ¡s confiable
 // que el FormData nativo de Node.js que puede fallar con Blob en fetch)
 function buildMultipartBody(fileBuffer, fieldName, filename, mimeType, extraFields = {}) {
   const boundary = 'FacturaBoundary' + Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
@@ -904,7 +904,7 @@ function sfDecodeJwt(token) {
   } catch(e) { return {}; }
 }
 
-// Cache de tokens por empresa (email Ã¢ÂÂ { token, expiresAt })
+// Cache de tokens por empresa (email ÃÂ¢ÃÂÃÂ { token, expiresAt })
 const sfTokenCache = {};
 
 function sfTokenFromCache(email) {
@@ -923,16 +923,16 @@ function sfTokenFromCache(email) {
 }
 
 // Obtener token SF usando login email/password (el "api_token" de SF Integraciones
-// es para webhooks salientes, NO para autenticar llamadas REST Ã¢ÂÂ se ignora aquÃÂ­)
+// es para webhooks salientes, NO para autenticar llamadas REST ÃÂ¢ÃÂÃÂ se ignora aquÃÂÃÂ­)
 async function sfGetToken(email, password, _apiTokenIgnored) {
   // 1. Return cached token if still valid (login previo)
   const cached = sfTokenFromCache(email);
   if (cached) {
-    console.log(`[SF TOKEN] Usando token en cachÃÂ© para ${email}`);
+    console.log(`[SF TOKEN] Usando token en cachÃÂÃÂ© para ${email}`);
     return cached;
   }
 
-  // 2. Fresh login Ã¢ÂÂ usar API pÃÂºblica documentada: POST /token con {email, password}
+  // 2. Fresh login ÃÂ¢ÃÂÃÂ usar API pÃÂÃÂºblica documentada: POST /token con {email, password}
   const doLogin = async () => {
     console.log(`[SF LOGIN] POST ${SF_API}/token para ${email}`);
     const r = await fetch(`${SF_API}/token`, {
@@ -941,7 +941,7 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
       body: JSON.stringify({ email, password })
     });
     const raw = await r.text();
-    console.log(`[SF LOGIN] HTTP ${r.status} Ã¢ÂÂ ${raw.substring(0, 400)}`);
+    console.log(`[SF LOGIN] HTTP ${r.status} ÃÂ¢ÃÂÃÂ ${raw.substring(0, 400)}`);
     let data;
     try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
     return { ok: r.ok, data, status: r.status };
@@ -949,15 +949,15 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
 
   let { ok, data, status } = await doLogin();
 
-  // La API pÃÂºblica /token no tiene el problema de "sesiÃÂ³n activa" del backend viejo,
+  // La API pÃÂÃÂºblica /token no tiene el problema de "sesiÃÂÃÂ³n activa" del backend viejo,
   // pero manejamos errores generales de todas formas
   if (!ok && JSON.stringify(data || '').toLowerCase().includes('activa')) {
-    console.log('[SF LOGIN] SesiÃÂ³n activa detectada, reintentando en 3s...');
+    console.log('[SF LOGIN] SesiÃÂÃÂ³n activa detectada, reintentando en 3s...');
     await new Promise(r => setTimeout(r, 3000));
     ({ ok, data, status } = await doLogin());
   }
 
-  // La API pÃÂºblica devuelve accessToken (camelCase); manejar variantes por si acaso
+  // La API pÃÂÃÂºblica devuelve accessToken (camelCase); manejar variantes por si acaso
   const accessToken = data?.accessToken || data?.access_token || data?.token;
   if (!accessToken) {
     const errors = data?.errors;
@@ -966,25 +966,25 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
     throw new Error(`Login fallido (HTTP ${status}): ${errMsg}`);
   }
 
-  // Guardar en cachÃÂ© (token dura 24h segÃÂºn docs, cacheamos 23h)
+  // Guardar en cachÃÂÃÂ© (token dura 24h segÃÂÃÂºn docs, cacheamos 23h)
   sfTokenCache[email] = { token: accessToken, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
-  console.log(`[SF TOKEN] Nuevo token guardado en cachÃÂ© para ${email} (${accessToken.substring(0,20)}...)`);
+  console.log(`[SF TOKEN] Nuevo token guardado en cachÃÂÃÂ© para ${email} (${accessToken.substring(0,20)}...)`);
   return accessToken;
 }
 
-// Mantener compatibilidad con cÃÂ³digo existente
+// Mantener compatibilidad con cÃÂÃÂ³digo existente
 async function sfLogin(email, password) {
   return sfGetToken(email, password);
 }
 
 // Obtener sucursalId + emisorId desde SimpleFactura
-// rutEmisorSF: RUT del emisor SF (ej. "77859376-9") Ã¢ÂÂ clave para cuentas multi-RUT
-// manualSucursalId / manualEmisorId: IDs manuales configurados en la UI (bypass del lookup automÃÂ¡tico)
+// rutEmisorSF: RUT del emisor SF (ej. "77859376-9") ÃÂ¢ÃÂÃÂ clave para cuentas multi-RUT
+// manualSucursalId / manualEmisorId: IDs manuales configurados en la UI (bypass del lookup automÃÂÃÂ¡tico)
 // Retorna { sucursalId, emisorId } y actualiza sfTokenCache[email]
 async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, manualSucursalId, manualEmisorId) {
-  // Ã¢ÂÂÃ¢ÂÂ Atajo: IDs manuales configurados Ã¢ÂÂ usarlos directamente sin llamar a la API Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Atajo: IDs manuales configurados ÃÂ¢ÃÂÃÂ usarlos directamente sin llamar a la API ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
   if (manualSucursalId && manualEmisorId) {
-    console.log(`[SF SUCURSAL] Ã¢ÂÂ Usando IDs manuales configurados: sucursalId=${manualSucursalId.substring(0,8)}..., emisorId=${manualEmisorId.substring(0,8)}...`);
+    console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ Usando IDs manuales configurados: sucursalId=${manualSucursalId.substring(0,8)}..., emisorId=${manualEmisorId.substring(0,8)}...`);
     const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
     if (sfTokenCache[email]) {
       sfTokenCache[email].sucursalId = manualSucursalId;
@@ -995,11 +995,11 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 
   const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
 
-  // Ã¢ÂÂÃ¢ÂÂ Paso 0: Extraer emisorId directamente desde los claims del JWT Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-  // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueÃÂ±o de la cuenta.
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Paso 0: Extraer emisorId directamente desde los claims del JWT ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+  // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueÃÂÃÂ±o de la cuenta.
   const jwtClaims = sfDecodeJwt(token);
-  // SF puede usar distintos nombres de campo segÃÂºn la versiÃÂ³n de la API
-  // IMPORTANTE: SF usa "nameid" (claim estÃÂ¡ndar .NET) como el EmisorId del emisor autenticado
+  // SF puede usar distintos nombres de campo segÃÂÃÂºn la versiÃÂÃÂ³n de la API
+  // IMPORTANTE: SF usa "nameid" (claim estÃÂÃÂ¡ndar .NET) como el EmisorId del emisor autenticado
   const jwtEmisorId = jwtClaims?.EmisorId || jwtClaims?.emisorId
     || jwtClaims?.Emisor_Id || jwtClaims?.emisor_id
     || jwtClaims?.IdEmisor  || jwtClaims?.id_emisor
@@ -1008,8 +1008,8 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
   console.log(`[SF JWT] nameid: ${jwtClaims?.nameid}, jwtEmisorId resuelto: ${jwtEmisorId}`);
 
   try {
-    // Ã¢ÂÂÃ¢ÂÂ Paso 1: Intentar obtener las sucursales del emisor del JWT primero Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-    // Esto es clave para cuentas directas donde el dueÃÂ±o NO aparece en la lista general.
+    // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Paso 1: Intentar obtener las sucursales del emisor del JWT primero ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+    // Esto es clave para cuentas directas donde el dueÃÂÃÂ±o NO aparece en la lista general.
     let lista = [];
 
     if (jwtEmisorId) {
@@ -1029,7 +1029,7 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
       }
     }
 
-    // Ã¢ÂÂÃ¢ÂÂ Paso 2: Si no encontramos nada con el JWT, buscar en la lista general Ã¢ÂÂÃ¢ÂÂ
+    // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Paso 2: Si no encontramos nada con el JWT, buscar en la lista general ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
     if (lista.length === 0) {
       const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
         method: 'GET',
@@ -1053,26 +1053,26 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
         const nombre = (s.emisorNombre || s.EmisorNombre || '').toLowerCase();
         return rut === rutLimpio || nombre.replace(/[.\-\s]/g,'').toLowerCase().includes(rutLimpio);
       });
-      if (match) console.log(`[SF SUCURSAL] Ã¢ÂÂ Match por RUT "${rutEmisorSF}" Ã¢ÂÂ emisor "${match.emisorNombre||match.EmisorNombre}"`);
+      if (match) console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ Match por RUT "${rutEmisorSF}" ÃÂ¢ÃÂÃÂ emisor "${match.emisorNombre||match.EmisorNombre}"`);
     }
 
     // 2. Match por emisorId del JWT en la lista general (para cuentas directas)
     if (!match && jwtEmisorId) {
       match = lista.find(s => (s.emisorId || s.EmisorId || '') === jwtEmisorId);
-      if (match) console.log(`[SF SUCURSAL] Ã¢ÂÂ Match por JWT emisorId en lista general`);
+      if (match) console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ Match por JWT emisorId en lista general`);
     }
 
     // 3. Match por nombre de sucursal
     if (!match && nombreSucursal) {
       const nombreBuscar = nombreSucursal.toLowerCase().trim();
       match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
-      if (match) console.log(`[SF SUCURSAL] Ã¢ÂÂ Match por nombre sucursal "${nombreSucursal}"`);
+      if (match) console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ Match por nombre sucursal "${nombreSucursal}"`);
     }
 
     // 4. Fallback: primera activa
     if (!match) {
       match = lista.find(s => s.activa !== false) || lista[0] || null;
-      if (match) console.log(`[SF SUCURSAL] Ã¢ÂÂ  Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
+      if (match) console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ  Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
     }
 
     if (!match && !jwtEmisorId) throw new Error('No se encontraron sucursales en SimpleFactura');
@@ -1083,7 +1083,7 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 
     // Prioridad emisorId: 1) desde match en lista, 2) desde JWT claims
     const emisorId = (match ? (match.emisorId || match.EmisorId || null) : null) || jwtEmisorId || null;
-    console.log(`[SF SUCURSAL] Ã¢ÂÂ sucursalId: ${uuid}, emisorId: ${emisorId} (fuente: ${match ? 'lista' : 'JWT'})`);
+    console.log(`[SF SUCURSAL] ÃÂ¢ÃÂÃÂ sucursalId: ${uuid}, emisorId: ${emisorId} (fuente: ${match ? 'lista' : 'JWT'})`);
 
     // Actualizar cache con los valores correctos para este emisor
     if (sfTokenCache[email]) {
@@ -1098,9 +1098,9 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
   }
 }
 
-// Ã¢ÂÂÃ¢ÂÂ CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-// Formato oficial SF: exactamente 39 columnas Ã¢ÂÂ NO agregar columnas extra aquÃÂ­
-// Formato CSV de ejemplo descargado desde app.simplefactura.cl Ã¢ÂÂ Ventas Ã¢ÂÂ Factura Masiva Ã¢ÂÂ Ejemplos CSV
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// Formato oficial SF: exactamente 39 columnas ÃÂ¢ÃÂÃÂ NO agregar columnas extra aquÃÂÃÂ­
+// Formato CSV de ejemplo descargado desde app.simplefactura.cl ÃÂ¢ÃÂÃÂ Ventas ÃÂ¢ÃÂÃÂ Factura Masiva ÃÂ¢ÃÂÃÂ Ejemplos CSV
 // 39 columnas oficiales + 3 columnas de tracking interno (ID Transferencia, Cartola, Id Compuesto)
 const SF_CSV_HEADERS = [
   'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
@@ -1113,9 +1113,9 @@ const SF_CSV_HEADERS = [
 ];
 
 function rutParaSF(rut) {
-  // Formato SimpleFactura CSV: sin puntos, con guiÃÂ³n (ej: 77653656-3)
+  // Formato SimpleFactura CSV: sin puntos, con guiÃÂÃÂ³n (ej: 77653656-3)
   if (!rut) return '';
-  return rut.replace(/\./g, ''); // quitar puntos, mantener guiÃÂ³n
+  return rut.replace(/\./g, ''); // quitar puntos, mantener guiÃÂÃÂ³n
 }
 
 // Formato RUT con puntos para Credenciales (registro interno SimpleFactura: "77.859.376-9")
@@ -1123,10 +1123,10 @@ function rutConPuntos(rut) {
   if (!rut) return '';
   const clean = rut.replace(/\./g, ''); // asegurar sin puntos primero
   const dash = clean.lastIndexOf('-');
-  if (dash < 0) return rut; // sin guiÃÂ³n, devolver tal cual
+  if (dash < 0) return rut; // sin guiÃÂÃÂ³n, devolver tal cual
   const num = clean.substring(0, dash);
   const dv  = clean.substring(dash + 1);
-  // insertar punto cada 3 dÃÂ­gitos desde la derecha
+  // insertar punto cada 3 dÃÂÃÂ­gitos desde la derecha
   const formatted = num.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${formatted}-${dv}`;
 }
@@ -1136,7 +1136,7 @@ function fechaParaSF(fechaISO) {
   if (!fechaISO) return todayCL().split('-').reverse().join('-');
   const parts = fechaISO.split('-');
   if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-  return fechaISO; // si ya estÃÂ¡ en otro formato, devolver tal cual
+  return fechaISO; // si ya estÃÂÃÂ¡ en otro formato, devolver tal cual
 }
 
 function escaparCsvSF(val) {
@@ -1152,8 +1152,8 @@ function buildSfCsvRows(movs, empresa) {
     const correoRecep = m.email_receptor || empresa.email_facturacion || '';
     // campo Correo (col 38): solo si el receptor tiene email propio
     const correoExtra = m.email_receptor || '';
-    // Campos del receptor Ã¢ÂÂ basados en el formato oficial de los CSVs de ejemplo
-    // GiroRecep, CiudadRecep pueden ir vacÃÂ­os (SF los acepta); sÃÂ³lo RazonSocial y DirRecep requieren valor
+    // Campos del receptor ÃÂ¢ÃÂÃÂ basados en el formato oficial de los CSVs de ejemplo
+    // GiroRecep, CiudadRecep pueden ir vacÃÂÃÂ­os (SF los acepta); sÃÂÃÂ³lo RazonSocial y DirRecep requieren valor
     const razonSocial = (m.razon_social || m.nombre_origen || '').substring(0, 100);
     const giro        = (m.giro || '').substring(0, 80);
     const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
@@ -1168,8 +1168,8 @@ function buildSfCsvRows(movs, empresa) {
       tipoDte,
       1,                        // FmaPago: contado
       fecha,                    // FechaEmision DD-MM-YYYY
-      fecha,                    // Vencimiento (igual a emisiÃÂ³n)
-      rutParaSF(m.rut),         // RutRecep sin puntos con guiÃÂ³n
+      fecha,                    // Vencimiento (igual a emisiÃÂÃÂ³n)
+      rutParaSF(m.rut),         // RutRecep sin puntos con guiÃÂÃÂ³n
       giro,
       'NO INFORMADO',           // Contacto
       correoRecep,              // CorreoRecep
@@ -1178,7 +1178,7 @@ function buildSfCsvRows(movs, empresa) {
       ciudad,
       razonSocial,
       '', '', '',               // DirDest, CmnaDest, CiudadDest
-      '', '', '', '', '',       // Referencias (vacÃÂ­as)
+      '', '', '', '', '',       // Referencias (vacÃÂÃÂ­as)
       '',                       // CodigoProducto
       m.nombre_item || 'Venta paquete activo digital',
       m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
@@ -1190,9 +1190,9 @@ function buildSfCsvRows(movs, empresa) {
       m.monto_total || 0,       // TotalProducto
       '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
       correoExtra,              // Correo (col 39)
-      m.id_transferencia || '', // ID Transferencia (col 40 Ã¢ÂÂ tracking)
-      m.banco_cartola || '',    // Cartola (col 41 Ã¢ÂÂ tracking)
-      m.id_compuesto || ''      // Id Compuesto (col 42 Ã¢ÂÂ tracking)
+      m.id_transferencia || '', // ID Transferencia (col 40 ÃÂ¢ÃÂÃÂ tracking)
+      m.banco_cartola || '',    // Cartola (col 41 ÃÂ¢ÃÂÃÂ tracking)
+      m.id_compuesto || ''      // Id Compuesto (col 42 ÃÂ¢ÃÂÃÂ tracking)
     ];
   });
 }
@@ -1205,30 +1205,30 @@ function buildSfCsvContent(movs, empresa) {
   return '\uFEFF' + csv; // BOM UTF-8 para compatibilidad Excel/SimpleFactura
 }
 
-// Alias para compatibilidad con el endpoint de emisiÃÂ³n vÃÂ­a API
+// Alias para compatibilidad con el endpoint de emisiÃÂÃÂ³n vÃÂÃÂ­a API
 function buildSfCsv(movs, empresa) {
   return buildSfCsvContent(movs, empresa);
 }
 
-// Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-// MÃÂDULO: OPEN FACTURA (HAULMER) Ã¢ÂÂ TS CAPITAL
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// MÃÂÃÂDULO: OPEN FACTURA (HAULMER) ÃÂ¢ÃÂÃÂ TS CAPITAL
 // API Key: configurada en empresa.haulmer.api_key
 // Docs: https://docs.haulmer.com/
-// Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 
 // Haulmer CSV format (semicolon-separated, 2-row header, no BOM needed)
 // Formato exacto obtenido de archivos CSV de TS Capital: Boletas 1 - Febrero 2026 TS.csv
 const HAULMER_CSV_ROW1  = 'generales;;;;;receptor;;;;;detalles;;;totales;;;';
 const HAULMER_CSV_ROW2  = [
   'Tipo de documento (*)',
-  'Fecha de emisiÃÂ³n (*)',
+  'Fecha de emisiÃÂÃÂ³n (*)',
   'Tipo de venta (*)',
   'Forma de pago (*)',
   'Tipo de servicio (*)',
   'RUT Receptor (*)',
-  'RazÃÂ³n Social (*)',
+  'RazÃÂÃÂ³n Social (*)',
   'Giro (*)',
-  'DirecciÃÂ³n (*)',
+  'DirecciÃÂÃÂ³n (*)',
   'Comuna (*)',
   'Nombre de Item (*)',
   'Cantidad (*)',
@@ -1246,7 +1246,7 @@ function escaparCsvHaulmer(val) {
   return s;
 }
 
-// Formato fecha DD-MM-YYYY para exportaciÃÂ³n Excel
+// Formato fecha DD-MM-YYYY para exportaciÃÂÃÂ³n Excel
 // Acepta: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YYYY HH:MM
 function formatoFechaDDMMYYYY(fecha) {
   if (!fecha) return '';
@@ -1261,7 +1261,7 @@ function formatoFechaDDMMYYYY(fecha) {
     const [d, m, y] = s.split('/');
     return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
   }
-  // DD-MM-YYYY (ya estÃÂ¡ en el formato correcto)
+  // DD-MM-YYYY (ya estÃÂÃÂ¡ en el formato correcto)
   if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
     const [d, m, y] = s.split('-');
     return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
@@ -1287,7 +1287,7 @@ function buildHaulmerCsvContent(movs, empresa) {
   for (const m of movs) {
     const tipoDte = getTipoDte(m.rut_normalizado, empresa);
     const fecha   = fechaParaHaulmer(m.fecha);
-    const rut     = m.rut ? m.rut : '';   // con puntos y guiÃÂ³n
+    const rut     = m.rut ? m.rut : '';   // con puntos y guiÃÂÃÂ³n
     const razon   = (m.razon_social || m.nombre_origen || '').substring(0, 100);
     const giro    = (m.giro || 'NO INFORMADA').substring(0, 80);
     const dir     = (m.direccion || 'NO INFORMADA').substring(0, 100);
@@ -1300,7 +1300,7 @@ function buildHaulmerCsvContent(movs, empresa) {
       fecha,                      // YYYY-MM-DD
       ' Ventas del Giro',
       ' Contado',
-      '',                         // Tipo de servicio (vacÃÂ­o para TS Capital)
+      '',                         // Tipo de servicio (vacÃÂÃÂ­o para TS Capital)
       rut,
       razon,
       giro,
@@ -1320,7 +1320,7 @@ function buildHaulmerCsvContent(movs, empresa) {
   return '\uFEFF' + csv;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Exportar CSV formato Haulmer para un lote Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Exportar CSV formato Haulmer para un lote ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/facturacion/exportar-haulmer-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const movs = db.prepare('SELECT * FROM movimientos WHERE lote_id = ?').all(loteId);
@@ -1336,7 +1336,7 @@ app.get('/api/facturacion/exportar-haulmer-csv/:lote_id', requireAuth, (req, res
   res.send(csv);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Exportar CSV Haulmer para selecciÃÂ³n manual (sin lote) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Exportar CSV Haulmer para selecciÃÂÃÂ³n manual (sin lote) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) => {
   const { movimiento_ids, empresa_id } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -1352,7 +1352,7 @@ app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) 
   res.send(csv);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Emitir DTE vÃÂ­a Open Factura (Haulmer) API Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Emitir DTE vÃÂÃÂ­a Open Factura (Haulmer) API ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 // Haulmer acepta JSON individual o CSV masivo. Usamos JSON masivo (array de DTEs).
 // Endpoint: POST https://api.haulmer.com/v2/dte/document
 // Auth header: apikey: <api_key>
@@ -1376,7 +1376,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   // Construir payload JSON para Haulmer API v2
   // Formato: { response: [...], dte: { Encabezado: {...}, Detalle: [...] } }
   // Docs: docsapi-openfactura.haulmer.com
-  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos, con guiÃÂ³n
+  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos, con guiÃÂÃÂ³n
   const giroEmisor = empresa.giro || 'FONDOS Y SOCIEDADES DE INVERSION Y ENTIDADES FINANCIERAS SIMILARES';
   const emailFact  = empresa.email_facturacion || 'facturas@tscapitalchile.cl';
   const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital';
@@ -1396,9 +1396,9 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const fecha   = fechaParaHaulmer(m.fecha);
       const monto   = Math.round(m.monto_total || m.monto || 0);
 
-      // Payload Haulmer v2 Ã¢ÂÂ orden de campos sigue esquema SII estricto
-      // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd Ã¢ÂÂ NO tiene FmaPago
-      // Facturas (33/34): DTE_v10.xsd Ã¢ÂÂ tiene FmaPago
+      // Payload Haulmer v2 ÃÂ¢ÃÂÃÂ orden de campos sigue esquema SII estricto
+      // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd ÃÂ¢ÃÂÃÂ NO tiene FmaPago
+      // Facturas (33/34): DTE_v10.xsd ÃÂ¢ÃÂÃÂ tiene FmaPago
       const esBoleta = (tipoDte === 39 || tipoDte === 41);
       const idDoc = { TipoDTE: tipoDte, FchEmis: fecha };
       if (esBoleta) {
@@ -1487,7 +1487,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
-        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} Ã¢ÂÂ HTTP ${resp.status}: ${raw.substring(0,200)}`);
+        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} ÃÂ¢ÃÂÃÂ HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
           const folioVal = data?.folio || data?.Folio || data?.FOLIO || null;
@@ -1524,7 +1524,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   }
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Test conexiÃÂ³n Haulmer Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Test conexiÃÂÃÂ³n Haulmer ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
@@ -1533,31 +1533,31 @@ app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, re
 
   try {
     // Haulmer no tiene un endpoint de "ping" oficial, pero un GET al endpoint de documentos
-    // con la API key devuelve un error controlado si la key es vÃÂ¡lida vs 401 si no lo es
+    // con la API key devuelve un error controlado si la key es vÃÂÃÂ¡lida vs 401 si no lo es
     const resp = await fetch('https://api.haulmer.com/v2/dte/document', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': hConf.api_key
       },
-      body: JSON.stringify({}), // payload vacÃÂ­o Ã¢ÂÂ esperamos error de validaciÃÂ³n, no 401
+      body: JSON.stringify({}), // payload vacÃÂÃÂ­o ÃÂ¢ÃÂÃÂ esperamos error de validaciÃÂÃÂ³n, no 401
       signal: AbortSignal.timeout(10000)
     });
     const raw = await resp.text();
     console.log(`[HAULMER TEST] HTTP ${resp.status}: ${raw.substring(0,300)}`);
 
     if (resp.status === 401 || resp.status === 403) {
-      return res.json({ ok: false, error: 'API Key invÃÂ¡lida o sin permisos (HTTP ' + resp.status + ')' });
+      return res.json({ ok: false, error: 'API Key invÃÂÃÂ¡lida o sin permisos (HTTP ' + resp.status + ')' });
     }
-    // Cualquier otro status (400, 422, etc) indica que la key es vÃÂ¡lida pero el payload estÃÂ¡ vacÃÂ­o
-    res.json({ ok: true, mensaje: 'API Key vÃÂ¡lida Ã¢ÂÂ conexiÃÂ³n OK', httpStatus: resp.status });
+    // Cualquier otro status (400, 422, etc) indica que la key es vÃÂÃÂ¡lida pero el payload estÃÂÃÂ¡ vacÃÂÃÂ­o
+    res.json({ ok: true, mensaje: 'API Key vÃÂÃÂ¡lida ÃÂ¢ÃÂÃÂ conexiÃÂÃÂ³n OK', httpStatus: resp.status });
   } catch (err) {
     console.error('[HAULMER TEST ERROR]', err.message);
-    res.json({ ok: false, error: 'Error de conexiÃÂ³n: ' + err.message });
+    res.json({ ok: false, error: 'Error de conexiÃÂÃÂ³n: ' + err.message });
   }
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Debug: descargar el CSV que se enviarÃÂ­a a SF sin emitirlo Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Debug: descargar el CSV que se enviarÃÂÃÂ­a a SF sin emitirlo ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
@@ -1586,10 +1586,10 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const empresa = empresas[lote.empresa_id];
   const sfConf = empresa?.simplefactura || {};
   if (!sfConf.api_token && (!sfConf.username || !sfConf.password)) {
-    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseÃÂ±a)' });
+    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseÃÂÃÂ±a)' });
   }
 
-  // Al re-intentar, los movimientos pueden estar en estado 'error' Ã¢ÂÂ resetearlos a 'en_lote'
+  // Al re-intentar, los movimientos pueden estar en estado 'error' ÃÂ¢ÃÂÃÂ resetearlos a 'en_lote'
   const nowReset = nowCL();
   const resetResult = db.prepare("UPDATE movimientos SET estado='en_lote', updated_at=? WHERE lote_id=? AND estado IN ('error','listo')").run(nowReset, loteId);
   if (resetResult.changes > 0) console.log(`[EMITIR] ${resetResult.changes} movimientos reseteados a 'en_lote' para reintento`);
@@ -1601,16 +1601,16 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const sfConfig = empresa.simplefactura;
 
   try {
-    // 1. Obtener token SF (API token estÃÂ¡tico tiene prioridad sobre login)
+    // 1. Obtener token SF (API token estÃÂÃÂ¡tico tiene prioridad sobre login)
     const token = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
-    console.log(`[SF] Token obtenido para ${lote.empresa_id} (mÃÂ©todo: ${sfConfig.api_token ? 'API token' : 'login'})`);
+    console.log(`[SF] Token obtenido para ${lote.empresa_id} (mÃÂÃÂ©todo: ${sfConfig.api_token ? 'API token' : 'login'})`);
 
     // 2. Generar CSV en formato SimpleFactura
     const csvContent = buildSfCsv(movs, empresa);
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
     const csvBuffer = Buffer.from(csvContent, 'utf8');
 
-    // 3. Subir CSV Ã¢ÂÂ API pÃÂºblica documentada: POST https://api.simplefactura.cl/massiveInvoice
+    // 3. Subir CSV ÃÂ¢ÃÂÃÂ API pÃÂÃÂºblica documentada: POST https://api.simplefactura.cl/massiveInvoice
     //    Docs: https://documentacion.simplefactura.cl/#aa06de6b-dd1d-4b63-812e-e08f703c9c58
     //    Form fields: "data" (JSON con rutEmisor+nombreSucursal) + "input" (archivo CSV)
     const SF_UPLOAD_URL = `${SF_API}/massiveInvoice`;
@@ -1618,7 +1618,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
     const rutEmisor      = rutParaSF(sfConfig.rut_emisor || empresa.rut || '');
 
-    // Construir campo "data" segÃÂºn documentaciÃÂ³n oficial SF
+    // Construir campo "data" segÃÂÃÂºn documentaciÃÂÃÂ³n oficial SF
     const dataJson = JSON.stringify({
       rutEmisor: rutEmisor,
       nombreSucursal: nombreSucursal
@@ -1642,22 +1642,22 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
     let uploadResp = await doUpload(token);
 
-    // Si 401, el token puede haber expirado Ã¢ÂÂ refrescar y reintentar una vez
+    // Si 401, el token puede haber expirado ÃÂ¢ÃÂÃÂ refrescar y reintentar una vez
     if (uploadResp.status === 401) {
-      console.log('[SF UPLOAD] Token rechazado (401) Ã¢ÂÂ refrescando y reintentando...');
+      console.log('[SF UPLOAD] Token rechazado (401) ÃÂ¢ÃÂÃÂ refrescando y reintentando...');
       delete sfTokenCache[sfConfig.username];
       const newToken = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
       uploadResp = await doUpload(newToken);
     }
 
     const rawText = await uploadResp.text();
-    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} Ã¢ÂÂ ${rawText.substring(0, 800)}`);
+    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} ÃÂ¢ÃÂÃÂ ${rawText.substring(0, 800)}`);
     let data;
     try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, httpStatus: uploadResp.status }; }
 
-    // Respuesta exitosa segÃÂºn docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
+    // Respuesta exitosa segÃÂÃÂºn docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
     const isSuccess = uploadResp.ok && data?.status === 200 && !data?.errors;
-    // TambiÃÂ©n aceptar formato antiguo por compatibilidad
+    // TambiÃÂÃÂ©n aceptar formato antiguo por compatibilidad
     const tieneErrores = data?.data?.tieneErrores;
     const loteEstado = (isSuccess || (uploadResp.ok && tieneErrores !== true)) ? 'emitido' : 'error';
 
@@ -1681,7 +1681,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       const errBody = Array.isArray(errs) ? errs.join('. ')
         : (typeof errs === 'object' && errs !== null ? JSON.stringify(errs) : errs)
         || data?.message || data?.title
-        || (data?.raw !== undefined ? `Respuesta vacÃÂ­a del servidor` : null)
+        || (data?.raw !== undefined ? `Respuesta vacÃÂÃÂ­a del servidor` : null)
         || JSON.stringify(data);
       mensaje = `HTTP ${uploadResp.status}: ${errBody} [data enviada: ${lastDataJson}]`;
     }
@@ -1712,7 +1712,7 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   const sfConf = empresa?.simplefactura || {};
   if (!sfConf.api_token && !sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
   const email = sfConf.username || 'api-token';
-  // Invalidar cachÃÂ© para forzar obtenciÃÂ³n fresca en el test
+  // Invalidar cachÃÂÃÂ© para forzar obtenciÃÂÃÂ³n fresca en el test
   delete sfTokenCache[email];
   try {
     const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
@@ -1721,7 +1721,7 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
     const rutEmisorSF_test = (sfConf.rut_emisor_sf || '').trim() || null;
     const manualSucId = (sfConf.sucursal_id_sf || '').trim() || null;
     const manualEmId  = (sfConf.emisor_id_sf  || '').trim() || null;
-    // TambiÃÂ©n obtener sucursalId UUID para diagnÃÂ³stico
+    // TambiÃÂÃÂ©n obtener sucursalId UUID para diagnÃÂÃÂ³stico
     const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_test, manualSucId, manualEmId);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     let solicitudObj;
@@ -1754,7 +1754,7 @@ async function sfGetTiposPlantilla(token) {
   const body = await r.text();
   let parsed;
   try { parsed = JSON.parse(body); } catch(e) { return []; }
-  // PagedResponse Ã¢ÂÂ items en .data
+  // PagedResponse ÃÂ¢ÃÂÃÂ items en .data
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.data)) return parsed.data;
   return [];
@@ -1775,7 +1775,7 @@ async function sfGetPlantillasEmisor(token, emisorId) {
   return [];
 }
 
-// DiagnÃÂ³stico de plantillas: lista las plantillas del emisor y resuelve tipos DTE
+// DiagnÃÂÃÂ³stico de plantillas: lista las plantillas del emisor y resuelve tipos DTE
 app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
@@ -1795,12 +1795,12 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
     // 1. Plantillas del emisor
     const plantillasEmisor = await sfGetPlantillasEmisor(token, emisorId);
 
-    // 2. Tipos globales: GET /api/Plantilla/list Ã¢ÂÂ PagedResponse { data: [TipoPlantillaEnt] }
+    // 2. Tipos globales: GET /api/Plantilla/list ÃÂ¢ÃÂÃÂ PagedResponse { data: [TipoPlantillaEnt] }
     //    TipoPlantillaEnt.tipoPlantillaId = mismo UUID que PlantillaEmisor.tipoPlantillaId
-    //    TipoPlantillaEnt.codigoTipoDte   = cÃÂ³digo DTE entero (33, 34, 39, 41...)
+    //    TipoPlantillaEnt.codigoTipoDte   = cÃÂÃÂ³digo DTE entero (33, 34, 39, 41...)
     const tiposPlantilla = await sfGetTiposPlantilla(token);
 
-    // 3. Construir mapa tipoPlantillaId Ã¢ÂÂ TipoPlantillaEnt para cruce
+    // 3. Construir mapa tipoPlantillaId ÃÂ¢ÃÂÃÂ TipoPlantillaEnt para cruce
     const tipoMap = {};
     for (const t of tiposPlantilla) {
       const tid = t.tipoPlantillaId || t.TipoPlantillaId;
@@ -1874,7 +1874,7 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
     // Obtener plantillas del emisor
     const plantillas = await sfGetPlantillasEmisor(token, emisorId);
 
-    // Enriquecer con cÃÂ³digo DTE
+    // Enriquecer con cÃÂÃÂ³digo DTE
     const enriquecidas = plantillas.map(p => ({
       ...p,
       _codigoDte: tipoMap[p.tipoPlantillaId || p.TipoPlantillaId]?.codigoTipoDte ?? null
@@ -1927,7 +1927,7 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
   }
 });
 
-// Listar todos los emisores/sucursales disponibles en la cuenta SF (ÃÂºtil para cuentas multi-RUT)
+// Listar todos los emisores/sucursales disponibles en la cuenta SF (ÃÂÃÂºtil para cuentas multi-RUT)
 app.get('/api/facturacion/listar-emisores/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
@@ -1957,7 +1957,7 @@ app.get('/api/facturacion/listar-emisores/:empresa_id', requireAuth, async (req,
   }
 });
 
-// DiagnÃÂ³stico: muestra los claims del JWT de SimpleFactura (ÃÂºtil para depurar solicitudString)
+// DiagnÃÂÃÂ³stico: muestra los claims del JWT de SimpleFactura (ÃÂÃÂºtil para depurar solicitudString)
 app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
@@ -1972,7 +1972,7 @@ app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) 
   }
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Historial de facturaciÃÂ³n Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Historial de facturaciÃÂÃÂ³n ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const { buscar, fecha_desde, fecha_hasta, tipo_dte, limit: lim, offset: off } = req.query;
@@ -1996,7 +1996,7 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   // Buscador: por nombre, RUT o monto
   if (buscar) {
     const term = buscar.trim();
-    // Detectar si es bÃÂºsqueda por monto (solo nÃÂºmeros y puntos/comas)
+    // Detectar si es bÃÂÃÂºsqueda por monto (solo nÃÂÃÂºmeros y puntos/comas)
     if (/^[\d.,]+$/.test(term)) {
       const montoNum = parseFloat(term.replace(/\./g, '').replace(',', '.'));
       if (!isNaN(montoNum)) {
@@ -2019,7 +2019,7 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
 
   const movs = db.prepare(sql).all(...params);
 
-  // EstadÃÂ­sticas resumen
+  // EstadÃÂÃÂ­sticas resumen
   const statsSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as cnt, SUM(monto_total) as suma FROM')
     .replace(/ORDER BY .+$/, '');
   // Re-run without limit/offset for stats
@@ -2043,7 +2043,7 @@ app.post('/api/facturacion/marcar-exportado/:lote_id', requireAuth, (req, res) =
   res.json({ ok: true });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Export CSV for SimpleFactura manual upload Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Export CSV for SimpleFactura manual upload ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/facturacion/exportar-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const movs = db.prepare('SELECT * FROM movimientos WHERE lote_id = ?').all(loteId);
@@ -2075,7 +2075,7 @@ app.post('/api/facturacion/exportar-seleccion', requireAuth, (req, res) => {
   res.send(csv);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Dashboard stats Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Dashboard stats ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const stats = {};
@@ -2098,7 +2098,7 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   res.json(stats);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Advanced Dashboard stats (monthly breakdown, trends) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Advanced Dashboard stats (monthly breakdown, trends) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresaIds = empresaId ? [empresaId] : ['tg-inversiones', 'mt-inversiones', 'ts-capital'];
@@ -2215,19 +2215,19 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   });
 });
 
-// Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-// MÃÂDULO: PROCESAMIENTO AUTOMÃÂTICO DE CARTOLAS CON SIMPLEAPI
-// Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// MÃÂÃÂDULO: PROCESAMIENTO AUTOMÃÂÃÂTICO DE CARTOLAS CON SIMPLEAPI
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 
 // Cargar xlsx para parsing server-side
 let XLSX_LIB;
 try { XLSX_LIB = require('xlsx'); } catch(e) {
-  console.warn('[XLSX] Paquete no disponible Ã¢ÂÂ instalar con: npm install xlsx');
+  console.warn('[XLSX] Paquete no disponible ÃÂ¢ÃÂÃÂ instalar con: npm install xlsx');
 }
 
-// Ã¢ÂÂÃ¢ÂÂ SimpleAPI configuration Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ SimpleAPI configuration ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 const SIMPLEAPI_BASE = 'https://api.simpleapi.cl';
-// Keys por defecto (hardcoded como fallback); tambiÃÂ©n se pueden sobrescribir vÃÂ­a DB
+// Keys por defecto (hardcoded como fallback); tambiÃÂÃÂ©n se pueden sobrescribir vÃÂÃÂ­a DB
 const SIMPLEAPI_KEYS_DEFAULT = {
   'tg-inversiones': '2131-W810-6394-2111-1765',
   'mt-inversiones': '2128-N940-6394-5813-7213'
@@ -2253,7 +2253,7 @@ function cleanSantanderName(glosa) {
     .replace(/\s{2,}/g, ' ');
 }
 
-// Formatear dÃÂ­gitos de RUT a "XX.XXX.XXX-X"
+// Formatear dÃÂÃÂ­gitos de RUT a "XX.XXX.XXX-X"
 function formatRutDigits(rutDigits) {
   if (!rutDigits) return '';
   const clean = String(rutDigits).replace(/[^0-9kK]/g, '').toUpperCase();
@@ -2264,9 +2264,9 @@ function formatRutDigits(rutDigits) {
   return formatted + '-' + dv;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Parser BCI (.xls) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Parser BCI (.xls) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 function parseBCICartola(buffer) {
-  if (!XLSX_LIB) throw new Error('MÃÂ³dulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃÂÃÂ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -2284,7 +2284,7 @@ function parseBCICartola(buffer) {
     const row = data[i];
     if (!row || row.length < 5) continue;
 
-    // Columna 0: Fecha (string DD/MM/YYYY o serial numÃÂ©rico Excel)
+    // Columna 0: Fecha (string DD/MM/YYYY o serial numÃÂÃÂ©rico Excel)
     let fecha = '';
     const fechaRaw = row[0];
     if (typeof fechaRaw === 'number') {
@@ -2322,7 +2322,7 @@ function parseBCICartola(buffer) {
       id_transferencia: idTransf,
       fecha, monto,
       glosa: nombre,
-      rut: rutRaw,                            // con puntos y guiÃÂ³n del banco
+      rut: rutRaw,                            // con puntos y guiÃÂÃÂ³n del banco
       nombre_origen: nombre,
       banco_origen: bancoOrigen || 'BCI',
       cuenta_origen: cuentaOrig
@@ -2331,9 +2331,9 @@ function parseBCICartola(buffer) {
   return movimientos;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Parser Santander (.xlsx) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Parser Santander (.xlsx) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 function parseSantanderCartola(buffer) {
-  if (!XLSX_LIB) throw new Error('MÃÂ³dulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃÂÃÂ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -2342,7 +2342,7 @@ function parseSantanderCartola(buffer) {
   let headerIdx = -1;
   for (let i = 0; i < Math.min(15, data.length); i++) {
     const cell0 = String(data[i]?.[0] || '');
-    if (cell0.includes('mero de Movimiento') || cell0.includes('NÃÂºmero')) { headerIdx = i; break; }
+    if (cell0.includes('mero de Movimiento') || cell0.includes('NÃÂÃÂºmero')) { headerIdx = i; break; }
   }
   if (headerIdx === -1) headerIdx = 9;
 
@@ -2353,7 +2353,7 @@ function parseSantanderCartola(buffer) {
     const idRaw = String(row[0] || '').trim();
     if (!idRaw) continue;
 
-    // Fecha DD/MM/YYYY Ã¢ÂÂ YYYY-MM-DD
+    // Fecha DD/MM/YYYY ÃÂ¢ÃÂÃÂ YYYY-MM-DD
     let fecha = String(row[1] || '').trim();
     if (fecha.includes('/')) {
       const [d, m, y] = fecha.split('/');
@@ -2368,7 +2368,7 @@ function parseSantanderCartola(buffer) {
 
     const glosa = String(row[3] || '').trim();
 
-    // Extraer RUT desde glosa: patrÃÂ³n "0XXXXXXXXXX Transf de NOMBRE"
+    // Extraer RUT desde glosa: patrÃÂÃÂ³n "0XXXXXXXXXX Transf de NOMBRE"
     let rutDigits = '';
     let nombre    = '';
     const m1 = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
@@ -2381,27 +2381,27 @@ function parseSantanderCartola(buffer) {
       nombre = cleanSantanderName(glosa);
     }
 
-    // ID ÃÂºnico: si todos ceros usar "S{i}"
+    // ID ÃÂÃÂºnico: si todos ceros usar "S{i}"
     const useId = idRaw.replace(/0/g,'') === '' ? `S${i}` : idRaw;
 
     movimientos.push({
       id_transferencia: useId,
       fecha, monto, glosa,
       rut: rutDigits ? formatRutDigits(rutDigits) : '',
-      rut_digits: rutDigits,                  // solo dÃÂ­gitos para consulta API
+      rut_digits: rutDigits,                  // solo dÃÂÃÂ­gitos para consulta API
       nombre_origen: nombre,
-      banco_origen: 'No especÃÂ­fica',
+      banco_origen: 'No especÃÂÃÂ­fica',
       cuenta_origen: '999999'
     });
   }
   return movimientos;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Parser Banco Estado (.xlsx) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Parser Banco Estado (.xlsx) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 // Formato: sheet "Transferencias" con columnas:
-// NÃÂ° OperaciÃÂ³n | Fecha - Hora | Cuenta Destino | Alias Destino | Rut Origen | Banco Origen | Nombre Origen | Cuenta Origen | Monto
+// NÃÂÃÂ° OperaciÃÂÃÂ³n | Fecha - Hora | Cuenta Destino | Alias Destino | Rut Origen | Banco Origen | Nombre Origen | Cuenta Origen | Monto
 function parseBancoEstadoCartola(buffer) {
-  if (!XLSX_LIB) throw new Error('MÃÂ³dulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃÂÃÂ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
 
   // Buscar sheet "Transferencias" o usar el primero disponible
@@ -2415,18 +2415,18 @@ function parseBancoEstadoCartola(buffer) {
   // Buscar fila de encabezado
   for (let i = 0; i < Math.min(5, data.length); i++) {
     const rowStr = data[i].join('|');
-    if (rowStr.includes('Rut Origen') || rowStr.includes('NÃÂ° OperaciÃÂ³n') || rowStr.includes('Operaci')) {
+    if (rowStr.includes('Rut Origen') || rowStr.includes('NÃÂÃÂ° OperaciÃÂÃÂ³n') || rowStr.includes('Operaci')) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx === -1) headerIdx = 0;
 
-  // Mapear ÃÂ­ndices de columnas desde la fila de cabecera
+  // Mapear ÃÂÃÂ­ndices de columnas desde la fila de cabecera
   const headers = data[headerIdx].map(h => String(h || '').trim());
   const colIdx = (name) => headers.findIndex(h => h.includes(name));
 
-  const idxId     = colIdx('Operaci');   // NÃÂ° OperaciÃÂ³n
+  const idxId     = colIdx('Operaci');   // NÃÂÃÂ° OperaciÃÂÃÂ³n
   const idxFecha  = colIdx('Fecha');     // Fecha - Hora
   const idxRut    = colIdx('Rut Origen');
   const idxBanco  = colIdx('Banco Origen');
@@ -2441,7 +2441,7 @@ function parseBancoEstadoCartola(buffer) {
     const idRaw = String(row[idxId] !== undefined ? row[idxId] : '').trim();
     if (!idRaw) continue;
 
-    // Fecha: "DD/MM/YYYY HH:MM" Ã¢ÂÂ YYYY-MM-DD
+    // Fecha: "DD/MM/YYYY HH:MM" ÃÂ¢ÃÂÃÂ YYYY-MM-DD
     let fecha = '';
     const fechaRaw = row[idxFecha];
     if (typeof fechaRaw === 'number') {
@@ -2480,10 +2480,10 @@ function parseBancoEstadoCartola(buffer) {
   return movimientos;
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Consultar RUT en SimpleAPI Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Consultar RUT en SimpleAPI ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 async function consultarRUTSimpleAPI(rutNorm, apiKey) {
   if (!apiKey || !rutNorm || rutNorm.length < 3) return null;
-  // Intentar dos variantes del endpoint (la documentaciÃÂ³n puede diferir entre versiones)
+  // Intentar dos variantes del endpoint (la documentaciÃÂÃÂ³n puede diferir entre versiones)
   const endpoints = [
     `${SIMPLEAPI_BASE}/v1/rut/${encodeURIComponent(rutNorm)}`,
     `https://www.simpleapi.cl/api/Rut/${encodeURIComponent(rutNorm)}`
@@ -2496,11 +2496,11 @@ async function consultarRUTSimpleAPI(rutNorm, apiKey) {
       });
       if (resp.status === 404) { console.log(`[SIMPLEAPI] RUT ${rutNorm} no encontrado (404)`); return null; }
       if (!resp.ok) {
-        console.log(`[SIMPLEAPI] RUT ${rutNorm} Ã¢ÂÂ HTTP ${resp.status} en ${url}`);
+        console.log(`[SIMPLEAPI] RUT ${rutNorm} ÃÂ¢ÃÂÃÂ HTTP ${resp.status} en ${url}`);
         continue; // intentar siguiente endpoint
       }
       const data = await resp.json();
-      console.log(`[SIMPLEAPI] RUT ${rutNorm} Ã¢ÂÂ ${JSON.stringify(data).substring(0,200)}`);
+      console.log(`[SIMPLEAPI] RUT ${rutNorm} ÃÂ¢ÃÂÃÂ ${JSON.stringify(data).substring(0,200)}`);
       return data;
     } catch(e) {
       console.warn(`[SIMPLEAPI] Error en ${url}: ${e.message}`);
@@ -2522,16 +2522,16 @@ function normalizarRespuestaSimpleAPI(data) {
   };
 }
 
-// Ã¢ÂÂÃ¢ÂÂ Endpoint principal: procesar cartola server-side con SimpleAPI Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Endpoint principal: procesar cartola server-side con SimpleAPI ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se subiÃÂ³ archivo' });
-    if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂ³dulo xlsx no instalado Ã¢ÂÂ ejecutar: npm install xlsx' });
+    if (!req.file) return res.status(400).json({ error: 'No se subiÃÂÃÂ³ archivo' });
+    if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂÃÂ³dulo xlsx no instalado ÃÂ¢ÃÂÃÂ ejecutar: npm install xlsx' });
 
     const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
 
-    // Auto-detectar banco si no viene explÃÂ­cito
+    // Auto-detectar banco si no viene explÃÂÃÂ­cito
     let bancoCartola = (req.body.banco || '').toUpperCase().trim();
     if (!bancoCartola) {
       const fname = req.file.originalname.toLowerCase();
@@ -2556,7 +2556,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
 
     if (movimientosRaw.length === 0) {
       return res.status(422).json({
-        error: `No se encontraron movimientos vÃÂ¡lidos en la cartola ${bancoCartola}. ` +
+        error: `No se encontraron movimientos vÃÂÃÂ¡lidos en la cartola ${bancoCartola}. ` +
                'Verifica que el archivo corresponda al banco seleccionado y tenga el formato correcto.'
       });
     }
@@ -2567,26 +2567,26 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     const config    = getAppData('config') || {};
     const now       = nowCL();
 
-    // Cargar clientes existentes en memoria (para matching rÃÂ¡pido)
+    // Cargar clientes existentes en memoria (para matching rÃÂÃÂ¡pido)
     const allClientes = db.prepare('SELECT * FROM clientes WHERE empresa_id = ?').all(empresaId);
     const clienteMap  = new Map();
     for (const c of allClientes) {
       if (c.rut_normalizado) clienteMap.set(c.rut_normalizado, c);
     }
 
-    // Ã¢ÂÂÃ¢ÂÂ Consultar SimpleAPI para RUTs de Santander desconocidos Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-    const simpleApiResults = {};  // rutNorm Ã¢ÂÂ datos normalizados
+    // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Consultar SimpleAPI para RUTs de Santander desconocidos ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+    const simpleApiResults = {};  // rutNorm ÃÂ¢ÃÂÃÂ datos normalizados
     let simpleApiConsultados = 0;
 
     if (bancoCartola === 'SANTANDER' && apiKey) {
-      // Recopilar RUTs ÃÂºnicos que no estÃÂ¡n en nuestra base
+      // Recopilar RUTs ÃÂÃÂºnicos que no estÃÂÃÂ¡n en nuestra base
       const rutsNuevos = new Set();
       for (const mov of movimientosRaw) {
         const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
         if (rutNorm && !clienteMap.has(rutNorm)) rutsNuevos.add(rutNorm);
       }
 
-      // Consultar en lotes de 3 (respetar rate limit Ã¢ÂÂ¤3 req/seg de SimpleAPI)
+      // Consultar en lotes de 3 (respetar rate limit ÃÂ¢ÃÂÃÂ¤3 req/seg de SimpleAPI)
       const rutArr = [...rutsNuevos];
       for (let i = 0; i < rutArr.length; i += 3) {
         const batch = rutArr.slice(i, i + 3);
@@ -2607,7 +2607,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       console.log(`[SIMPLEAPI] ${simpleApiConsultados} RUTs encontrados de ${rutArr.size || rutArr.length} consultados`);
     }
 
-    // Ã¢ÂÂÃ¢ÂÂ Procesar e insertar movimientos Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+    // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Procesar e insertar movimientos ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
     const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
@@ -2636,7 +2636,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           const idTransf    = String(mov.id_transferencia || '').trim();
           const idCompuesto = `${idTransf}_${bancoCartola}`;
 
-          // Ã¢ÂÂÃ¢ÂÂ Verificar duplicado Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+          // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Verificar duplicado ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
           const existing = checkDup.get(idCompuesto);
           if (existing) {
             duplicados++;
@@ -2644,7 +2644,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             continue;
           }
 
-          // Ã¢ÂÂÃ¢ÂÂ Determinar tipo de cliente y RUT Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+          // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Determinar tipo de cliente y RUT ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
           const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
           let estado = 'pendiente', tipoDte = null;
           let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
@@ -2655,7 +2655,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             const clienteExistente = clienteMap.get(rutNorm);
 
             if (clienteExistente) {
-              // Ã¢ÂÂ Cliente conocido en BD
+              // ÃÂ¢ÃÂÃÂ Cliente conocido en BD
               estado       = 'listo';
               razonSocial  = clienteExistente.razon_social || '';
               giro         = clienteExistente.giro         || '';
@@ -2665,12 +2665,12 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               emailReceptor= clienteExistente.email         || '';
               fuenteRazonSocial = 'bd';
             } else {
-              // Ã°ÂÂÂ Cliente nuevo Ã¢ÂÂ determinar fuente del nombre
+              // ÃÂ°ÃÂÃÂÃÂ Cliente nuevo ÃÂ¢ÃÂÃÂ determinar fuente del nombre
               clienteEsNuevo = true;
               const apiData  = simpleApiResults[rutNorm];
 
               if (apiData?.razon_social) {
-                // Ã¢ÂÂ SimpleAPI devolviÃÂ³ datos
+                // ÃÂ¢ÃÂÃÂ SimpleAPI devolviÃÂÃÂ³ datos
                 razonSocial   = apiData.razon_social;
                 giro          = apiData.giro         || '';
                 direccion     = apiData.direccion     || '';
@@ -2685,7 +2685,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 estado      = tipoDte === 41 ? 'listo' : 'pendiente';
                 fuenteRazonSocial = 'cartola_bci';
               } else {
-                // Santander sin datos API Ã¢ÂÂ limpiar nombre de glosa
+                // Santander sin datos API ÃÂ¢ÃÂÃÂ limpiar nombre de glosa
                 razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();
                 estado      = tipoDte === 41 ? 'listo' : 'pendiente';
                 fuenteRazonSocial = 'glosa_limpia';
@@ -2766,7 +2766,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
   }
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Consulta manual de RUT en SimpleAPI (desde la UI) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Consulta manual de RUT en SimpleAPI (desde la UI) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/simpleapi/consultar-rut', requireAuth, async (req, res) => {
   const { rut, empresa_id } = req.body;
   if (!rut) return res.status(400).json({ error: 'RUT requerido' });
@@ -2782,9 +2782,9 @@ app.post('/api/simpleapi/consultar-rut', requireAuth, async (req, res) => {
   res.json({ ok: true, rut_normalizado: rutNorm, data: normalized, raw: rawData });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Exportar base de datos en formato Excel original Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Exportar base de datos en formato Excel original ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
-  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂ³dulo xlsx no disponible' });
+  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂÃÂ³dulo xlsx no disponible' });
   const empresaId = req.params.empresa_id;
   if (req.user.role !== 'admin' && req.user.empresa !== empresaId) {
     return res.status(403).json({ error: 'Sin acceso a esta empresa' });
@@ -2792,7 +2792,7 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
 
   const wb = XLSX_LIB.utils.book_new();
 
-  // Ã¢ÂÂÃ¢ÂÂ Hoja RECIBIDAS Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hoja RECIBIDAS ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
   const movHeaders = ['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Origen','Cuenta Origen','Monto','Nombre Origen','Estado','Otros','Cartola'];
   const movs = db.prepare('SELECT * FROM movimientos WHERE empresa_id = ? ORDER BY fecha ASC, id ASC').all(empresaId);
   const movRows = [movHeaders];
@@ -2816,25 +2816,25 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
   }
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(movRows), 'RECIBIDAS');
 
-  // Ã¢ÂÂÃ¢ÂÂ Hoja DME RECIBIDAS (Directorio Maestro Empresas) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-  const dmeH = ['Rut Empresa','RazÃÂ³n Social','Giro','DirecciÃÂ³n','Comuna','Ciudad','Nombre','Correo','TelÃÂ©fono','Representante Legal','Rut Representante Legal'];
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hoja DME RECIBIDAS (Directorio Maestro Empresas) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+  const dmeH = ['Rut Empresa','RazÃÂÃÂ³n Social','Giro','DirecciÃÂÃÂ³n','Comuna','Ciudad','Nombre','Correo','TelÃÂÃÂ©fono','Representante Legal','Rut Representante Legal'];
   const empresasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='empresa' ORDER BY razon_social").all(empresaId);
   const dmeRows = [dmeH, ...empresasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono,c.representante_legal,c.rut_representante])];
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmeRows), 'DME RECIBIDAS');
 
-  // Ã¢ÂÂÃ¢ÂÂ Hoja RNE RECIBIDAS (vacÃÂ­a Ã¢ÂÂ por compatibilidad) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hoja RNE RECIBIDAS (vacÃÂÃÂ­a ÃÂ¢ÃÂÃÂ por compatibilidad) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmeH]), 'RNE RECIBIDAS');
 
-  // Ã¢ÂÂÃ¢ÂÂ Hoja DMP RECIBIDAS (Directorio Maestro Personas) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-  const dmpH = ['Rut Persona','RazÃÂ³n Social','Giro','DirecciÃÂ³n','Comuna','Ciudad','Nombre','Correo','TelÃÂ©fono'];
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hoja DMP RECIBIDAS (Directorio Maestro Personas) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+  const dmpH = ['Rut Persona','RazÃÂÃÂ³n Social','Giro','DirecciÃÂÃÂ³n','Comuna','Ciudad','Nombre','Correo','TelÃÂÃÂ©fono'];
   const personasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='persona' ORDER BY razon_social").all(empresaId);
   const dmpRows = [dmpH, ...personasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono])];
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmpRows), 'DMP RECIBIDAS');
 
-  // Ã¢ÂÂÃ¢ÂÂ Hoja RNP RECIBIDAS (vacÃÂ­a Ã¢ÂÂ por compatibilidad) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hoja RNP RECIBIDAS (vacÃÂÃÂ­a ÃÂ¢ÃÂÃÂ por compatibilidad) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmpH]), 'RNP RECIBIDAS');
 
-  // Ã¢ÂÂÃ¢ÂÂ Hojas vacÃÂ­as de ENVIADAS para mantener estructura Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+  // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Hojas vacÃÂÃÂ­as de ENVIADAS para mantener estructura ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
   const enviadaH = [['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Destino','Cuenta Destino','Monto','Nombre Destino','Estado','Otros','Cartola']];
   for (const sname of ['ENVIADAS','DME ENVIADAS','RNE ENVIADAS','DMP ENVIADAS','RNP ENVIADAS']) {
     XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(enviadaH), sname);
@@ -2850,10 +2850,10 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
   res.send(xlsBuf);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Importar Excel Base de Datos existente Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Importar Excel Base de Datos existente ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, res) => {
-  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂ³dulo xlsx no disponible' });
-  if (!req.file)  return res.status(400).json({ error: 'No se subiÃÂ³ archivo' });
+  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃÂÃÂ³dulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subiÃÂÃÂ³ archivo' });
 
   const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
   if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
@@ -2907,7 +2907,7 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
   importarHojaClientes('DMP RECIBIDAS', 'persona');
   importarHojaClientes('RNP RECIBIDAS', 'persona');
 
-  // Importar hoja RECIBIDAS (movimientos histÃÂ³ricos)
+  // Importar hoja RECIBIDAS (movimientos histÃÂÃÂ³ricos)
   const importarMov = req.body.importar_movimientos === 'true';
   if (importarMov && wb.SheetNames.includes('RECIBIDAS')) {
     const rows      = XLSX_LIB.utils.sheet_to_json(wb.Sheets['RECIBIDAS'], { header: 1, defval: '' });
@@ -2961,17 +2961,17 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
   });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Actualizar keys de SimpleAPI desde la UI (solo admin) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Actualizar keys de SimpleAPI desde la UI (solo admin) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.put('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   const { keys } = req.body;  // { 'tg-inversiones': '...', 'mt-inversiones': '...' }
-  if (!keys || typeof keys !== 'object') return res.status(400).json({ error: 'Formato invÃÂ¡lido' });
+  if (!keys || typeof keys !== 'object') return res.status(400).json({ error: 'Formato invÃÂÃÂ¡lido' });
   setAppData('simpleapi_keys', keys);
   res.json({ ok: true });
 });
 
 app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   const stored = getAppData('simpleapi_keys') || {};
-  // Merge con defaults pero no revelar los valores completos si ya estÃÂ¡n
+  // Merge con defaults pero no revelar los valores completos si ya estÃÂÃÂ¡n
   const result = {};
   for (const empId of Object.keys(SIMPLEAPI_KEYS_DEFAULT)) {
     const key = stored[empId] || SIMPLEAPI_KEYS_DEFAULT[empId] || '';
@@ -2980,12 +2980,12 @@ app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   res.json(result);
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Importar base histÃÂ³rica de DTE emitidos Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Importar base histÃÂÃÂ³rica de DTE emitidos ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 // Acepta el Excel con hojas "FACTURAS INGRESADAS" y "BOLETAS INGRESADAS"
 // Inserta cada fila como movimiento facturado, deduplica por id_compuesto
 app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (req, res) => {
-  if (!XLSX_LIB)  return res.status(500).json({ error: 'MÃÂ³dulo xlsx no disponible' });
-  if (!req.file)  return res.status(400).json({ error: 'No se subiÃÂ³ archivo' });
+  if (!XLSX_LIB)  return res.status(500).json({ error: 'MÃÂÃÂ³dulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subiÃÂÃÂ³ archivo' });
 
   const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
   if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
@@ -2997,14 +2997,14 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   const HOJAS_OBJETIVO = ['FACTURAS INGRESADAS', 'BOLETAS INGRESADAS'];
   const now = nowCL();
 
-  // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÃÂSCULAS)
+  // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÃÂÃÂSCULAS)
   function normalizarIdCompuesto(idTransf, cartola) {
     const banco = String(cartola || '').trim().toUpperCase();
     const id    = String(idTransf || '').trim();
     return id && banco ? `${id}_${banco}` : '';
   }
 
-  // Determinar tipo por RUT: >= 50.000.000 Ã¢ÂÂ empresa (34) ÃÂ· < 50M Ã¢ÂÂ persona (41)
+  // Determinar tipo por RUT: >= 50.000.000 ÃÂ¢ÃÂÃÂ empresa (34) ÃÂÃÂ· < 50M ÃÂ¢ÃÂÃÂ persona (41)
   function tipoPorRut(rutNorm) {
     const digits = rutNorm.replace(/[^0-9]/g, '');
     if (!digits) return 'empresa';
@@ -3017,9 +3017,9 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
       .all(empresaId).map(r => r.id_compuesto.toUpperCase())
   );
 
-  // Crear un lote registral para esta importaciÃÂ³n
+  // Crear un lote registral para esta importaciÃÂÃÂ³n
   const loteId   = generateLoteId(empresaId);
-  const nombreLote = `Base histÃÂ³rica ${empresaId}`;
+  const nombreLote = `Base histÃÂÃÂ³rica ${empresaId}`;
 
   const stmtInsertMov = db.prepare(`
     INSERT OR IGNORE INTO movimientos
@@ -3071,12 +3071,12 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 
         // Ya existe en la BD
         if (existentesSet.has(idCompUpper)) {
-          // Reconciliar: si estÃÂ¡ listo/pendiente Ã¢ÂÂ marcar como facturado
+          // Reconciliar: si estÃÂÃÂ¡ listo/pendiente ÃÂ¢ÃÂÃÂ marcar como facturado
           const existente = stmtGetExistente.get(idComp, empresaId);
           if (existente && (existente.estado === 'listo' || existente.estado === 'pendiente')) {
-            // Intentar leer fecha del Excel para la facturaciÃÂ³n
+            // Intentar leer fecha del Excel para la facturaciÃÂÃÂ³n
             let fechaReconcil = now;
-            const fechaRawR = row['FechaEmision'] || row['Fecha de emisiÃÂ³n (*)'] || row['Fecha de emisiÃÂ³n'];
+            const fechaRawR = row['FechaEmision'] || row['Fecha de emisiÃÂÃÂ³n (*)'] || row['Fecha de emisiÃÂÃÂ³n'];
             if (fechaRawR instanceof Date) {
               const dd = String(fechaRawR.getDate()).padStart(2,'0');
               const mm = String(fechaRawR.getMonth()+1).padStart(2,'0');
@@ -3096,9 +3096,9 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           continue;
         }
 
-        // Fecha de emisiÃÂ³n (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisiÃÂ³n (*)')
+        // Fecha de emisiÃÂÃÂ³n (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisiÃÂÃÂ³n (*)')
         let fechaStr = '';
-        const fechaRaw = row['FechaEmision'] || row['Fecha de emisiÃÂ³n (*)'] || row['Fecha de emisiÃÂ³n'];
+        const fechaRaw = row['FechaEmision'] || row['Fecha de emisiÃÂÃÂ³n (*)'] || row['Fecha de emisiÃÂÃÂ³n'];
         if (fechaRaw instanceof Date) {
           const dd = String(fechaRaw.getDate()).padStart(2,'0');
           const mm = String(fechaRaw.getMonth()+1).padStart(2,'0');
@@ -3111,19 +3111,19 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           fechaStr = String(fechaRaw).substring(0, 10);
         }
 
-        // Soporte multi-formato: SF CSV ('RutRecep', 'RazonSocialRecep'Ã¢ÂÂ¦)
-        //                     y TS Capital Excel ('RUT Receptor', 'RazÃÂ³n Social'Ã¢ÂÂ¦)
+        // Soporte multi-formato: SF CSV ('RutRecep', 'RazonSocialRecep'ÃÂ¢ÃÂÃÂ¦)
+        //                     y TS Capital Excel ('RUT Receptor', 'RazÃÂÃÂ³n Social'ÃÂ¢ÃÂÃÂ¦)
         const rutRaw   = String(row['RutRecep'] || row['RUT Receptor'] || '').trim();
         const rutNorm  = normalizeRut(rutRaw);
         const rutFmt   = rutNorm ? formatRut(rutNorm) : '';
-        const razon    = String(row['RazonSocialRecep'] || row['RazÃÂ³n Social'] || row['Contacto'] || '').trim();
+        const razon    = String(row['RazonSocialRecep'] || row['RazÃÂÃÂ³n Social'] || row['Contacto'] || '').trim();
         const giro     = String(row['GiroRecep']  || row['Giro'] || '').trim();
-        const dir      = String(row['DirRecep']   || row['DirecciÃÂ³n'] || '').trim();
+        const dir      = String(row['DirRecep']   || row['DirecciÃÂÃÂ³n'] || '').trim();
         const comuna   = String(row['CmnaRecep']  || row['Comuna'] || '').trim();
         const ciudad   = String(row['CiudadRecep']|| row['Ciudad'] || '').trim();
         const email    = String(row['CorreoRecep']|| row['Email Receptor'] || '').trim();
         const monto    = parseFloat(row['TotalProducto'] || row['Monto total'] || row['Precio (*)'] || row['Precio (*) '] || 0) || 0;
-        // Columna '1' contiene '34: Factura exentaÃ¢ÂÂ¦' o '41: Boleta exentaÃ¢ÂÂ¦'
+        // Columna '1' contiene '34: Factura exentaÃÂ¢ÃÂÃÂ¦' o '41: Boleta exentaÃÂ¢ÃÂÃÂ¦'
         const tipoRaw  = String(row['TipoDte'] || row['1'] || '').trim();
         const tipoDte  = tipoRaw ? (parseInt(tipoRaw) || (tipoRaw.startsWith('41') ? 41 : 34)) : 34;
         const tipoCliente = tipoPorRut(rutNorm);
@@ -3176,13 +3176,13 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
         .run(insertados + reconciliados, now, loteId);
     })();
   } catch(txErr) {
-    return res.status(500).json({ error: 'Error en transacciÃÂ³n: ' + txErr.message });
+    return res.status(500).json({ error: 'Error en transacciÃÂÃÂ³n: ' + txErr.message });
   }
 
   res.json({ ok: true, insertados, reconciliados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
 });
 
-// Ã¢ÂÂÃ¢ÂÂ Ver PDF de DTE emitido Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Ver PDF de DTE emitido ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
   const mov = db.prepare('SELECT * FROM movimientos WHERE id = ?').get(req.params.id);
   if (!mov || !mov.folio_dte) return res.status(404).json({ error: 'Folio no disponible. Solo para DTEs emitidos desde esta plataforma.' });
@@ -3203,7 +3203,7 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const hData = await hRes.json();
       const freshUrl = hData?.urlPdf || hData?.url_pdf || hData?.URL_PDF;
       if (freshUrl) return res.redirect(freshUrl);
-      return res.status(404).json({ error: 'Open Factura no devolviÃÂ³ URL de PDF' });
+      return res.status(404).json({ error: 'Open Factura no devolviÃÂÃÂ³ URL de PDF' });
     } else {
       const sfConf = empresa.simplefactura || {};
       const token = await sfGetToken(sfConf.username, sfConf.password, sfConf.api_token || null);
@@ -3221,7 +3221,7 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const sfData = await sfRes.json();
       const sfUrl = sfData?.url || sfData?.pdfUrl || sfData?.data?.url;
       if (sfUrl) return res.redirect(sfUrl);
-      return res.status(404).json({ error: 'SimpleFactura no devolviÃÂ³ PDF para este folio' });
+      return res.status(404).json({ error: 'SimpleFactura no devolviÃÂÃÂ³ PDF para este folio' });
     }
   } catch(e) {
     console.error('[PDF DTE]', e.message);
@@ -3229,10 +3229,10 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
   }
 });
 
-// Ã¢ÂÂÃ¢ÂÂ SPA catch-all Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ SPA catch-all ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// Admin: actualizar folio_dte para un movimiento específico
+// Admin: actualizar folio_dte para un movimiento especÃ­fico
 app.post('/api/admin/set-folio', requireAuth, (req, res) => {
   const { movimiento_id, folio_dte } = req.body;
   if (!movimiento_id) return res.status(400).json({ error: 'movimiento_id required' });

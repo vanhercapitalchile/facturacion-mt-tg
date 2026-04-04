@@ -510,16 +510,18 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   const sortCol = COLS_FACT[orden] || 'fecha';
   const sortDir = dir === 'desc' ? 'DESC' : 'ASC';
 
-    // Modo paginado: devuelve { movimientos, total, total_34, total_41 }
-  if (pag === '1') {
-    const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
-    const total = db.prepare(countSql).get(...params)?.total || 0;
-        // Conteo por tipo DTE (sin filtro de tipo_dte para obtener totales reales)
-            const baseSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1');
-                const baseParams = [...params];
-                    const dteCounts = db.prepare(baseSql + ' GROUP BY tipo_dte').all(...baseParams);
-                        const total_34 = dteCounts.find(r => r.tipo_dte === 34)?.cnt || 0;
-                            const total_41 = dteCounts.find(r => r.tipo_dte === 41)?.cnt || 0;
+    // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte — muestra ambos totales siempre)
+    let typeSql = 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1';
+    const typeParams = [];
+    if (empresaId)   { typeSql += ' AND empresa_id = ?';    typeParams.push(empresaId); }
+    if (estado)      { typeSql += ' AND estado = ?';        typeParams.push(estado); }
+    if (banco)       { typeSql += ' AND banco_cartola = ?'; typeParams.push(banco); }
+    if (fecha_desde) { typeSql += ' AND fecha >= ?';        typeParams.push(fecha_desde); }
+    if (fecha_hasta) { typeSql += ' AND fecha <= ?';        typeParams.push(fecha_hasta); }
+    typeSql += ' GROUP BY tipo_dte';
+    const dteCounts = db.prepare(typeSql).all(...typeParams);
+    const total_34 = dteCounts.find(r => r.tipo_dte === 34)?.cnt || 0;
+    const total_41 = dteCounts.find(r => r.tipo_dte === 41)?.cnt || 0;
     sql += ` ORDER BY ${sortCol} ${sortDir}, id ${sortDir}`;
     if (lim) { sql += ' LIMIT ?'; params.push(parseInt(lim)); }
     if (off) { sql += ' OFFSET ?'; params.push(parseInt(off)); }

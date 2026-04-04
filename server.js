@@ -510,6 +510,10 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   const sortCol = COLS_FACT[orden] || 'fecha';
   const sortDir = dir === 'desc' ? 'DESC' : 'ASC';
 
+  // Modo paginado: devuelve { movimientos, total, total_34, total_41 }
+  if (pag === '1') {
+    const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
+    const total = db.prepare(countSql).get(...params)?.total || 0;
     // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte — muestra ambos totales siempre)
     let typeSql = 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1';
     const typeParams = [];

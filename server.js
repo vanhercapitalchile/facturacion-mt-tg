@@ -10,7 +10,7 @@ const multer   = require('multer');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// ââ Config âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const JWT_SECRET = process.env.JWT_SECRET || 'facturacion-mt-tg-dev-secret-change-me';
 const DATA_DIR   = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -21,7 +21,7 @@ db.pragma('journal_mode = WAL');
 // Upload config
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-// ── Schema ───────────────────────────────────────────────────────────────────
+// ââ Schema âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_data (
     key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -109,12 +109,13 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_estado ON movimientos(estado)'
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_clientes_rut ON clientes(rut_normalizado, empresa_id)'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote_id)'); } catch(e){}
 
-// ── Schema migrations ─────────────────────────────────────────────────────────
+// ââ Schema migrations âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
+try { db.exec('ALTER TABLE movimientos ADD COLUMN folio_dte TEXT'); } catch(e){}
 
-// ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
+// ââ RUTs internos excluidos de facturaciÃ³n (transferencias entre empresas propias) â
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
@@ -123,8 +124,8 @@ try {
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
 
-// ── Cleanup: eliminar intentos fallidos de facturación anteriores al deploy ──
-// Resetea movimientos y borra lotes con estado 'error'. Seguro de correr múltiples veces.
+// ââ Cleanup: eliminar intentos fallidos de facturaciÃ³n anteriores al deploy ââ
+// Resetea movimientos y borra lotes con estado 'error'. Seguro de correr mÃºltiples veces.
 try {
   db.transaction(() => {
     // Devolver movimientos de lotes fallidos a estado 'listo'
@@ -136,7 +137,7 @@ try {
   console.log('[STARTUP] Limpieza de lotes con error completada');
 } catch(e) { console.warn('[STARTUP] Error en limpieza de lotes:', e.message); }
 
-// ── Re-classify existing movements on startup using empresa config ─────────────
+// ââ Re-classify existing movements on startup using empresa config âââââââââââââ
 (function reclassifyMovimientos() {
   try {
     const empresas = getAppData('empresas') || {};
@@ -161,7 +162,7 @@ try {
   } catch(e) { console.error('[MIGRATE] Error en reclassify:', e.message); }
 })();
 
-// ── Seed ─────────────────────────────────────────────────────────────────────
+// ââ Seed âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 (function seedIfEmpty() {
   if (db.prepare('SELECT value FROM app_data WHERE key = ?').get('users')) return;
   const seedPath = path.join(__dirname, 'seed-data.json');
@@ -176,14 +177,14 @@ try {
   console.log('[SEED] Database initialised from seed-data.json');
 })();
 
-// ── Migration: asegurar que ts-capital tenga config Haulmer en la BD ──────────
+// ââ Migration: asegurar que ts-capital tenga config Haulmer en la BD ââââââââââ
 (function ensureHaulmerConfig() {
   try {
     const empresas = getAppData('empresas');
     if (!empresas) return;
     const ts = empresas['ts-capital'];
     if (!ts) {
-      // Si ts-capital no existe en BD pero sí en seed, insertarlo
+      // Si ts-capital no existe en BD pero sÃ­ en seed, insertarlo
       const seedPath = path.join(__dirname, 'seed-data.json');
       if (fs.existsSync(seedPath)) {
         const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
@@ -194,7 +195,7 @@ try {
         }
       }
     } else if (!ts.haulmer || !ts.haulmer.api_key || !ts.acteco) {
-      // ts-capital existe pero le falta la config Haulmer — restaurar desde seed
+      // ts-capital existe pero le falta la config Haulmer â restaurar desde seed
       const seedPath = path.join(__dirname, 'seed-data.json');
       if (fs.existsSync(seedPath)) {
         const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
@@ -212,20 +213,20 @@ try {
   } catch(e) { console.warn('[MIGRATE] ensureHaulmerConfig error:', e.message); }
 })();
 
-// ── Password migration: actualizar credenciales y renombrar hturra→admin ─────
+// ââ Password migration: actualizar credenciales y renombrar hturraâadmin âââââ
 (function migratePasswords() {
   try {
     const users = getAppData('users');
     if (!users) return;
     let changed = false;
-    // Revertir admin → hturra si se renombró por error
+    // Revertir admin â hturra si se renombrÃ³ por error
     if (users.admin && !users.hturra) {
       users.hturra = { ...users.admin };
       delete users.admin;
       changed = true;
-      console.log('[MIGRATE] Revertido usuario admin → hturra');
+      console.log('[MIGRATE] Revertido usuario admin â hturra');
     }
-    // Actualizar hashes de contraseñas
+    // Actualizar hashes de contraseÃ±as
     const newHashes = {
       hturra:    '1a36e3204acafe38cf3ef45f0bfdae04d527e1ab2f503d574ad33f0c7d3243dc',
       dbravo:    'f1715b8db3bd44bbae81666c6fa794ed0ea93390536a4724c2695bb7b452fe69',
@@ -235,7 +236,7 @@ try {
       if (users[uname] && users[uname].passHash !== hash) {
         users[uname].passHash = hash;
         changed = true;
-        console.log(`[MIGRATE] Contraseña actualizada para ${uname}`);
+        console.log(`[MIGRATE] ContraseÃ±a actualizada para ${uname}`);
       }
     }
     if (changed) {
@@ -244,7 +245,7 @@ try {
   } catch(e) { console.error('[MIGRATE] Error en migratePasswords:', e.message); }
 })();
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ââ Helpers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -279,7 +280,7 @@ function requireAuth(req, res, next) {
   try {
     req.user = jwt.verify(h.slice(7), JWT_SECRET);
     next();
-  } catch { res.status(401).json({ error: 'Token inválido o expirado' }); }
+  } catch { res.status(401).json({ error: 'Token invÃ¡lido o expirado' }); }
 }
 
 function requireAdmin(req, res, next) {
@@ -312,7 +313,7 @@ function generateLoteId(empresaId) {
   return `${empresaId}-${ts}-${rnd}`;
 }
 
-// Devuelve la fecha más reciente de un array de movimientos, formateada DD-MM-YYYY
+// Devuelve la fecha mÃ¡s reciente de un array de movimientos, formateada DD-MM-YYYY
 function maxFechaLote(movs) {
   let max = null;
   for (const m of movs) {
@@ -333,17 +334,17 @@ function maxFechaLote(movs) {
   return `${dd}-${mm}-${max.getFullYear()}`;
 }
 
-// ── Auth Routes ──────────────────────────────────────────────────────────────
+// ââ Auth Routes ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Faltan credenciales' });
 
   const users = getAppData('users');
   const user = users[username.toLowerCase()];
-  if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!user) return res.status(401).json({ error: 'Credenciales invÃ¡lidas' });
 
   const hash = sha256(password);
-  if (hash !== user.passHash) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (hash !== user.passHash) return res.status(401).json({ error: 'Credenciales invÃ¡lidas' });
 
   const payload = { username: username.toLowerCase(), role: user.role, empresa: user.empresa };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '4h' });
@@ -359,7 +360,7 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// ── Notification routes ──────────────────────────────────────────────────────
+// ââ Notification routes ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.post('/api/notifications/login', requireAuth, (req, res) => {
   const { displayName } = req.body;
   db.prepare('INSERT INTO login_logs (username, display_name, empresa, timestamp_cl) VALUES (?,?,?,?)')
@@ -378,7 +379,7 @@ app.put('/api/notifications/read', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Data routes (app_data CRUD) ──────────────────────────────────────────────
+// ââ Data routes (app_data CRUD) ââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/data', requireAuth, (req, res) => {
   const empresas = getAppData('empresas');
   const config = getAppData('config');
@@ -400,7 +401,7 @@ app.put('/api/data', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Users management ─────────────────────────────────────────────────────────
+// ââ Users management âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/users', requireAuth, requireAdmin, (req, res) => {
   res.json(getAppData('users'));
 });
@@ -410,7 +411,7 @@ app.put('/api/users', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Clientes (base de datos tributaria) ──────────────────────────────────────
+// ââ Clientes (base de datos tributaria) ââââââââââââââââââââââââââââââââââââââ
 app.get('/api/clientes', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let rows;
@@ -490,7 +491,7 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
   res.json(row || null);
 });
 
-// ── Movimientos (transferencias de cartola) ──────────────────────────────────
+// ââ Movimientos (transferencias de cartola) ââââââââââââââââââââââââââââââââââ
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag, orden, dir } = req.query;
@@ -514,7 +515,7 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (pag === '1') {
     const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
     const total = db.prepare(countSql).get(...params)?.total || 0;
-    // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte — muestra ambos totales siempre)
+    // Conteo por tipo DTE PENDIENTES (sin filtro tipo_dte â muestra ambos totales siempre)
     let typeSql = 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1';
     const typeParams = [];
     if (empresaId)   { typeSql += ' AND empresa_id = ?';    typeParams.push(empresaId); }
@@ -560,7 +561,7 @@ app.get('/api/movimientos/stats', requireAuth, (req, res) => {
 // Upload cartola and process
 app.post('/api/movimientos/cargar-cartola', requireAuth, upload.single('cartola'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
+    if (!req.file) return res.status(400).json({ error: 'No se subiÃ³ archivo' });
     const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
     const bancoCartola = (req.body.banco || '').toUpperCase();
@@ -629,7 +630,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // RUT interno: transferencia entre empresas propias → no facturar
+        // RUT interno: transferencia entre empresas propias â no facturar
         if (RUTS_INTERNOS.includes(rutNorm)) {
           estado = 'interno';
         } else if (rutNorm) {
@@ -653,7 +654,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
             estado = 'listo';
           } else {
             // Factura/DTE que no sea boleta sin cliente en BD: usar nombre_origen como razon_social
-            // El movimiento queda pendiente para revisión manual (completar datos)
+            // El movimiento queda pendiente para revisiÃ³n manual (completar datos)
             razonSocial = (mov.nombre_origen || '').substring(0, 100);
           }
         }
@@ -715,7 +716,7 @@ app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
   res.json({ ok: true, updated: ids.length });
 });
 
-// ── Historial de cargas de cartola ───────────────────────────────────────────
+// ââ Historial de cargas de cartola âââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/cartolas/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let sql = `SELECT lote_carga_id, empresa_id, banco_cartola, fecha_carga,
@@ -731,7 +732,7 @@ app.get('/api/cartolas/historial', requireAuth, (req, res) => {
 app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   const { lote_carga_id } = req.params;
   const empresaId = filterByEmpresa(req);
-  // Only allow deletion of movements not yet in a facturación lote
+  // Only allow deletion of movements not yet in a facturaciÃ³n lote
   let sql = "DELETE FROM movimientos WHERE lote_carga_id = ? AND estado NOT IN ('facturado','en_lote')";
   const params = [lote_carga_id];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
@@ -739,24 +740,24 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   res.json({ ok: true, eliminados: result.changes });
 });
 
-// Helper: determinar tipo_dte según RUT y config de empresa
-// Default: 34 (Factura Exenta) para TODOS — tipo 41 solo si está explícitamente configurado
-// (SF requiere que el tipo 41 tenga plantilla activa configurada — si no existe usar 34)
+// Helper: determinar tipo_dte segÃºn RUT y config de empresa
+// Default: 34 (Factura Exenta) para TODOS â tipo 41 solo si estÃ¡ explÃ­citamente configurado
+// (SF requiere que el tipo 41 tenga plantilla activa configurada â si no existe usar 34)
 function getTipoDte(rutNormalizado, empresaConfig) {
   if (!rutNormalizado) return 34;
   const rutNum = parseInt(rutNormalizado.slice(0, -1));
   const sf = empresaConfig?.simplefactura || {};
   if (rutNum >= 76000000) {
-    // Empresa/Persona jurídica → Factura Exenta (34) por defecto
+    // Empresa/Persona jurÃ­dica â Factura Exenta (34) por defecto
     return parseInt(sf.tipo_dte_empresas) || 34;
   } else {
-    // Persona natural → default 41 (Boleta Exenta), configurable por empresa
-    // IMPORTANTE: TG usa DTE 41, MT puede usar DTE 34 — configurar en cada empresa
+    // Persona natural â default 41 (Boleta Exenta), configurable por empresa
+    // IMPORTANTE: TG usa DTE 41, MT puede usar DTE 34 â configurar en cada empresa
     return parseInt(sf.tipo_dte_personas) || 41;
   }
 }
 
-// ── Re-classify all pending movements (manual trigger) ───────────────────────
+// ââ Re-classify all pending movements (manual trigger) âââââââââââââââââââââââ
 app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresas = getAppData('empresas') || {};
@@ -772,7 +773,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
       if (!m.rut_normalizado) continue;
       const empConfig = empresas[m.empresa_id];
       const correcto = getTipoDte(m.rut_normalizado, empConfig);
-      // Estado: si es boleta (41) → listo (no requiere revisión), si es factura → mantener estado actual
+      // Estado: si es boleta (41) â listo (no requiere revisiÃ³n), si es factura â mantener estado actual
       const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
       db.prepare('UPDATE movimientos SET tipo_dte=?, estado=?, updated_at=? WHERE id=?')
         .run(correcto, nuevoEstado, now, m.id);
@@ -782,7 +783,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   res.json({ ok: true, reclasificados: fixed });
 });
 
-// ── Facturación (crear lote + enviar a SimpleFactura) ────────────────────────
+// ââ FacturaciÃ³n (crear lote + enviar a SimpleFactura) ââââââââââââââââââââââââ
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -811,7 +812,7 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length, monto_total: montoTotal });
 });
 
-// Marcar movimientos como facturados manualmente (sin emitir vía API)
+// Marcar movimientos como facturados manualmente (sin emitir vÃ­a API)
 // Crea un lote registral "Marcado facturado manual" y pasa los movimientos a estado 'facturado'
 app.post('/api/facturacion/marcar-manual', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids } = req.body;
@@ -868,13 +869,13 @@ app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) =
   res.json(movs);
 });
 
-// ── SimpleFactura helpers ─────────────────────────────────────────────────────
-// API pública documentada: https://documentacion.simplefactura.cl/
+// ââ SimpleFactura helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// API pÃºblica documentada: https://documentacion.simplefactura.cl/
 const SF_API  = 'https://api.simplefactura.cl';
-// API backend (endpoints internos que no están en la doc pública pero aún funcionan)
+// API backend (endpoints internos que no estÃ¡n en la doc pÃºblica pero aÃºn funcionan)
 const SF_BASE = 'https://backend.simplefactura.cl/api';
 
-// Construye un cuerpo multipart/form-data manualmente como Buffer (más confiable
+// Construye un cuerpo multipart/form-data manualmente como Buffer (mÃ¡s confiable
 // que el FormData nativo de Node.js que puede fallar con Blob en fetch)
 function buildMultipartBody(fileBuffer, fieldName, filename, mimeType, extraFields = {}) {
   const boundary = 'FacturaBoundary' + Date.now().toString(16) + Math.random().toString(16).slice(2, 10);
@@ -903,7 +904,7 @@ function sfDecodeJwt(token) {
   } catch(e) { return {}; }
 }
 
-// Cache de tokens por empresa (email → { token, expiresAt })
+// Cache de tokens por empresa (email â { token, expiresAt })
 const sfTokenCache = {};
 
 function sfTokenFromCache(email) {
@@ -922,16 +923,16 @@ function sfTokenFromCache(email) {
 }
 
 // Obtener token SF usando login email/password (el "api_token" de SF Integraciones
-// es para webhooks salientes, NO para autenticar llamadas REST → se ignora aquí)
+// es para webhooks salientes, NO para autenticar llamadas REST â se ignora aquÃ­)
 async function sfGetToken(email, password, _apiTokenIgnored) {
   // 1. Return cached token if still valid (login previo)
   const cached = sfTokenFromCache(email);
   if (cached) {
-    console.log(`[SF TOKEN] Usando token en caché para ${email}`);
+    console.log(`[SF TOKEN] Usando token en cachÃ© para ${email}`);
     return cached;
   }
 
-  // 2. Fresh login — usar API pública documentada: POST /token con {email, password}
+  // 2. Fresh login â usar API pÃºblica documentada: POST /token con {email, password}
   const doLogin = async () => {
     console.log(`[SF LOGIN] POST ${SF_API}/token para ${email}`);
     const r = await fetch(`${SF_API}/token`, {
@@ -940,7 +941,7 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
       body: JSON.stringify({ email, password })
     });
     const raw = await r.text();
-    console.log(`[SF LOGIN] HTTP ${r.status} → ${raw.substring(0, 400)}`);
+    console.log(`[SF LOGIN] HTTP ${r.status} â ${raw.substring(0, 400)}`);
     let data;
     try { data = JSON.parse(raw); } catch(e) { throw new Error(`Login respuesta no-JSON (HTTP ${r.status}): ${raw.substring(0, 200)}`); }
     return { ok: r.ok, data, status: r.status };
@@ -948,15 +949,15 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
 
   let { ok, data, status } = await doLogin();
 
-  // La API pública /token no tiene el problema de "sesión activa" del backend viejo,
+  // La API pÃºblica /token no tiene el problema de "sesiÃ³n activa" del backend viejo,
   // pero manejamos errores generales de todas formas
   if (!ok && JSON.stringify(data || '').toLowerCase().includes('activa')) {
-    console.log('[SF LOGIN] Sesión activa detectada, reintentando en 3s...');
+    console.log('[SF LOGIN] SesiÃ³n activa detectada, reintentando en 3s...');
     await new Promise(r => setTimeout(r, 3000));
     ({ ok, data, status } = await doLogin());
   }
 
-  // La API pública devuelve accessToken (camelCase); manejar variantes por si acaso
+  // La API pÃºblica devuelve accessToken (camelCase); manejar variantes por si acaso
   const accessToken = data?.accessToken || data?.access_token || data?.token;
   if (!accessToken) {
     const errors = data?.errors;
@@ -965,25 +966,25 @@ async function sfGetToken(email, password, _apiTokenIgnored) {
     throw new Error(`Login fallido (HTTP ${status}): ${errMsg}`);
   }
 
-  // Guardar en caché (token dura 24h según docs, cacheamos 23h)
+  // Guardar en cachÃ© (token dura 24h segÃºn docs, cacheamos 23h)
   sfTokenCache[email] = { token: accessToken, expiresAt: Date.now() + 23 * 60 * 60 * 1000 };
-  console.log(`[SF TOKEN] Nuevo token guardado en caché para ${email} (${accessToken.substring(0,20)}...)`);
+  console.log(`[SF TOKEN] Nuevo token guardado en cachÃ© para ${email} (${accessToken.substring(0,20)}...)`);
   return accessToken;
 }
 
-// Mantener compatibilidad con código existente
+// Mantener compatibilidad con cÃ³digo existente
 async function sfLogin(email, password) {
   return sfGetToken(email, password);
 }
 
 // Obtener sucursalId + emisorId desde SimpleFactura
-// rutEmisorSF: RUT del emisor SF (ej. "77859376-9") — clave para cuentas multi-RUT
-// manualSucursalId / manualEmisorId: IDs manuales configurados en la UI (bypass del lookup automático)
+// rutEmisorSF: RUT del emisor SF (ej. "77859376-9") â clave para cuentas multi-RUT
+// manualSucursalId / manualEmisorId: IDs manuales configurados en la UI (bypass del lookup automÃ¡tico)
 // Retorna { sucursalId, emisorId } y actualiza sfTokenCache[email]
 async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, manualSucursalId, manualEmisorId) {
-  // ── Atajo: IDs manuales configurados → usarlos directamente sin llamar a la API ──────────
+  // ââ Atajo: IDs manuales configurados â usarlos directamente sin llamar a la API ââââââââââ
   if (manualSucursalId && manualEmisorId) {
-    console.log(`[SF SUCURSAL] ✓ Usando IDs manuales configurados: sucursalId=${manualSucursalId.substring(0,8)}..., emisorId=${manualEmisorId.substring(0,8)}...`);
+    console.log(`[SF SUCURSAL] â Usando IDs manuales configurados: sucursalId=${manualSucursalId.substring(0,8)}..., emisorId=${manualEmisorId.substring(0,8)}...`);
     const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
     if (sfTokenCache[email]) {
       sfTokenCache[email].sucursalId = manualSucursalId;
@@ -994,11 +995,11 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 
   const token = sfTokenCache[email]?.token || await sfGetToken(email, password);
 
-  // ── Paso 0: Extraer emisorId directamente desde los claims del JWT ──────────
-  // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueño de la cuenta.
+  // ââ Paso 0: Extraer emisorId directamente desde los claims del JWT ââââââââââ
+  // Para cuentas directas (no-reseller) el JWT lleva el emisorId del dueÃ±o de la cuenta.
   const jwtClaims = sfDecodeJwt(token);
-  // SF puede usar distintos nombres de campo según la versión de la API
-  // IMPORTANTE: SF usa "nameid" (claim estándar .NET) como el EmisorId del emisor autenticado
+  // SF puede usar distintos nombres de campo segÃºn la versiÃ³n de la API
+  // IMPORTANTE: SF usa "nameid" (claim estÃ¡ndar .NET) como el EmisorId del emisor autenticado
   const jwtEmisorId = jwtClaims?.EmisorId || jwtClaims?.emisorId
     || jwtClaims?.Emisor_Id || jwtClaims?.emisor_id
     || jwtClaims?.IdEmisor  || jwtClaims?.id_emisor
@@ -1007,8 +1008,8 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
   console.log(`[SF JWT] nameid: ${jwtClaims?.nameid}, jwtEmisorId resuelto: ${jwtEmisorId}`);
 
   try {
-    // ── Paso 1: Intentar obtener las sucursales del emisor del JWT primero ─────
-    // Esto es clave para cuentas directas donde el dueño NO aparece en la lista general.
+    // ââ Paso 1: Intentar obtener las sucursales del emisor del JWT primero âââââ
+    // Esto es clave para cuentas directas donde el dueÃ±o NO aparece en la lista general.
     let lista = [];
 
     if (jwtEmisorId) {
@@ -1028,7 +1029,7 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
       }
     }
 
-    // ── Paso 2: Si no encontramos nada con el JWT, buscar en la lista general ──
+    // ââ Paso 2: Si no encontramos nada con el JWT, buscar en la lista general ââ
     if (lista.length === 0) {
       const resp = await fetch(`${SF_BASE}/Sucursal/list/filter`, {
         method: 'GET',
@@ -1052,26 +1053,26 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
         const nombre = (s.emisorNombre || s.EmisorNombre || '').toLowerCase();
         return rut === rutLimpio || nombre.replace(/[.\-\s]/g,'').toLowerCase().includes(rutLimpio);
       });
-      if (match) console.log(`[SF SUCURSAL] ✓ Match por RUT "${rutEmisorSF}" → emisor "${match.emisorNombre||match.EmisorNombre}"`);
+      if (match) console.log(`[SF SUCURSAL] â Match por RUT "${rutEmisorSF}" â emisor "${match.emisorNombre||match.EmisorNombre}"`);
     }
 
     // 2. Match por emisorId del JWT en la lista general (para cuentas directas)
     if (!match && jwtEmisorId) {
       match = lista.find(s => (s.emisorId || s.EmisorId || '') === jwtEmisorId);
-      if (match) console.log(`[SF SUCURSAL] ✓ Match por JWT emisorId en lista general`);
+      if (match) console.log(`[SF SUCURSAL] â Match por JWT emisorId en lista general`);
     }
 
     // 3. Match por nombre de sucursal
     if (!match && nombreSucursal) {
       const nombreBuscar = nombreSucursal.toLowerCase().trim();
       match = lista.find(s => (s.nombre || s.Nombre || '').toLowerCase().trim() === nombreBuscar);
-      if (match) console.log(`[SF SUCURSAL] ✓ Match por nombre sucursal "${nombreSucursal}"`);
+      if (match) console.log(`[SF SUCURSAL] â Match por nombre sucursal "${nombreSucursal}"`);
     }
 
     // 4. Fallback: primera activa
     if (!match) {
       match = lista.find(s => s.activa !== false) || lista[0] || null;
-      if (match) console.log(`[SF SUCURSAL] ⚠ Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
+      if (match) console.log(`[SF SUCURSAL] â  Fallback a primera sucursal: "${match.nombre||match.Nombre}" (emisor: "${match.emisorNombre||match.EmisorNombre}")`);
     }
 
     if (!match && !jwtEmisorId) throw new Error('No se encontraron sucursales en SimpleFactura');
@@ -1082,7 +1083,7 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
 
     // Prioridad emisorId: 1) desde match en lista, 2) desde JWT claims
     const emisorId = (match ? (match.emisorId || match.EmisorId || null) : null) || jwtEmisorId || null;
-    console.log(`[SF SUCURSAL] → sucursalId: ${uuid}, emisorId: ${emisorId} (fuente: ${match ? 'lista' : 'JWT'})`);
+    console.log(`[SF SUCURSAL] â sucursalId: ${uuid}, emisorId: ${emisorId} (fuente: ${match ? 'lista' : 'JWT'})`);
 
     // Actualizar cache con los valores correctos para este emisor
     if (sfTokenCache[email]) {
@@ -1097,9 +1098,9 @@ async function sfGetSucursalId(email, password, nombreSucursal, rutEmisorSF, man
   }
 }
 
-// ── CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) ───
-// Formato oficial SF: exactamente 39 columnas — NO agregar columnas extra aquí
-// Formato CSV de ejemplo descargado desde app.simplefactura.cl → Ventas → Factura Masiva → Ejemplos CSV
+// ââ CSV helper (formato oficial SimpleFactura, semicolon-separated con BOM) âââ
+// Formato oficial SF: exactamente 39 columnas â NO agregar columnas extra aquÃ­
+// Formato CSV de ejemplo descargado desde app.simplefactura.cl â Ventas â Factura Masiva â Ejemplos CSV
 // 39 columnas oficiales + 3 columnas de tracking interno (ID Transferencia, Cartola, Id Compuesto)
 const SF_CSV_HEADERS = [
   'Id','TipoDte','FmaPago','FechaEmision','Vencimiento','RutRecep','GiroRecep','Contacto','CorreoRecep',
@@ -1112,9 +1113,9 @@ const SF_CSV_HEADERS = [
 ];
 
 function rutParaSF(rut) {
-  // Formato SimpleFactura CSV: sin puntos, con guión (ej: 77653656-3)
+  // Formato SimpleFactura CSV: sin puntos, con guiÃ³n (ej: 77653656-3)
   if (!rut) return '';
-  return rut.replace(/\./g, ''); // quitar puntos, mantener guión
+  return rut.replace(/\./g, ''); // quitar puntos, mantener guiÃ³n
 }
 
 // Formato RUT con puntos para Credenciales (registro interno SimpleFactura: "77.859.376-9")
@@ -1122,10 +1123,10 @@ function rutConPuntos(rut) {
   if (!rut) return '';
   const clean = rut.replace(/\./g, ''); // asegurar sin puntos primero
   const dash = clean.lastIndexOf('-');
-  if (dash < 0) return rut; // sin guión, devolver tal cual
+  if (dash < 0) return rut; // sin guiÃ³n, devolver tal cual
   const num = clean.substring(0, dash);
   const dv  = clean.substring(dash + 1);
-  // insertar punto cada 3 dígitos desde la derecha
+  // insertar punto cada 3 dÃ­gitos desde la derecha
   const formatted = num.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${formatted}-${dv}`;
 }
@@ -1135,7 +1136,7 @@ function fechaParaSF(fechaISO) {
   if (!fechaISO) return todayCL().split('-').reverse().join('-');
   const parts = fechaISO.split('-');
   if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-  return fechaISO; // si ya está en otro formato, devolver tal cual
+  return fechaISO; // si ya estÃ¡ en otro formato, devolver tal cual
 }
 
 function escaparCsvSF(val) {
@@ -1151,8 +1152,8 @@ function buildSfCsvRows(movs, empresa) {
     const correoRecep = m.email_receptor || empresa.email_facturacion || '';
     // campo Correo (col 38): solo si el receptor tiene email propio
     const correoExtra = m.email_receptor || '';
-    // Campos del receptor — basados en el formato oficial de los CSVs de ejemplo
-    // GiroRecep, CiudadRecep pueden ir vacíos (SF los acepta); sólo RazonSocial y DirRecep requieren valor
+    // Campos del receptor â basados en el formato oficial de los CSVs de ejemplo
+    // GiroRecep, CiudadRecep pueden ir vacÃ­os (SF los acepta); sÃ³lo RazonSocial y DirRecep requieren valor
     const razonSocial = (m.razon_social || m.nombre_origen || '').substring(0, 100);
     const giro        = (m.giro || '').substring(0, 80);
     const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
@@ -1167,8 +1168,8 @@ function buildSfCsvRows(movs, empresa) {
       tipoDte,
       1,                        // FmaPago: contado
       fecha,                    // FechaEmision DD-MM-YYYY
-      fecha,                    // Vencimiento (igual a emisión)
-      rutParaSF(m.rut),         // RutRecep sin puntos con guión
+      fecha,                    // Vencimiento (igual a emisiÃ³n)
+      rutParaSF(m.rut),         // RutRecep sin puntos con guiÃ³n
       giro,
       'NO INFORMADO',           // Contacto
       correoRecep,              // CorreoRecep
@@ -1177,7 +1178,7 @@ function buildSfCsvRows(movs, empresa) {
       ciudad,
       razonSocial,
       '', '', '',               // DirDest, CmnaDest, CiudadDest
-      '', '', '', '', '',       // Referencias (vacías)
+      '', '', '', '', '',       // Referencias (vacÃ­as)
       '',                       // CodigoProducto
       m.nombre_item || 'Venta paquete activo digital',
       m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
@@ -1189,9 +1190,9 @@ function buildSfCsvRows(movs, empresa) {
       m.monto_total || 0,       // TotalProducto
       '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
       correoExtra,              // Correo (col 39)
-      m.id_transferencia || '', // ID Transferencia (col 40 — tracking)
-      m.banco_cartola || '',    // Cartola (col 41 — tracking)
-      m.id_compuesto || ''      // Id Compuesto (col 42 — tracking)
+      m.id_transferencia || '', // ID Transferencia (col 40 â tracking)
+      m.banco_cartola || '',    // Cartola (col 41 â tracking)
+      m.id_compuesto || ''      // Id Compuesto (col 42 â tracking)
     ];
   });
 }
@@ -1204,30 +1205,30 @@ function buildSfCsvContent(movs, empresa) {
   return '\uFEFF' + csv; // BOM UTF-8 para compatibilidad Excel/SimpleFactura
 }
 
-// Alias para compatibilidad con el endpoint de emisión vía API
+// Alias para compatibilidad con el endpoint de emisiÃ³n vÃ­a API
 function buildSfCsv(movs, empresa) {
   return buildSfCsvContent(movs, empresa);
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MÓDULO: OPEN FACTURA (HAULMER) — TS CAPITAL
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// MÃDULO: OPEN FACTURA (HAULMER) â TS CAPITAL
 // API Key: configurada en empresa.haulmer.api_key
 // Docs: https://docs.haulmer.com/
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 // Haulmer CSV format (semicolon-separated, 2-row header, no BOM needed)
 // Formato exacto obtenido de archivos CSV de TS Capital: Boletas 1 - Febrero 2026 TS.csv
 const HAULMER_CSV_ROW1  = 'generales;;;;;receptor;;;;;detalles;;;totales;;;';
 const HAULMER_CSV_ROW2  = [
   'Tipo de documento (*)',
-  'Fecha de emisión (*)',
+  'Fecha de emisiÃ³n (*)',
   'Tipo de venta (*)',
   'Forma de pago (*)',
   'Tipo de servicio (*)',
   'RUT Receptor (*)',
-  'Razón Social (*)',
+  'RazÃ³n Social (*)',
   'Giro (*)',
-  'Dirección (*)',
+  'DirecciÃ³n (*)',
   'Comuna (*)',
   'Nombre de Item (*)',
   'Cantidad (*)',
@@ -1245,7 +1246,7 @@ function escaparCsvHaulmer(val) {
   return s;
 }
 
-// Formato fecha DD-MM-YYYY para exportación Excel
+// Formato fecha DD-MM-YYYY para exportaciÃ³n Excel
 // Acepta: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YYYY HH:MM
 function formatoFechaDDMMYYYY(fecha) {
   if (!fecha) return '';
@@ -1260,7 +1261,7 @@ function formatoFechaDDMMYYYY(fecha) {
     const [d, m, y] = s.split('/');
     return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
   }
-  // DD-MM-YYYY (ya está en el formato correcto)
+  // DD-MM-YYYY (ya estÃ¡ en el formato correcto)
   if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
     const [d, m, y] = s.split('-');
     return `${d.padStart(2,'0')}-${m.padStart(2,'0')}-${y}`;
@@ -1286,7 +1287,7 @@ function buildHaulmerCsvContent(movs, empresa) {
   for (const m of movs) {
     const tipoDte = getTipoDte(m.rut_normalizado, empresa);
     const fecha   = fechaParaHaulmer(m.fecha);
-    const rut     = m.rut ? m.rut : '';   // con puntos y guión
+    const rut     = m.rut ? m.rut : '';   // con puntos y guiÃ³n
     const razon   = (m.razon_social || m.nombre_origen || '').substring(0, 100);
     const giro    = (m.giro || 'NO INFORMADA').substring(0, 80);
     const dir     = (m.direccion || 'NO INFORMADA').substring(0, 100);
@@ -1299,7 +1300,7 @@ function buildHaulmerCsvContent(movs, empresa) {
       fecha,                      // YYYY-MM-DD
       ' Ventas del Giro',
       ' Contado',
-      '',                         // Tipo de servicio (vacío para TS Capital)
+      '',                         // Tipo de servicio (vacÃ­o para TS Capital)
       rut,
       razon,
       giro,
@@ -1319,7 +1320,7 @@ function buildHaulmerCsvContent(movs, empresa) {
   return '\uFEFF' + csv;
 }
 
-// ── Exportar CSV formato Haulmer para un lote ─────────────────────────────────
+// ââ Exportar CSV formato Haulmer para un lote âââââââââââââââââââââââââââââââââ
 app.get('/api/facturacion/exportar-haulmer-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const movs = db.prepare('SELECT * FROM movimientos WHERE lote_id = ?').all(loteId);
@@ -1335,7 +1336,7 @@ app.get('/api/facturacion/exportar-haulmer-csv/:lote_id', requireAuth, (req, res
   res.send(csv);
 });
 
-// ── Exportar CSV Haulmer para selección manual (sin lote) ─────────────────────
+// ââ Exportar CSV Haulmer para selecciÃ³n manual (sin lote) âââââââââââââââââââââ
 app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) => {
   const { movimiento_ids, empresa_id } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -1351,7 +1352,7 @@ app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) 
   res.send(csv);
 });
 
-// ── Emitir DTE vía Open Factura (Haulmer) API ────────────────────────────────
+// ââ Emitir DTE vÃ­a Open Factura (Haulmer) API ââââââââââââââââââââââââââââââââ
 // Haulmer acepta JSON individual o CSV masivo. Usamos JSON masivo (array de DTEs).
 // Endpoint: POST https://api.haulmer.com/v2/dte/document
 // Auth header: apikey: <api_key>
@@ -1375,7 +1376,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   // Construir payload JSON para Haulmer API v2
   // Formato: { response: [...], dte: { Encabezado: {...}, Detalle: [...] } }
   // Docs: docsapi-openfactura.haulmer.com
-  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos, con guión
+  const rutEmisor  = (empresa.rut || '77.506.343-2').replace(/\./g, ''); // sin puntos, con guiÃ³n
   const giroEmisor = empresa.giro || 'FONDOS Y SOCIEDADES DE INVERSION Y ENTIDADES FINANCIERAS SIMILARES';
   const emailFact  = empresa.email_facturacion || 'facturas@tscapitalchile.cl';
   const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital';
@@ -1395,9 +1396,9 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const fecha   = fechaParaHaulmer(m.fecha);
       const monto   = Math.round(m.monto_total || m.monto || 0);
 
-      // Payload Haulmer v2 — orden de campos sigue esquema SII estricto
-      // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd → NO tiene FmaPago
-      // Facturas (33/34): DTE_v10.xsd → tiene FmaPago
+      // Payload Haulmer v2 â orden de campos sigue esquema SII estricto
+      // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd â NO tiene FmaPago
+      // Facturas (33/34): DTE_v10.xsd â tiene FmaPago
       const esBoleta = (tipoDte === 39 || tipoDte === 41);
       const idDoc = { TipoDTE: tipoDte, FchEmis: fecha };
       if (esBoleta) {
@@ -1486,7 +1487,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
-        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
+        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} â HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
           const folioVal = data?.folio || data?.Folio || data?.FOLIO || null;
@@ -1523,7 +1524,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   }
 });
 
-// ── Test conexión Haulmer ─────────────────────────────────────────────────────
+// ââ Test conexiÃ³n Haulmer âââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
@@ -1532,31 +1533,31 @@ app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, re
 
   try {
     // Haulmer no tiene un endpoint de "ping" oficial, pero un GET al endpoint de documentos
-    // con la API key devuelve un error controlado si la key es válida vs 401 si no lo es
+    // con la API key devuelve un error controlado si la key es vÃ¡lida vs 401 si no lo es
     const resp = await fetch('https://api.haulmer.com/v2/dte/document', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': hConf.api_key
       },
-      body: JSON.stringify({}), // payload vacío — esperamos error de validación, no 401
+      body: JSON.stringify({}), // payload vacÃ­o â esperamos error de validaciÃ³n, no 401
       signal: AbortSignal.timeout(10000)
     });
     const raw = await resp.text();
     console.log(`[HAULMER TEST] HTTP ${resp.status}: ${raw.substring(0,300)}`);
 
     if (resp.status === 401 || resp.status === 403) {
-      return res.json({ ok: false, error: 'API Key inválida o sin permisos (HTTP ' + resp.status + ')' });
+      return res.json({ ok: false, error: 'API Key invÃ¡lida o sin permisos (HTTP ' + resp.status + ')' });
     }
-    // Cualquier otro status (400, 422, etc) indica que la key es válida pero el payload está vacío
-    res.json({ ok: true, mensaje: 'API Key válida — conexión OK', httpStatus: resp.status });
+    // Cualquier otro status (400, 422, etc) indica que la key es vÃ¡lida pero el payload estÃ¡ vacÃ­o
+    res.json({ ok: true, mensaje: 'API Key vÃ¡lida â conexiÃ³n OK', httpStatus: resp.status });
   } catch (err) {
     console.error('[HAULMER TEST ERROR]', err.message);
-    res.json({ ok: false, error: 'Error de conexión: ' + err.message });
+    res.json({ ok: false, error: 'Error de conexiÃ³n: ' + err.message });
   }
 });
 
-// ── Debug: descargar el CSV que se enviaría a SF sin emitirlo ─────────────────
+// ââ Debug: descargar el CSV que se enviarÃ­a a SF sin emitirlo âââââââââââââââââ
 app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
@@ -1585,10 +1586,10 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const empresa = empresas[lote.empresa_id];
   const sfConf = empresa?.simplefactura || {};
   if (!sfConf.api_token && (!sfConf.username || !sfConf.password)) {
-    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseña)' });
+    return res.status(400).json({ error: 'Credenciales de SimpleFactura no configuradas (necesita Token API o email/contraseÃ±a)' });
   }
 
-  // Al re-intentar, los movimientos pueden estar en estado 'error' → resetearlos a 'en_lote'
+  // Al re-intentar, los movimientos pueden estar en estado 'error' â resetearlos a 'en_lote'
   const nowReset = nowCL();
   const resetResult = db.prepare("UPDATE movimientos SET estado='en_lote', updated_at=? WHERE lote_id=? AND estado IN ('error','listo')").run(nowReset, loteId);
   if (resetResult.changes > 0) console.log(`[EMITIR] ${resetResult.changes} movimientos reseteados a 'en_lote' para reintento`);
@@ -1600,16 +1601,16 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const sfConfig = empresa.simplefactura;
 
   try {
-    // 1. Obtener token SF (API token estático tiene prioridad sobre login)
+    // 1. Obtener token SF (API token estÃ¡tico tiene prioridad sobre login)
     const token = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
-    console.log(`[SF] Token obtenido para ${lote.empresa_id} (método: ${sfConfig.api_token ? 'API token' : 'login'})`);
+    console.log(`[SF] Token obtenido para ${lote.empresa_id} (mÃ©todo: ${sfConfig.api_token ? 'API token' : 'login'})`);
 
     // 2. Generar CSV en formato SimpleFactura
     const csvContent = buildSfCsv(movs, empresa);
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
     const csvBuffer = Buffer.from(csvContent, 'utf8');
 
-    // 3. Subir CSV — API pública documentada: POST https://api.simplefactura.cl/massiveInvoice
+    // 3. Subir CSV â API pÃºblica documentada: POST https://api.simplefactura.cl/massiveInvoice
     //    Docs: https://documentacion.simplefactura.cl/#aa06de6b-dd1d-4b63-812e-e08f703c9c58
     //    Form fields: "data" (JSON con rutEmisor+nombreSucursal) + "input" (archivo CSV)
     const SF_UPLOAD_URL = `${SF_API}/massiveInvoice`;
@@ -1617,7 +1618,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const nombreSucursal = (sfConfig.nombre_sucursal || 'Casa Matriz').trim();
     const rutEmisor      = rutParaSF(sfConfig.rut_emisor || empresa.rut || '');
 
-    // Construir campo "data" según documentación oficial SF
+    // Construir campo "data" segÃºn documentaciÃ³n oficial SF
     const dataJson = JSON.stringify({
       rutEmisor: rutEmisor,
       nombreSucursal: nombreSucursal
@@ -1641,22 +1642,22 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
     let uploadResp = await doUpload(token);
 
-    // Si 401, el token puede haber expirado → refrescar y reintentar una vez
+    // Si 401, el token puede haber expirado â refrescar y reintentar una vez
     if (uploadResp.status === 401) {
-      console.log('[SF UPLOAD] Token rechazado (401) — refrescando y reintentando...');
+      console.log('[SF UPLOAD] Token rechazado (401) â refrescando y reintentando...');
       delete sfTokenCache[sfConfig.username];
       const newToken = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
       uploadResp = await doUpload(newToken);
     }
 
     const rawText = await uploadResp.text();
-    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} → ${rawText.substring(0, 800)}`);
+    console.log(`[SF UPLOAD] HTTP ${uploadResp.status} â ${rawText.substring(0, 800)}`);
     let data;
     try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, httpStatus: uploadResp.status }; }
 
-    // Respuesta exitosa según docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
+    // Respuesta exitosa segÃºn docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
     const isSuccess = uploadResp.ok && data?.status === 200 && !data?.errors;
-    // También aceptar formato antiguo por compatibilidad
+    // TambiÃ©n aceptar formato antiguo por compatibilidad
     const tieneErrores = data?.data?.tieneErrores;
     const loteEstado = (isSuccess || (uploadResp.ok && tieneErrores !== true)) ? 'emitido' : 'error';
 
@@ -1680,7 +1681,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       const errBody = Array.isArray(errs) ? errs.join('. ')
         : (typeof errs === 'object' && errs !== null ? JSON.stringify(errs) : errs)
         || data?.message || data?.title
-        || (data?.raw !== undefined ? `Respuesta vacía del servidor` : null)
+        || (data?.raw !== undefined ? `Respuesta vacÃ­a del servidor` : null)
         || JSON.stringify(data);
       mensaje = `HTTP ${uploadResp.status}: ${errBody} [data enviada: ${lastDataJson}]`;
     }
@@ -1711,7 +1712,7 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   const sfConf = empresa?.simplefactura || {};
   if (!sfConf.api_token && !sfConf.username) return res.status(400).json({ error: 'Credenciales no configuradas' });
   const email = sfConf.username || 'api-token';
-  // Invalidar caché para forzar obtención fresca en el test
+  // Invalidar cachÃ© para forzar obtenciÃ³n fresca en el test
   delete sfTokenCache[email];
   try {
     const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
@@ -1720,7 +1721,7 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
     const rutEmisorSF_test = (sfConf.rut_emisor_sf || '').trim() || null;
     const manualSucId = (sfConf.sucursal_id_sf || '').trim() || null;
     const manualEmId  = (sfConf.emisor_id_sf  || '').trim() || null;
-    // También obtener sucursalId UUID para diagnóstico
+    // TambiÃ©n obtener sucursalId UUID para diagnÃ³stico
     const sucursalUUID = await sfGetSucursalId(email, sfConf.password, nombreSucursal, rutEmisorSF_test, manualSucId, manualEmId);
     const emisorId = sfTokenCache[email]?.emisorId || null;
     let solicitudObj;
@@ -1753,7 +1754,7 @@ async function sfGetTiposPlantilla(token) {
   const body = await r.text();
   let parsed;
   try { parsed = JSON.parse(body); } catch(e) { return []; }
-  // PagedResponse → items en .data
+  // PagedResponse â items en .data
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.data)) return parsed.data;
   return [];
@@ -1774,7 +1775,7 @@ async function sfGetPlantillasEmisor(token, emisorId) {
   return [];
 }
 
-// Diagnóstico de plantillas: lista las plantillas del emisor y resuelve tipos DTE
+// DiagnÃ³stico de plantillas: lista las plantillas del emisor y resuelve tipos DTE
 app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
@@ -1794,12 +1795,12 @@ app.get('/api/facturacion/diagnostico-plantillas/:empresa_id', requireAuth, asyn
     // 1. Plantillas del emisor
     const plantillasEmisor = await sfGetPlantillasEmisor(token, emisorId);
 
-    // 2. Tipos globales: GET /api/Plantilla/list → PagedResponse { data: [TipoPlantillaEnt] }
+    // 2. Tipos globales: GET /api/Plantilla/list â PagedResponse { data: [TipoPlantillaEnt] }
     //    TipoPlantillaEnt.tipoPlantillaId = mismo UUID que PlantillaEmisor.tipoPlantillaId
-    //    TipoPlantillaEnt.codigoTipoDte   = código DTE entero (33, 34, 39, 41...)
+    //    TipoPlantillaEnt.codigoTipoDte   = cÃ³digo DTE entero (33, 34, 39, 41...)
     const tiposPlantilla = await sfGetTiposPlantilla(token);
 
-    // 3. Construir mapa tipoPlantillaId → TipoPlantillaEnt para cruce
+    // 3. Construir mapa tipoPlantillaId â TipoPlantillaEnt para cruce
     const tipoMap = {};
     for (const t of tiposPlantilla) {
       const tid = t.tipoPlantillaId || t.TipoPlantillaId;
@@ -1873,7 +1874,7 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
     // Obtener plantillas del emisor
     const plantillas = await sfGetPlantillasEmisor(token, emisorId);
 
-    // Enriquecer con código DTE
+    // Enriquecer con cÃ³digo DTE
     const enriquecidas = plantillas.map(p => ({
       ...p,
       _codigoDte: tipoMap[p.tipoPlantillaId || p.TipoPlantillaId]?.codigoTipoDte ?? null
@@ -1926,7 +1927,7 @@ app.post('/api/facturacion/activar-plantillas/:empresa_id', requireAuth, async (
   }
 });
 
-// Listar todos los emisores/sucursales disponibles en la cuenta SF (útil para cuentas multi-RUT)
+// Listar todos los emisores/sucursales disponibles en la cuenta SF (Ãºtil para cuentas multi-RUT)
 app.get('/api/facturacion/listar-emisores/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa  = empresas[req.params.empresa_id];
@@ -1956,7 +1957,7 @@ app.get('/api/facturacion/listar-emisores/:empresa_id', requireAuth, async (req,
   }
 });
 
-// Diagnóstico: muestra los claims del JWT de SimpleFactura (útil para depurar solicitudString)
+// DiagnÃ³stico: muestra los claims del JWT de SimpleFactura (Ãºtil para depurar solicitudString)
 app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) => {
   const empresas = getAppData('empresas');
   const empresa = empresas[req.params.empresa_id];
@@ -1971,7 +1972,7 @@ app.get('/api/facturacion/debug-jwt/:empresa_id', requireAuth, async (req, res) 
   }
 });
 
-// ── Historial de facturación ─────────────────────────────────────────────────
+// ââ Historial de facturaciÃ³n âââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const { buscar, fecha_desde, fecha_hasta, tipo_dte, limit: lim, offset: off } = req.query;
@@ -1995,7 +1996,7 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
   // Buscador: por nombre, RUT o monto
   if (buscar) {
     const term = buscar.trim();
-    // Detectar si es búsqueda por monto (solo números y puntos/comas)
+    // Detectar si es bÃºsqueda por monto (solo nÃºmeros y puntos/comas)
     if (/^[\d.,]+$/.test(term)) {
       const montoNum = parseFloat(term.replace(/\./g, '').replace(',', '.'));
       if (!isNaN(montoNum)) {
@@ -2018,7 +2019,7 @@ app.get('/api/facturacion/historial', requireAuth, (req, res) => {
 
   const movs = db.prepare(sql).all(...params);
 
-  // Estadísticas resumen
+  // EstadÃ­sticas resumen
   const statsSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as cnt, SUM(monto_total) as suma FROM')
     .replace(/ORDER BY .+$/, '');
   // Re-run without limit/offset for stats
@@ -2042,7 +2043,7 @@ app.post('/api/facturacion/marcar-exportado/:lote_id', requireAuth, (req, res) =
   res.json({ ok: true });
 });
 
-// ── Export CSV for SimpleFactura manual upload ───────────────────────────────
+// ââ Export CSV for SimpleFactura manual upload âââââââââââââââââââââââââââââââ
 app.get('/api/facturacion/exportar-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;
   const movs = db.prepare('SELECT * FROM movimientos WHERE lote_id = ?').all(loteId);
@@ -2074,7 +2075,7 @@ app.post('/api/facturacion/exportar-seleccion', requireAuth, (req, res) => {
   res.send(csv);
 });
 
-// ── Dashboard stats ──────────────────────────────────────────────────────────
+// ââ Dashboard stats ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/dashboard', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const stats = {};
@@ -2097,7 +2098,7 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   res.json(stats);
 });
 
-// ── Advanced Dashboard stats (monthly breakdown, trends) ────────────────────
+// ââ Advanced Dashboard stats (monthly breakdown, trends) ââââââââââââââââââââ
 app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresaIds = empresaId ? [empresaId] : ['tg-inversiones', 'mt-inversiones', 'ts-capital'];
@@ -2214,19 +2215,19 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   });
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MÓDULO: PROCESAMIENTO AUTOMÁTICO DE CARTOLAS CON SIMPLEAPI
-// ══════════════════════════════════════════════════════════════════════════════
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// MÃDULO: PROCESAMIENTO AUTOMÃTICO DE CARTOLAS CON SIMPLEAPI
+// ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 // Cargar xlsx para parsing server-side
 let XLSX_LIB;
 try { XLSX_LIB = require('xlsx'); } catch(e) {
-  console.warn('[XLSX] Paquete no disponible — instalar con: npm install xlsx');
+  console.warn('[XLSX] Paquete no disponible â instalar con: npm install xlsx');
 }
 
-// ── SimpleAPI configuration ───────────────────────────────────────────────────
+// ââ SimpleAPI configuration âââââââââââââââââââââââââââââââââââââââââââââââââââ
 const SIMPLEAPI_BASE = 'https://api.simpleapi.cl';
-// Keys por defecto (hardcoded como fallback); también se pueden sobrescribir vía DB
+// Keys por defecto (hardcoded como fallback); tambiÃ©n se pueden sobrescribir vÃ­a DB
 const SIMPLEAPI_KEYS_DEFAULT = {
   'tg-inversiones': '2131-W810-6394-2111-1765',
   'mt-inversiones': '2128-N940-6394-5813-7213'
@@ -2252,7 +2253,7 @@ function cleanSantanderName(glosa) {
     .replace(/\s{2,}/g, ' ');
 }
 
-// Formatear dígitos de RUT a "XX.XXX.XXX-X"
+// Formatear dÃ­gitos de RUT a "XX.XXX.XXX-X"
 function formatRutDigits(rutDigits) {
   if (!rutDigits) return '';
   const clean = String(rutDigits).replace(/[^0-9kK]/g, '').toUpperCase();
@@ -2263,9 +2264,9 @@ function formatRutDigits(rutDigits) {
   return formatted + '-' + dv;
 }
 
-// ── Parser BCI (.xls) ─────────────────────────────────────────────────────────
+// ââ Parser BCI (.xls) âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function parseBCICartola(buffer) {
-  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -2283,7 +2284,7 @@ function parseBCICartola(buffer) {
     const row = data[i];
     if (!row || row.length < 5) continue;
 
-    // Columna 0: Fecha (string DD/MM/YYYY o serial numérico Excel)
+    // Columna 0: Fecha (string DD/MM/YYYY o serial numÃ©rico Excel)
     let fecha = '';
     const fechaRaw = row[0];
     if (typeof fechaRaw === 'number') {
@@ -2321,7 +2322,7 @@ function parseBCICartola(buffer) {
       id_transferencia: idTransf,
       fecha, monto,
       glosa: nombre,
-      rut: rutRaw,                            // con puntos y guión del banco
+      rut: rutRaw,                            // con puntos y guiÃ³n del banco
       nombre_origen: nombre,
       banco_origen: bancoOrigen || 'BCI',
       cuenta_origen: cuentaOrig
@@ -2330,9 +2331,9 @@ function parseBCICartola(buffer) {
   return movimientos;
 }
 
-// ── Parser Santander (.xlsx) ──────────────────────────────────────────────────
+// ââ Parser Santander (.xlsx) ââââââââââââââââââââââââââââââââââââââââââââââââââ
 function parseSantanderCartola(buffer) {
-  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -2341,7 +2342,7 @@ function parseSantanderCartola(buffer) {
   let headerIdx = -1;
   for (let i = 0; i < Math.min(15, data.length); i++) {
     const cell0 = String(data[i]?.[0] || '');
-    if (cell0.includes('mero de Movimiento') || cell0.includes('Número')) { headerIdx = i; break; }
+    if (cell0.includes('mero de Movimiento') || cell0.includes('NÃºmero')) { headerIdx = i; break; }
   }
   if (headerIdx === -1) headerIdx = 9;
 
@@ -2352,7 +2353,7 @@ function parseSantanderCartola(buffer) {
     const idRaw = String(row[0] || '').trim();
     if (!idRaw) continue;
 
-    // Fecha DD/MM/YYYY → YYYY-MM-DD
+    // Fecha DD/MM/YYYY â YYYY-MM-DD
     let fecha = String(row[1] || '').trim();
     if (fecha.includes('/')) {
       const [d, m, y] = fecha.split('/');
@@ -2367,7 +2368,7 @@ function parseSantanderCartola(buffer) {
 
     const glosa = String(row[3] || '').trim();
 
-    // Extraer RUT desde glosa: patrón "0XXXXXXXXXX Transf de NOMBRE"
+    // Extraer RUT desde glosa: patrÃ³n "0XXXXXXXXXX Transf de NOMBRE"
     let rutDigits = '';
     let nombre    = '';
     const m1 = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
@@ -2380,27 +2381,27 @@ function parseSantanderCartola(buffer) {
       nombre = cleanSantanderName(glosa);
     }
 
-    // ID único: si todos ceros usar "S{i}"
+    // ID Ãºnico: si todos ceros usar "S{i}"
     const useId = idRaw.replace(/0/g,'') === '' ? `S${i}` : idRaw;
 
     movimientos.push({
       id_transferencia: useId,
       fecha, monto, glosa,
       rut: rutDigits ? formatRutDigits(rutDigits) : '',
-      rut_digits: rutDigits,                  // solo dígitos para consulta API
+      rut_digits: rutDigits,                  // solo dÃ­gitos para consulta API
       nombre_origen: nombre,
-      banco_origen: 'No específica',
+      banco_origen: 'No especÃ­fica',
       cuenta_origen: '999999'
     });
   }
   return movimientos;
 }
 
-// ── Parser Banco Estado (.xlsx) ───────────────────────────────────────────────
+// ââ Parser Banco Estado (.xlsx) âââââââââââââââââââââââââââââââââââââââââââââââ
 // Formato: sheet "Transferencias" con columnas:
-// N° Operación | Fecha - Hora | Cuenta Destino | Alias Destino | Rut Origen | Banco Origen | Nombre Origen | Cuenta Origen | Monto
+// NÂ° OperaciÃ³n | Fecha - Hora | Cuenta Destino | Alias Destino | Rut Origen | Banco Origen | Nombre Origen | Cuenta Origen | Monto
 function parseBancoEstadoCartola(buffer) {
-  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  if (!XLSX_LIB) throw new Error('MÃ³dulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
 
   // Buscar sheet "Transferencias" o usar el primero disponible
@@ -2414,18 +2415,18 @@ function parseBancoEstadoCartola(buffer) {
   // Buscar fila de encabezado
   for (let i = 0; i < Math.min(5, data.length); i++) {
     const rowStr = data[i].join('|');
-    if (rowStr.includes('Rut Origen') || rowStr.includes('N° Operación') || rowStr.includes('Operaci')) {
+    if (rowStr.includes('Rut Origen') || rowStr.includes('NÂ° OperaciÃ³n') || rowStr.includes('Operaci')) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx === -1) headerIdx = 0;
 
-  // Mapear índices de columnas desde la fila de cabecera
+  // Mapear Ã­ndices de columnas desde la fila de cabecera
   const headers = data[headerIdx].map(h => String(h || '').trim());
   const colIdx = (name) => headers.findIndex(h => h.includes(name));
 
-  const idxId     = colIdx('Operaci');   // N° Operación
+  const idxId     = colIdx('Operaci');   // NÂ° OperaciÃ³n
   const idxFecha  = colIdx('Fecha');     // Fecha - Hora
   const idxRut    = colIdx('Rut Origen');
   const idxBanco  = colIdx('Banco Origen');
@@ -2440,7 +2441,7 @@ function parseBancoEstadoCartola(buffer) {
     const idRaw = String(row[idxId] !== undefined ? row[idxId] : '').trim();
     if (!idRaw) continue;
 
-    // Fecha: "DD/MM/YYYY HH:MM" → YYYY-MM-DD
+    // Fecha: "DD/MM/YYYY HH:MM" â YYYY-MM-DD
     let fecha = '';
     const fechaRaw = row[idxFecha];
     if (typeof fechaRaw === 'number') {
@@ -2479,10 +2480,10 @@ function parseBancoEstadoCartola(buffer) {
   return movimientos;
 }
 
-// ── Consultar RUT en SimpleAPI ────────────────────────────────────────────────
+// ââ Consultar RUT en SimpleAPI ââââââââââââââââââââââââââââââââââââââââââââââââ
 async function consultarRUTSimpleAPI(rutNorm, apiKey) {
   if (!apiKey || !rutNorm || rutNorm.length < 3) return null;
-  // Intentar dos variantes del endpoint (la documentación puede diferir entre versiones)
+  // Intentar dos variantes del endpoint (la documentaciÃ³n puede diferir entre versiones)
   const endpoints = [
     `${SIMPLEAPI_BASE}/v1/rut/${encodeURIComponent(rutNorm)}`,
     `https://www.simpleapi.cl/api/Rut/${encodeURIComponent(rutNorm)}`
@@ -2495,11 +2496,11 @@ async function consultarRUTSimpleAPI(rutNorm, apiKey) {
       });
       if (resp.status === 404) { console.log(`[SIMPLEAPI] RUT ${rutNorm} no encontrado (404)`); return null; }
       if (!resp.ok) {
-        console.log(`[SIMPLEAPI] RUT ${rutNorm} → HTTP ${resp.status} en ${url}`);
+        console.log(`[SIMPLEAPI] RUT ${rutNorm} â HTTP ${resp.status} en ${url}`);
         continue; // intentar siguiente endpoint
       }
       const data = await resp.json();
-      console.log(`[SIMPLEAPI] RUT ${rutNorm} → ${JSON.stringify(data).substring(0,200)}`);
+      console.log(`[SIMPLEAPI] RUT ${rutNorm} â ${JSON.stringify(data).substring(0,200)}`);
       return data;
     } catch(e) {
       console.warn(`[SIMPLEAPI] Error en ${url}: ${e.message}`);
@@ -2521,16 +2522,16 @@ function normalizarRespuestaSimpleAPI(data) {
   };
 }
 
-// ── Endpoint principal: procesar cartola server-side con SimpleAPI ─────────────
+// ââ Endpoint principal: procesar cartola server-side con SimpleAPI âââââââââââââ
 app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
-    if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no instalado — ejecutar: npm install xlsx' });
+    if (!req.file) return res.status(400).json({ error: 'No se subiÃ³ archivo' });
+    if (!XLSX_LIB) return res.status(500).json({ error: 'MÃ³dulo xlsx no instalado â ejecutar: npm install xlsx' });
 
     const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
 
-    // Auto-detectar banco si no viene explícito
+    // Auto-detectar banco si no viene explÃ­cito
     let bancoCartola = (req.body.banco || '').toUpperCase().trim();
     if (!bancoCartola) {
       const fname = req.file.originalname.toLowerCase();
@@ -2555,7 +2556,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
 
     if (movimientosRaw.length === 0) {
       return res.status(422).json({
-        error: `No se encontraron movimientos válidos en la cartola ${bancoCartola}. ` +
+        error: `No se encontraron movimientos vÃ¡lidos en la cartola ${bancoCartola}. ` +
                'Verifica que el archivo corresponda al banco seleccionado y tenga el formato correcto.'
       });
     }
@@ -2566,26 +2567,26 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     const config    = getAppData('config') || {};
     const now       = nowCL();
 
-    // Cargar clientes existentes en memoria (para matching rápido)
+    // Cargar clientes existentes en memoria (para matching rÃ¡pido)
     const allClientes = db.prepare('SELECT * FROM clientes WHERE empresa_id = ?').all(empresaId);
     const clienteMap  = new Map();
     for (const c of allClientes) {
       if (c.rut_normalizado) clienteMap.set(c.rut_normalizado, c);
     }
 
-    // ── Consultar SimpleAPI para RUTs de Santander desconocidos ──────────────
-    const simpleApiResults = {};  // rutNorm → datos normalizados
+    // ââ Consultar SimpleAPI para RUTs de Santander desconocidos ââââââââââââââ
+    const simpleApiResults = {};  // rutNorm â datos normalizados
     let simpleApiConsultados = 0;
 
     if (bancoCartola === 'SANTANDER' && apiKey) {
-      // Recopilar RUTs únicos que no están en nuestra base
+      // Recopilar RUTs Ãºnicos que no estÃ¡n en nuestra base
       const rutsNuevos = new Set();
       for (const mov of movimientosRaw) {
         const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
         if (rutNorm && !clienteMap.has(rutNorm)) rutsNuevos.add(rutNorm);
       }
 
-      // Consultar en lotes de 3 (respetar rate limit ≤3 req/seg de SimpleAPI)
+      // Consultar en lotes de 3 (respetar rate limit â¤3 req/seg de SimpleAPI)
       const rutArr = [...rutsNuevos];
       for (let i = 0; i < rutArr.length; i += 3) {
         const batch = rutArr.slice(i, i + 3);
@@ -2606,7 +2607,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       console.log(`[SIMPLEAPI] ${simpleApiConsultados} RUTs encontrados de ${rutArr.size || rutArr.length} consultados`);
     }
 
-    // ── Procesar e insertar movimientos ───────────────────────────────────────
+    // ââ Procesar e insertar movimientos âââââââââââââââââââââââââââââââââââââââ
     const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
@@ -2635,7 +2636,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           const idTransf    = String(mov.id_transferencia || '').trim();
           const idCompuesto = `${idTransf}_${bancoCartola}`;
 
-          // ── Verificar duplicado ──────────────────────────────────────────
+          // ââ Verificar duplicado ââââââââââââââââââââââââââââââââââââââââââ
           const existing = checkDup.get(idCompuesto);
           if (existing) {
             duplicados++;
@@ -2643,7 +2644,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             continue;
           }
 
-          // ── Determinar tipo de cliente y RUT ────────────────────────────
+          // ââ Determinar tipo de cliente y RUT ââââââââââââââââââââââââââââ
           const rutNorm = normalizeRut(mov.rut || mov.rut_digits || '');
           let estado = 'pendiente', tipoDte = null;
           let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
@@ -2654,7 +2655,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             const clienteExistente = clienteMap.get(rutNorm);
 
             if (clienteExistente) {
-              // ✅ Cliente conocido en BD
+              // â Cliente conocido en BD
               estado       = 'listo';
               razonSocial  = clienteExistente.razon_social || '';
               giro         = clienteExistente.giro         || '';
@@ -2664,12 +2665,12 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               emailReceptor= clienteExistente.email         || '';
               fuenteRazonSocial = 'bd';
             } else {
-              // 🆕 Cliente nuevo — determinar fuente del nombre
+              // ð Cliente nuevo â determinar fuente del nombre
               clienteEsNuevo = true;
               const apiData  = simpleApiResults[rutNorm];
 
               if (apiData?.razon_social) {
-                // ✅ SimpleAPI devolvió datos
+                // â SimpleAPI devolviÃ³ datos
                 razonSocial   = apiData.razon_social;
                 giro          = apiData.giro         || '';
                 direccion     = apiData.direccion     || '';
@@ -2684,7 +2685,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 estado      = tipoDte === 41 ? 'listo' : 'pendiente';
                 fuenteRazonSocial = 'cartola_bci';
               } else {
-                // Santander sin datos API → limpiar nombre de glosa
+                // Santander sin datos API â limpiar nombre de glosa
                 razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();
                 estado      = tipoDte === 41 ? 'listo' : 'pendiente';
                 fuenteRazonSocial = 'glosa_limpia';
@@ -2765,7 +2766,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
   }
 });
 
-// ── Consulta manual de RUT en SimpleAPI (desde la UI) ────────────────────────
+// ââ Consulta manual de RUT en SimpleAPI (desde la UI) ââââââââââââââââââââââââ
 app.post('/api/simpleapi/consultar-rut', requireAuth, async (req, res) => {
   const { rut, empresa_id } = req.body;
   if (!rut) return res.status(400).json({ error: 'RUT requerido' });
@@ -2781,9 +2782,9 @@ app.post('/api/simpleapi/consultar-rut', requireAuth, async (req, res) => {
   res.json({ ok: true, rut_normalizado: rutNorm, data: normalized, raw: rawData });
 });
 
-// ── Exportar base de datos en formato Excel original ─────────────────────────
+// ââ Exportar base de datos en formato Excel original âââââââââââââââââââââââââ
 app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
-  if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no disponible' });
+  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃ³dulo xlsx no disponible' });
   const empresaId = req.params.empresa_id;
   if (req.user.role !== 'admin' && req.user.empresa !== empresaId) {
     return res.status(403).json({ error: 'Sin acceso a esta empresa' });
@@ -2791,7 +2792,7 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
 
   const wb = XLSX_LIB.utils.book_new();
 
-  // ── Hoja RECIBIDAS ──────────────────────────────────────────────────────────
+  // ââ Hoja RECIBIDAS ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   const movHeaders = ['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Origen','Cuenta Origen','Monto','Nombre Origen','Estado','Otros','Cartola'];
   const movs = db.prepare('SELECT * FROM movimientos WHERE empresa_id = ? ORDER BY fecha ASC, id ASC').all(empresaId);
   const movRows = [movHeaders];
@@ -2815,25 +2816,25 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
   }
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(movRows), 'RECIBIDAS');
 
-  // ── Hoja DME RECIBIDAS (Directorio Maestro Empresas) ───────────────────────
-  const dmeH = ['Rut Empresa','Razón Social','Giro','Dirección','Comuna','Ciudad','Nombre','Correo','Teléfono','Representante Legal','Rut Representante Legal'];
+  // ââ Hoja DME RECIBIDAS (Directorio Maestro Empresas) âââââââââââââââââââââââ
+  const dmeH = ['Rut Empresa','RazÃ³n Social','Giro','DirecciÃ³n','Comuna','Ciudad','Nombre','Correo','TelÃ©fono','Representante Legal','Rut Representante Legal'];
   const empresasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='empresa' ORDER BY razon_social").all(empresaId);
   const dmeRows = [dmeH, ...empresasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono,c.representante_legal,c.rut_representante])];
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmeRows), 'DME RECIBIDAS');
 
-  // ── Hoja RNE RECIBIDAS (vacía — por compatibilidad) ────────────────────────
+  // ââ Hoja RNE RECIBIDAS (vacÃ­a â por compatibilidad) ââââââââââââââââââââââââ
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmeH]), 'RNE RECIBIDAS');
 
-  // ── Hoja DMP RECIBIDAS (Directorio Maestro Personas) ───────────────────────
-  const dmpH = ['Rut Persona','Razón Social','Giro','Dirección','Comuna','Ciudad','Nombre','Correo','Teléfono'];
+  // ââ Hoja DMP RECIBIDAS (Directorio Maestro Personas) âââââââââââââââââââââââ
+  const dmpH = ['Rut Persona','RazÃ³n Social','Giro','DirecciÃ³n','Comuna','Ciudad','Nombre','Correo','TelÃ©fono'];
   const personasC = db.prepare("SELECT * FROM clientes WHERE empresa_id=? AND tipo='persona' ORDER BY razon_social").all(empresaId);
   const dmpRows = [dmpH, ...personasC.map(c => [c.rut,c.razon_social,c.giro,c.direccion,c.comuna,c.ciudad,c.nombre||c.razon_social,c.email,c.telefono])];
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(dmpRows), 'DMP RECIBIDAS');
 
-  // ── Hoja RNP RECIBIDAS (vacía — por compatibilidad) ────────────────────────
+  // ââ Hoja RNP RECIBIDAS (vacÃ­a â por compatibilidad) ââââââââââââââââââââââââ
   XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet([dmpH]), 'RNP RECIBIDAS');
 
-  // ── Hojas vacías de ENVIADAS para mantener estructura ──────────────────────
+  // ââ Hojas vacÃ­as de ENVIADAS para mantener estructura ââââââââââââââââââââââ
   const enviadaH = [['ID Transferencia','Fecha','Rut Empresa','Rut Persona','Banco Destino','Cuenta Destino','Monto','Nombre Destino','Estado','Otros','Cartola']];
   for (const sname of ['ENVIADAS','DME ENVIADAS','RNE ENVIADAS','DMP ENVIADAS','RNP ENVIADAS']) {
     XLSX_LIB.utils.book_append_sheet(wb, XLSX_LIB.utils.aoa_to_sheet(enviadaH), sname);
@@ -2849,10 +2850,10 @@ app.get('/api/exportar/base-datos/:empresa_id', requireAuth, (req, res) => {
   res.send(xlsBuf);
 });
 
-// ── Importar Excel Base de Datos existente ────────────────────────────────────
+// ââ Importar Excel Base de Datos existente ââââââââââââââââââââââââââââââââââââ
 app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, res) => {
-  if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no disponible' });
-  if (!req.file)  return res.status(400).json({ error: 'No se subió archivo' });
+  if (!XLSX_LIB) return res.status(500).json({ error: 'MÃ³dulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subiÃ³ archivo' });
 
   const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
   if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
@@ -2906,7 +2907,7 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
   importarHojaClientes('DMP RECIBIDAS', 'persona');
   importarHojaClientes('RNP RECIBIDAS', 'persona');
 
-  // Importar hoja RECIBIDAS (movimientos históricos)
+  // Importar hoja RECIBIDAS (movimientos histÃ³ricos)
   const importarMov = req.body.importar_movimientos === 'true';
   if (importarMov && wb.SheetNames.includes('RECIBIDAS')) {
     const rows      = XLSX_LIB.utils.sheet_to_json(wb.Sheets['RECIBIDAS'], { header: 1, defval: '' });
@@ -2960,17 +2961,17 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
   });
 });
 
-// ── Actualizar keys de SimpleAPI desde la UI (solo admin) ────────────────────
+// ââ Actualizar keys de SimpleAPI desde la UI (solo admin) ââââââââââââââââââââ
 app.put('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   const { keys } = req.body;  // { 'tg-inversiones': '...', 'mt-inversiones': '...' }
-  if (!keys || typeof keys !== 'object') return res.status(400).json({ error: 'Formato inválido' });
+  if (!keys || typeof keys !== 'object') return res.status(400).json({ error: 'Formato invÃ¡lido' });
   setAppData('simpleapi_keys', keys);
   res.json({ ok: true });
 });
 
 app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   const stored = getAppData('simpleapi_keys') || {};
-  // Merge con defaults pero no revelar los valores completos si ya están
+  // Merge con defaults pero no revelar los valores completos si ya estÃ¡n
   const result = {};
   for (const empId of Object.keys(SIMPLEAPI_KEYS_DEFAULT)) {
     const key = stored[empId] || SIMPLEAPI_KEYS_DEFAULT[empId] || '';
@@ -2979,12 +2980,12 @@ app.get('/api/simpleapi/keys', requireAuth, requireAdmin, (req, res) => {
   res.json(result);
 });
 
-// ── Importar base histórica de DTE emitidos ───────────────────────────────────
+// ââ Importar base histÃ³rica de DTE emitidos âââââââââââââââââââââââââââââââââââ
 // Acepta el Excel con hojas "FACTURAS INGRESADAS" y "BOLETAS INGRESADAS"
 // Inserta cada fila como movimiento facturado, deduplica por id_compuesto
 app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (req, res) => {
-  if (!XLSX_LIB)  return res.status(500).json({ error: 'Módulo xlsx no disponible' });
-  if (!req.file)  return res.status(400).json({ error: 'No se subió archivo' });
+  if (!XLSX_LIB)  return res.status(500).json({ error: 'MÃ³dulo xlsx no disponible' });
+  if (!req.file)  return res.status(400).json({ error: 'No se subiÃ³ archivo' });
 
   const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
   if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
@@ -2996,14 +2997,14 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   const HOJAS_OBJETIVO = ['FACTURAS INGRESADAS', 'BOLETAS INGRESADAS'];
   const now = nowCL();
 
-  // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÚSCULAS)
+  // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÃSCULAS)
   function normalizarIdCompuesto(idTransf, cartola) {
     const banco = String(cartola || '').trim().toUpperCase();
     const id    = String(idTransf || '').trim();
     return id && banco ? `${id}_${banco}` : '';
   }
 
-  // Determinar tipo por RUT: >= 50.000.000 → empresa (34) · < 50M → persona (41)
+  // Determinar tipo por RUT: >= 50.000.000 â empresa (34) Â· < 50M â persona (41)
   function tipoPorRut(rutNorm) {
     const digits = rutNorm.replace(/[^0-9]/g, '');
     if (!digits) return 'empresa';
@@ -3016,9 +3017,9 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
       .all(empresaId).map(r => r.id_compuesto.toUpperCase())
   );
 
-  // Crear un lote registral para esta importación
+  // Crear un lote registral para esta importaciÃ³n
   const loteId   = generateLoteId(empresaId);
-  const nombreLote = `Base histórica ${empresaId}`;
+  const nombreLote = `Base histÃ³rica ${empresaId}`;
 
   const stmtInsertMov = db.prepare(`
     INSERT OR IGNORE INTO movimientos
@@ -3070,12 +3071,12 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 
         // Ya existe en la BD
         if (existentesSet.has(idCompUpper)) {
-          // Reconciliar: si está listo/pendiente → marcar como facturado
+          // Reconciliar: si estÃ¡ listo/pendiente â marcar como facturado
           const existente = stmtGetExistente.get(idComp, empresaId);
           if (existente && (existente.estado === 'listo' || existente.estado === 'pendiente')) {
-            // Intentar leer fecha del Excel para la facturación
+            // Intentar leer fecha del Excel para la facturaciÃ³n
             let fechaReconcil = now;
-            const fechaRawR = row['FechaEmision'] || row['Fecha de emisión (*)'] || row['Fecha de emisión'];
+            const fechaRawR = row['FechaEmision'] || row['Fecha de emisiÃ³n (*)'] || row['Fecha de emisiÃ³n'];
             if (fechaRawR instanceof Date) {
               const dd = String(fechaRawR.getDate()).padStart(2,'0');
               const mm = String(fechaRawR.getMonth()+1).padStart(2,'0');
@@ -3095,9 +3096,9 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           continue;
         }
 
-        // Fecha de emisión (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisión (*)')
+        // Fecha de emisiÃ³n (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisiÃ³n (*)')
         let fechaStr = '';
-        const fechaRaw = row['FechaEmision'] || row['Fecha de emisión (*)'] || row['Fecha de emisión'];
+        const fechaRaw = row['FechaEmision'] || row['Fecha de emisiÃ³n (*)'] || row['Fecha de emisiÃ³n'];
         if (fechaRaw instanceof Date) {
           const dd = String(fechaRaw.getDate()).padStart(2,'0');
           const mm = String(fechaRaw.getMonth()+1).padStart(2,'0');
@@ -3110,19 +3111,19 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           fechaStr = String(fechaRaw).substring(0, 10);
         }
 
-        // Soporte multi-formato: SF CSV ('RutRecep', 'RazonSocialRecep'…)
-        //                     y TS Capital Excel ('RUT Receptor', 'Razón Social'…)
+        // Soporte multi-formato: SF CSV ('RutRecep', 'RazonSocialRecep'â¦)
+        //                     y TS Capital Excel ('RUT Receptor', 'RazÃ³n Social'â¦)
         const rutRaw   = String(row['RutRecep'] || row['RUT Receptor'] || '').trim();
         const rutNorm  = normalizeRut(rutRaw);
         const rutFmt   = rutNorm ? formatRut(rutNorm) : '';
-        const razon    = String(row['RazonSocialRecep'] || row['Razón Social'] || row['Contacto'] || '').trim();
+        const razon    = String(row['RazonSocialRecep'] || row['RazÃ³n Social'] || row['Contacto'] || '').trim();
         const giro     = String(row['GiroRecep']  || row['Giro'] || '').trim();
-        const dir      = String(row['DirRecep']   || row['Dirección'] || '').trim();
+        const dir      = String(row['DirRecep']   || row['DirecciÃ³n'] || '').trim();
         const comuna   = String(row['CmnaRecep']  || row['Comuna'] || '').trim();
         const ciudad   = String(row['CiudadRecep']|| row['Ciudad'] || '').trim();
         const email    = String(row['CorreoRecep']|| row['Email Receptor'] || '').trim();
         const monto    = parseFloat(row['TotalProducto'] || row['Monto total'] || row['Precio (*)'] || row['Precio (*) '] || 0) || 0;
-        // Columna '1' contiene '34: Factura exenta…' o '41: Boleta exenta…'
+        // Columna '1' contiene '34: Factura exentaâ¦' o '41: Boleta exentaâ¦'
         const tipoRaw  = String(row['TipoDte'] || row['1'] || '').trim();
         const tipoDte  = tipoRaw ? (parseInt(tipoRaw) || (tipoRaw.startsWith('41') ? 41 : 34)) : 34;
         const tipoCliente = tipoPorRut(rutNorm);
@@ -3175,13 +3176,13 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
         .run(insertados + reconciliados, now, loteId);
     })();
   } catch(txErr) {
-    return res.status(500).json({ error: 'Error en transacción: ' + txErr.message });
+    return res.status(500).json({ error: 'Error en transacciÃ³n: ' + txErr.message });
   }
 
   res.json({ ok: true, insertados, reconciliados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
 });
 
-// ── Ver PDF de DTE emitido ───────────────────────────────────────────────────
+// ââ Ver PDF de DTE emitido âââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
   const mov = db.prepare('SELECT * FROM movimientos WHERE id = ?').get(req.params.id);
   if (!mov || !mov.folio_dte) return res.status(404).json({ error: 'Folio no disponible. Solo para DTEs emitidos desde esta plataforma.' });
@@ -3202,7 +3203,7 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const hData = await hRes.json();
       const freshUrl = hData?.urlPdf || hData?.url_pdf || hData?.URL_PDF;
       if (freshUrl) return res.redirect(freshUrl);
-      return res.status(404).json({ error: 'Open Factura no devolvió URL de PDF' });
+      return res.status(404).json({ error: 'Open Factura no devolviÃ³ URL de PDF' });
     } else {
       const sfConf = empresa.simplefactura || {};
       const token = await sfGetToken(sfConf.username, sfConf.password, sfConf.api_token || null);
@@ -3220,7 +3221,7 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const sfData = await sfRes.json();
       const sfUrl = sfData?.url || sfData?.pdfUrl || sfData?.data?.url;
       if (sfUrl) return res.redirect(sfUrl);
-      return res.status(404).json({ error: 'SimpleFactura no devolvió PDF para este folio' });
+      return res.status(404).json({ error: 'SimpleFactura no devolviÃ³ PDF para este folio' });
     }
   } catch(e) {
     console.error('[PDF DTE]', e.message);
@@ -3228,7 +3229,7 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
   }
 });
 
-// ── SPA catch-all ────────────────────────────────────────────────────────────
+// ââ SPA catch-all ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, () => console.log(`[FACTURACION MT-TG] Running on http://localhost:${PORT}`));

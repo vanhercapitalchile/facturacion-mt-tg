@@ -953,49 +953,80 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <div class="topbar">
           <h1>&#x1F4E7; Emails P2P</h1>
           <div class="topbar-actions">
-            <button class="btn btn-secondary btn-sm" onclick="loadSilver5Stats()">&#x21BB; Stats</button>
-            <button class="btn btn-primary btn-sm" id="btn-sync-silver5" onclick="syncSilver5()">&#x1F503; Sincronizar Silver5</button>
+            <span id="s5-empresa-badge" style="font-size:12px;color:var(--txt3);margin-right:8px;"></span>
+            <button class="btn btn-secondary btn-sm" onclick="loadBillingStats()">&#x21BB; Stats</button>
+            <button class="btn btn-primary btn-sm" id="btn-sync-silver5" onclick="syncSilver5()">&#x1F503; Sync Silver5</button>
           </div>
         </div>
-        <div id="silver5-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
+        <div id="billing-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
         <div class="card" style="margin-bottom:12px;">
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="silver5-search" placeholder="Buscar nickname, nombre o email..."
+            <input type="text" id="billing-search" placeholder="Buscar por RUT, razón social o nombre..."
               style="flex:1;min-width:200px;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;"
-              oninput="debounceSearchSilver5()">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2);cursor:pointer;">
-              <input type="checkbox" id="silver5-sin-email" onchange="loadSilver5()"> Solo sin email
-            </label>
+              oninput="debounceSearchBilling()">
+            <select id="billing-empresa-filter" onchange="loadBillingClientes()"
+              style="padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
+              <option value="">Todas las empresas</option>
+              <option value="tg">TG Inversiones</option>
+              <option value="mt">MT Inversiones</option>
+              <option value="ts">TS Capital</option>
+            </select>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--txt3);">
+            Mostrando clientes sin email o con email genérico (facturas@...). Solo estos pueden editarse.
           </div>
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrapper">
-            <table id="silver5-table">
+            <table>
               <thead>
                 <tr>
-                  <th>Nickname P2P</th>
-                  <th>Nombre</th>
-                  <th>Email</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Email actual</th>
                   <th>Empresa</th>
-                  <th>Notas</th>
-                  <th>Acciones</th>
+                  <th>Tipo</th>
+                  <th>Acción</th>
                 </tr>
               </thead>
-              <tbody id="silver5-tbody"><tr><td colspan="6" class="empty-state">Cargando clientes...</td></tr></tbody>
+              <tbody id="billing-tbody"><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
             </table>
           </div>
-          <div id="silver5-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
+          <div id="billing-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
         </div>
-        <div class="card" style="margin-top:12px;">
-          <h3 style="margin-bottom:12px;font-size:14px;">&#x2699; Token Silver5 (solo Admin)</h3>
-          <p style="font-size:12px;color:var(--txt3);margin-bottom:10px;">Para sincronizar, pega el JWT de Silver5. Obténlo en Silver5 &rarr; Consola del navegador: <code>JSON.parse(localStorage.auth_token)</code></p>
-          <div style="display:flex;gap:8px;">
-            <input type="password" id="silver5-token-input" placeholder="Pegar token JWT de Silver5..."
-              style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
-            <button class="btn btn-primary btn-sm" onclick="saveSilver5Token()">Guardar Token</button>
+        <details class="card" style="margin-top:12px;">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--txt2);padding:4px 0;">
+            &#x2699; Herramientas Silver5 (referencia / sincronización)
+          </summary>
+          <div style="margin-top:12px;">
+            <p style="font-size:12px;color:var(--txt3);margin-bottom:8px;">
+              Importa el directorio de clientes P2P desde Silver5 como referencia. Útsalo para ver qué nicknames Binance corresponden a cada cliente.
+            </p>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+              <input type="password" id="silver5-token-input" placeholder="Token JWT de Silver5..."
+                style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
+              <button class="btn btn-secondary btn-sm" onclick="saveSilver5Token()">Guardar Token</button>
+              <button class="btn btn-secondary btn-sm" id="btn-sync-silver5b" onclick="syncSilver5()">&#x1F503; Sincronizar</button>
+            </div>
+            <div id="silver5-token-status" style="font-size:12px;color:var(--txt3);"></div>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+              <input type="text" id="silver5-search" placeholder="Buscar en directorio Silver5..."
+                style="flex:1;padding:7px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:12px;"
+                oninput="debounceSearchSilver5()">
+              <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--txt2);cursor:pointer;white-space:nowrap;">
+                <input type="checkbox" id="silver5-sin-email" onchange="loadSilver5()"> Solo sin email
+              </label>
+            </div>
+            <div style="margin-top:8px;font-size:11px;color:var(--txt3);" id="silver5-stats-row"></div>
+            <div class="table-wrapper" style="margin-top:8px;max-height:280px;overflow-y:auto;">
+              <table style="font-size:12px;">
+                <thead><tr><th>Nickname</th><th>Nombre</th><th>Email S5</th><th>Empresa</th><th>Acción</th></tr></thead>
+                <tbody id="silver5-tbody"><tr><td colspan="5" class="empty-state">Sin datos — sincroniza primero</td></tr></tbody>
+              </table>
+            </div>
+            <div id="silver5-pagination" style="display:flex;gap:6px;justify-content:center;padding:8px;"></div>
           </div>
-          <div id="silver5-token-status" style="margin-top:8px;font-size:12px;color:var(--txt3);"></div>
-        </div>
+        </details>
       </div>
     </main>
   </div>
@@ -1210,30 +1241,44 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <div class="topbar">
           <h1>&#x1F4E7; Emails P2P</h1>
           <div class="topbar-actions">
-            <button class="btn btn-secondary btn-sm" onclick="loadSilver5Stats()">&#x21BB; Stats</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadBillingStats()">&#x21BB; Stats</button>
           </div>
         </div>
-        <div id="emp-silver5-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
+        <div id="billing-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
         <div class="card" style="margin-bottom:12px;">
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="silver5-search" placeholder="Buscar nickname, nombre o email..."
+            <input type="text" id="billing-search" placeholder="Buscar por RUT, razón social o nombre..."
               style="flex:1;min-width:200px;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;"
-              oninput="debounceSearchSilver5()">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2);cursor:pointer;">
-              <input type="checkbox" id="silver5-sin-email" onchange="loadSilver5()"> Solo sin email
-            </label>
+              oninput="debounceSearchBilling()">
+            <select id="billing-empresa-filter" onchange="loadBillingClientes()"
+              style="padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
+              <option value="">Todas las empresas</option>
+              <option value="tg">TG Inversiones</option>
+              <option value="mt">MT Inversiones</option>
+              <option value="ts">TS Capital</option>
+            </select>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--txt3);">
+            Mostrando clientes sin email o con email genérico. Ingresa el email del chat P2P.
           </div>
         </div>
         <div class="card" style="padding:0;">
           <div class="table-wrapper">
             <table>
               <thead>
-                <tr><th>Nickname P2P</th><th>Nombre</th><th>Email</th><th>Empresa</th><th>Notas</th><th>Acciones</th></tr>
+                <tr>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Email actual</th>
+                  <th>Empresa</th>
+                  <th>Tipo</th>
+                  <th>Acción</th>
+                </tr>
               </thead>
-              <tbody id="silver5-tbody"><tr><td colspan="6" class="empty-state">Cargando clientes...</td></tr></tbody>
+              <tbody id="billing-tbody"><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
             </table>
           </div>
-          <div id="silver5-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
+          <div id="billing-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
         </div>
       </div>
     </main>
@@ -1437,7 +1482,7 @@ function adminNav(view) {
   else if (view === 'usuarios') renderUsuarios();
   else if (view === 'cartolas') loadHistorialCartolas();
   else if (view === 'base-historica') loadBaseHistoricaStats();
-  else if (view === 'silver5') loadSilver5();
+  else if (view === 'silver5') loadBillingClientes();
 }
 
 function empNav(view) {
@@ -1457,7 +1502,7 @@ function empNav(view) {
   else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
-  else if (view === 'silver5') loadSilver5();
+  else if (view === 'silver5') loadBillingClientes();
 }
 
 function selectEmpresa(emp) {
@@ -4346,10 +4391,129 @@ async function guardarEmailSilver5(id) {
   loadSilver5();
 }
 
-function escHtml(str) {
-  if (!str) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BILLING CLIENTES - EMAILS (tabla principal de clientes)
+// ══════════════════════════════════════════════════════════════════════════════
+let BILLING_PAGE = 1;
+let BILLING_SEARCH_TIMER = null;
+
+function debounceSearchBilling() {
+  clearTimeout(BILLING_SEARCH_TIMER);
+  BILLING_SEARCH_TIMER = setTimeout(() => { BILLING_PAGE = 1; loadBillingClientes(); }, 400);
 }
+
+function billingGoPage(p) {
+  BILLING_PAGE = p;
+  loadBillingClientes();
+}
+
+async function loadBillingClientes() {
+  const search = document.getElementById('billing-search')?.value || '';
+  const empresa_id = document.getElementById('billing-empresa-filter')?.value || '';
+  const params = new URLSearchParams({ search, page: BILLING_PAGE, limit: 100 });
+  if (empresa_id) params.set('empresa_id', empresa_id);
+  const data = await apiFetch('/api/silver5/clientes-billing?' + params);
+  if (!data) return;
+
+  const tbody = document.getElementById('billing-tbody');
+  if (!tbody) return;
+
+  if (!data.clientes || data.clientes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No hay clientes con email pendiente para este filtro.</td></tr>';
+  } else {
+    tbody.innerHTML = data.clientes.map(c => {
+      const emailDisplay = (c.email && c.email.trim())
+        ? `<span style="color:var(--yellow);font-size:12px;" title="Email generico">${escHtml(c.email)}</span>`
+        : `<span style="color:var(--txt3);font-style:italic;font-size:12px;">Sin email</span>`;
+      const empBadge = c.empresa_id === 'tg'
+        ? `<span class="badge badge-tg">TG</span>`
+        : c.empresa_id === 'mt'
+          ? `<span class="badge badge-mt">MT</span>`
+          : `<span class="badge badge-ts">TS</span>`;
+      return `<tr>
+        <td style="font-size:12px;color:var(--txt2);">${escHtml(c.rut || '')}</td>
+        <td><strong style="font-size:13px;">${escHtml(c.razon_social || c.nombre || '')}</strong></td>
+        <td>${emailDisplay}</td>
+        <td>${empBadge}</td>
+        <td style="font-size:12px;color:var(--txt3);">${escHtml(c.tipo || '')}</td>
+        <td><button class="btn btn-secondary btn-sm" style="font-size:11px;" onclick="editarEmailBilling(${c.id},'${escHtml(c.rut||'')}','${escHtml(c.razon_social||c.nombre||'')}','${escHtml(c.email||'')}')">&#x270F;&#xFE0F; Asignar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagination
+  const pag = document.getElementById('billing-pagination');
+  if (pag) {
+    if (data.pages > 1) {
+      let html = '';
+      if (BILLING_PAGE > 1) html += `<button class="btn btn-secondary btn-sm" onclick="billingGoPage(${BILLING_PAGE-1})">← Ant</button>`;
+      html += `<span style="font-size:13px;color:var(--txt2);">Pág ${BILLING_PAGE} / ${data.pages} (${data.total} clientes)</span>`;
+      if (BILLING_PAGE < data.pages) html += `<button class="btn btn-secondary btn-sm" onclick="billingGoPage(${BILLING_PAGE+1})">Sig →</button>`;
+      pag.innerHTML = html;
+      pag.style.display = 'flex';
+    } else {
+      pag.innerHTML = `<span style="font-size:12px;color:var(--txt3);">${data.total} clientes pendientes</span>`;
+      pag.style.display = 'flex';
+    }
+  }
+
+  loadBillingStats();
+}
+
+async function loadBillingStats() {
+  const empresa_id = document.getElementById('billing-empresa-filter')?.value || '';
+  const params = empresa_id ? '?empresa_id=' + empresa_id : '';
+  const data = await apiFetch('/api/silver5/stats-billing' + params);
+  if (!data) return;
+  const statsHtml = `
+    <div class="kpi-card"><div class="kpi-value">${data.total}</div><div class="kpi-label">Total Clientes</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--green);">${data.con_email_real}</div><div class="kpi-label">Con Email Real</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--red);">${data.sin_email}</div><div class="kpi-label">Sin Email / Genérico</div></div>
+    ${(data.por_empresa || []).map(e => `<div class="kpi-card"><div class="kpi-value" style="color:var(--accent);font-size:16px;">${e.sin_email}</div><div class="kpi-label">${(e.empresa_id||'').toUpperCase()} pendientes</div></div>`).join('')}
+  `;
+  const rows = document.querySelectorAll('#billing-stats-row');
+  rows.forEach(r => { if(r){ r.innerHTML = statsHtml; r.style.display = 'grid'; } });
+}
+
+function editarEmailBilling(id, rut, razonSocial, emailActual) {
+  const emailInfo = emailActual
+    ? `<p style="margin-bottom:8px;color:var(--txt3);font-size:12px;">Email actual (genérico): <em>${escHtml(emailActual)}</em></p>`
+    : '';
+  const html = `
+    <h3 style="margin-bottom:16px;">Asignar Email al Cliente</h3>
+    <p style="margin-bottom:8px;color:var(--txt2);font-size:13px;">${escHtml(rut)} — <strong>${escHtml(razonSocial)}</strong></p>
+    ${emailInfo}
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Nuevo Email</label>
+        <input type="email" id="billing-email-input" placeholder="email@ejemplo.com"
+          style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;box-sizing:border-box;">
+      </div>
+      <p style="font-size:11px;color:var(--txt3);margin:0;">Este email reemplazará el actual en la base de clientes y se usará para el envío de DTE.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEmailBilling(${id})">Guardar</button>
+      </div>
+    </div>
+  `;
+  showModal(html);
+}
+
+async function guardarEmailBilling(id) {
+  const email = document.getElementById('billing-email-input')?.value.trim();
+  if (!email) { showToast('Por favor ingresa un email válido.', 'error'); return; }
+  const data = await apiFetch('/api/silver5/clientes-billing/' + id, {
+    method: 'PUT', body: JSON.stringify({ email })
+  });
+  if (!data) return;
+  if (data.error) { showToast('❌ ' + data.error, 'error'); return; }
+  closeModal();
+  showToast('✅ Email asignado: ' + data.email_nuevo, 'success');
+  BILLING_PAGE = 1;
+  loadBillingClientes();
+}
+
 </script>
 </body>
 </html>

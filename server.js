@@ -3262,6 +3262,58 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
 
 // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ SPA catch-all ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
 
+
+// -- Silver5: Clientes Billing (clientes sin email real) ----------------------
+const GENERIC_EMAILS_LIST = ['facturas@tscapitalchile.cl','facturastginversioneschile@gmail.com','facturasmtinversioneschile@gmail.com'];
+
+app.get('/api/silver5/clientes-billing', requireAuth, (req, res) => {
+  const { empresa_id, search, page = 1, limit = 100 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const placeholders = GENERIC_EMAILS_LIST.map(() => '?').join(',');
+  let where = "(email IS NULL OR email = '' OR LOWER(email) IN (" + placeholders + "))";
+  const params = [...GENERIC_EMAILS_LIST];
+  if (empresa_id) { where += ' AND empresa_id = ?'; params.push(empresa_id); }
+  if (search) {
+    where += ' AND (razon_social LIKE ? OR rut LIKE ? OR nombre LIKE ?)';
+    const s = '%' + search + '%';
+    params.push(s, s, s);
+  }
+  const total = db.prepare('SELECT COUNT(*) as c FROM clientes WHERE ' + where).get(...params).c;
+  const rows = db.prepare(
+    'SELECT id, empresa_id, tipo, rut, razon_social, nombre, email FROM clientes WHERE ' + where +
+    ' ORDER BY razon_social COLLATE NOCASE LIMIT ? OFFSET ?'
+  ).all(...params, parseInt(limit), offset);
+  res.json({ clientes: rows, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+});
+
+app.put('/api/silver5/clientes-billing/:id', requireAuth, (req, res) => {
+  const { email } = req.body;
+  const { id } = req.params;
+  const cliente = db.prepare('SELECT email FROM clientes WHERE id = ?').get(id);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const emailActual = (cliente.email || '').toLowerCase().trim();
+  const esGenerico = !emailActual || GENERIC_EMAILS_LIST.map(e => e.toLowerCase()).includes(emailActual);
+  if (!esGenerico) return res.status(400).json({ error: 'Este cliente ya tiene un email real. No se puede sobreescribir.' });
+  if (!email || !email.trim()) return res.status(400).json({ error: 'Email no puede estar vacio.' });
+  db.prepare('UPDATE clientes SET email = ?, updated_at = ? WHERE id = ?').run(email.trim(), nowCL(), id);
+  res.json({ ok: true, email_anterior: cliente.email, email_nuevo: email.trim() });
+});
+
+app.get('/api/silver5/stats-billing', requireAuth, (req, res) => {
+  const { empresa_id } = req.query;
+  const placeholders = GENERIC_EMAILS_LIST.map(() => '?').join(',');
+  const whereGenerico = "(email IS NULL OR email = '' OR LOWER(email) IN (" + placeholders + "))";
+  const whereEmpresa = empresa_id ? ' AND empresa_id = ?' : '';
+  const baseParams = [...GENERIC_EMAILS_LIST];
+  if (empresa_id) baseParams.push(empresa_id);
+  const sinEmail = db.prepare('SELECT COUNT(*) as c FROM clientes WHERE ' + whereGenerico + whereEmpresa).get(...baseParams).c;
+  const total = db.prepare('SELECT COUNT(*) as c FROM clientes' + (empresa_id ? ' WHERE empresa_id = ?' : '')).get(...(empresa_id ? [empresa_id] : [])).c;
+  const porEmpresa = db.prepare(
+    'SELECT empresa_id, COUNT(*) as total, SUM(CASE WHEN ' + whereGenerico + ' THEN 1 ELSE 0 END) as sin_email FROM clientes GROUP BY empresa_id'
+  ).all(...GENERIC_EMAILS_LIST);
+  res.json({ total, sin_email: sinEmail, con_email_real: total - sinEmail, por_empresa: porEmpresa });
+});
+
 // -- Silver5 Emails P2P -------------------------------------------------------
 app.get('/api/silver5/config', requireAuth, requireAdmin, (req, res) => {
   const cfg = getAppData('silver5_config') || {};

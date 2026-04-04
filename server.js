@@ -1447,7 +1447,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       };
 
       const payload = {
-        response: ['FOLIO'],
+        response: ['FOLIO', 'URL_PDF'],
         dte: {
           Encabezado: {
             IdDoc: idDoc,
@@ -1489,10 +1489,13 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
-          db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, updated_at=? WHERE id=?")
-            .run(now, now, m.id);
+          const folioVal = data?.folio || data?.Folio || data?.FOLIO || null;
+          const urlPdfVal = data?.urlPdf || data?.url_pdf || data?.URL_PDF || null;
+          const folioStored = folioVal ? (urlPdfVal ? JSON.stringify({folio: String(folioVal), url: urlPdfVal}) : String(folioVal)) : null;
+          db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, folio_dte=?, updated_at=? WHERE id=?")
+            .run(now, folioStored, now, m.id);
           emitidos++;
-          resultados.push({ id: m.id, status: 'emitido', folio: data?.folio || data?.Folio, resp: raw.substring(0,200) });
+          resultados.push({ id: m.id, status: 'emitido', folio: folioVal, resp: raw.substring(0,200) });
         } else {
           db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
           erroresEmision++;
@@ -1684,8 +1687,9 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
 
     // 4. Si exitoso, marcar movimientos como facturados
     if (loteEstado === 'emitido') {
-      const updStmt = db.prepare("UPDATE movimientos SET estado = 'facturado', fecha_facturacion = ?, updated_at = ? WHERE id = ?");
-      db.transaction(() => { for (const m of movs) updStmt.run(now, now, m.id); })();
+      const foliosArr = Array.isArray(data?.data) ? data.data.map(d => d?.folio ? String(d.folio) : null) : [];
+      const updStmt = db.prepare("UPDATE movimientos SET estado = 'facturado', folio_dte = ?, fecha_facturacion = ?, updated_at = ? WHERE id = ?");
+      db.transaction(() => { for (let i = 0; i < movs.length; i++) updStmt.run(foliosArr[i] || null, now, now, movs[i].id); })();
     }
 
     db.prepare('UPDATE lotes_facturacion SET estado = ?, response_api = ?, updated_at = ? WHERE lote_id = ?')
@@ -3175,6 +3179,53 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   }
 
   res.json({ ok: true, insertados, reconciliados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
+});
+
+// ── Ver PDF de DTE emitido ───────────────────────────────────────────────────
+app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
+  const mov = db.prepare('SELECT * FROM movimientos WHERE id = ?').get(req.params.id);
+  if (!mov || !mov.folio_dte) return res.status(404).json({ error: 'Folio no disponible. Solo para DTEs emitidos desde esta plataforma.' });
+  const empresas = getAppData('empresas');
+  const empresa = empresas[mov.empresa_id] || {};
+  const esHaulmer = mov.empresa_id === 'ts-capital';
+  try {
+    let urlPdf = null, folio = mov.folio_dte;
+    try { const p = JSON.parse(mov.folio_dte); if (p?.url) { urlPdf = p.url; folio = String(p.folio || ''); } } catch(e) {}
+    if (esHaulmer) {
+      if (urlPdf) return res.redirect(urlPdf);
+      const apiKey = empresa.haulmer?.api_key || '';
+      const rutEmisor = (empresa.rut || '').replace(/\./g, '');
+      const hRes = await fetch(`https://api.haulmer.com/v2/dte/document?folio=${folio}&rutEmisor=${rutEmisor}&tipoDte=${mov.tipo_dte}`, {
+        headers: { 'apikey': apiKey }, signal: AbortSignal.timeout(10000)
+      });
+      if (!hRes.ok) return res.status(502).json({ error: 'No se pudo obtener PDF desde Open Factura' });
+      const hData = await hRes.json();
+      const freshUrl = hData?.urlPdf || hData?.url_pdf || hData?.URL_PDF;
+      if (freshUrl) return res.redirect(freshUrl);
+      return res.status(404).json({ error: 'Open Factura no devolvió URL de PDF' });
+    } else {
+      const sfConf = empresa.simplefactura || {};
+      const token = await sfGetToken(sfConf.username, sfConf.password, sfConf.api_token || null);
+      const rutEmisor = rutParaSF(sfConf.rut_emisor || empresa.rut || '');
+      const sfRes = await fetch(`${SF_API}/getDocumentPdf?RutEmisor=${encodeURIComponent(rutEmisor)}&TipoDTE=${mov.tipo_dte}&Folio=${folio}`, {
+        headers: { 'Authorization': `Bearer ${token}` }, signal: AbortSignal.timeout(10000)
+      });
+      if (!sfRes.ok) return res.status(502).json({ error: 'No se pudo obtener PDF desde SimpleFactura' });
+      const ctype = sfRes.headers.get('content-type') || '';
+      if (ctype.includes('pdf')) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="DTE_${folio}.pdf"`);
+        return res.send(Buffer.from(await sfRes.arrayBuffer()));
+      }
+      const sfData = await sfRes.json();
+      const sfUrl = sfData?.url || sfData?.pdfUrl || sfData?.data?.url;
+      if (sfUrl) return res.redirect(sfUrl);
+      return res.status(404).json({ error: 'SimpleFactura no devolvió PDF para este folio' });
+    }
+  } catch(e) {
+    console.error('[PDF DTE]', e.message);
+    res.status(500).json({ error: 'Error obteniendo PDF: ' + e.message });
+  }
 });
 
 // ── SPA catch-all ────────────────────────────────────────────────────────────

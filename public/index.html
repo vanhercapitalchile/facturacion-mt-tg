@@ -3365,7 +3365,8 @@ async function loadHistorial(page) {
 }
 
 function abrirPdfDTE(movId) {
-  window.open('/api/dte/' + movId + '/pdf', '_blank');
+  const token = localStorage.getItem('mttg_token');
+  window.open('/api/dte/' + movId + '/pdf?token=' + encodeURIComponent(token), '_blank');
 }
 
 function limpiarHistorial() {

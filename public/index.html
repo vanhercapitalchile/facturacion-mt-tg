@@ -713,6 +713,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                   <th style="text-align:right;">Monto</th>
                   <th>Banco</th>
                   <th>Lote</th>
+                  <th style="text-align:center;">PDF</th>
                 </tr>
               </thead>
               <tbody id="hist-tbody"></tbody>
@@ -2931,6 +2932,7 @@ async function toggleLoteDetalle(loteId, btn) {
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">Monto</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Banco</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Estado</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;">PDF</th>
         </tr>
       </thead>
       <tbody>`;
@@ -2948,6 +2950,7 @@ async function toggleLoteDetalle(loteId, btn) {
         <td style="padding:5px 8px;text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td style="padding:5px 8px;"><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || '—'}</span></td>
         <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}</td>
+        <td style="padding:5px 8px;text-align:center;">${m.folio_dte && m.estado === 'facturado' ? `<button onclick="abrirPdfDTE(${m.id})" style="font-size:11px;padding:3px 8px;background:var(--surface2);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">📄 PDF</button>` : '<span style="color:var(--txt3);font-size:11px;">—</span>'}</td>
       </tr>`;
   });
 
@@ -3331,7 +3334,7 @@ async function loadHistorial(page) {
   // Tabla
   const tbody = document.getElementById('hist-tbody');
   if (!movs.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt3);">No hay documentos facturados' + (buscar ? ' con ese criterio' : '') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--txt3);">No hay documentos facturados' + (buscar ? ' con ese criterio' : '') + '</td></tr>';
   } else {
     tbody.innerHTML = movs.map(m => {
       const nombre = m.razon_social || m.nombre_origen || '';
@@ -3344,6 +3347,7 @@ async function loadHistorial(page) {
         <td style="text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || ''}</span></td>
         <td style="font-size:11px;color:var(--txt3);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.lote_nombre || m.lote_id || ''}">${m.lote_nombre || (m.lote_id ? m.lote_id.substring(0,20) : '')}</td>
+        <td style="text-align:center;">${m.folio_dte ? `<button onclick="abrirPdfDTE(${m.id})" class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:var(--surface2);color:var(--accent);border:1px solid var(--border);cursor:pointer;" title="Ver PDF del DTE">📄 PDF</button>` : '<span style="color:var(--txt3);font-size:12px;">—</span>'}</td>
       </tr>`;
     }).join('');
   }
@@ -3358,6 +3362,10 @@ async function loadHistorial(page) {
       <button class="btn btn-secondary btn-sm" onclick="loadHistorial(${HIST_PAGE - 1})" ${HIST_PAGE === 0 ? 'disabled' : ''}>&#x25C0; Anterior</button>
       <button class="btn btn-secondary btn-sm" onclick="loadHistorial(${HIST_PAGE + 1})" ${HIST_PAGE >= totalPages - 1 ? 'disabled' : ''}> Siguiente &#x25B6;</button>
     </div>`;
+}
+
+function abrirPdfDTE(movId) {
+  window.open('/api/dte/' + movId + '/pdf', '_blank');
 }
 
 function limpiarHistorial() {

@@ -3212,7 +3212,11 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const sfRes = await fetch(`${SF_API}/getDocumentPdf?RutEmisor=${encodeURIComponent(rutEmisor)}&TipoDTE=${mov.tipo_dte}&Folio=${folio}`, {
         headers: { 'Authorization': `Bearer ${token}` }, signal: AbortSignal.timeout(10000)
       });
-      if (!sfRes.ok) return res.status(502).json({ error: 'No se pudo obtener PDF desde SimpleFactura' });
+      if (!sfRes.ok) {
+        const sfErrBody = await sfRes.text().catch(() => '');
+        console.error('[PDF] SF error status:', sfRes.status, 'body:', sfErrBody.substring(0, 300));
+        return res.status(502).json({ error: 'No se pudo obtener PDF desde SimpleFactura', sfStatus: sfRes.status, sfDetail: sfErrBody.substring(0, 300) });
+      }
       const ctype = sfRes.headers.get('content-type') || '';
       if (ctype.includes('pdf')) {
         res.setHeader('Content-Type', 'application/pdf');

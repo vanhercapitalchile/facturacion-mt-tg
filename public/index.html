@@ -2552,6 +2552,7 @@ async function loadFacturacion(page) {
   const empId = getEmpresaId();
   let url = `/api/movimientos?pag=1&estado=listo&limit=${FACT_PER_PAGE}&offset=${FACT_PAGE * FACT_PER_PAGE}&orden=${FACT_SORT_COL}&dir=${FACT_SORT_DIR}`;
   if (empId) url += `&empresa_id=${empId}`;
+  if (FACT_FILTER !== 'all') url += `&tipo_dte=${FACT_FILTER}`;
   if (FACT_BANCO) url += `&banco=${encodeURIComponent(FACT_BANCO)}`;
   if (FACT_FECHA_DESDE) url += `&fecha_desde=${FACT_FECHA_DESDE}`;
   if (FACT_FECHA_HASTA) url += `&fecha_hasta=${FACT_FECHA_HASTA}`;
@@ -2670,13 +2671,21 @@ function renderFacturacionTable() {
   const totalPages = Math.ceil(FACT_TOTAL / FACT_PER_PAGE);
   if (label) {
     const visibles = movs.length;
-    const prefix = q ? `${visibles} filtrados de ${FACT_TOTAL}` : `${FACT_TOTAL} total`;
     let filterTags = '';
     if (FACT_BANCO) filterTags += `<span class="badge badge-gray" style="font-size:11px;padding:2px 8px;">Banco: ${FACT_BANCO}</span>`;
     if (FACT_FECHA_DESDE || FACT_FECHA_HASTA) filterTags += `<span class="badge badge-gray" style="font-size:11px;padding:2px 8px;">Fecha: ${FACT_FECHA_DESDE || '…'} → ${FACT_FECHA_HASTA || '…'}</span>`;
-    label.innerHTML = `<span style="color:var(--txt2);">${prefix}</span>`
-      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_34} Facturas</span>`
-      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_41} Boletas</span>`
+    let prefix;
+    if (q) {
+      prefix = `<span style="color:var(--txt2);">${visibles} filtrados de ${FACT_TOTAL} pendientes</span>`;
+    } else if (FACT_FILTER === 'all') {
+      prefix = `<span style="color:var(--txt2);">${FACT_TOTAL} pendientes</span>`;
+    } else {
+      const tipoLabel = FACT_FILTER === 34 ? 'Facturas' : 'Boletas';
+      prefix = `<span style="color:var(--txt2);">${FACT_TOTAL} ${tipoLabel} pendientes</span>`;
+    }
+    label.innerHTML = prefix
+      + `<span class="badge badge-blue" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_34} Facturas pendientes</span>`
+      + `<span class="badge badge-green" style="font-size:12px;padding:3px 10px;">${FACT_TOTAL_41} Boletas pendientes</span>`
       + filterTags;
   }
   if (!movs.length) {

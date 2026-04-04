@@ -276,9 +276,10 @@ function setAppData(key, value) {
 
 function requireAuth(req, res, next) {
   const h = req.headers.authorization;
-  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
+  const t = h?.startsWith('Bearer ') ? h.slice(7) : (req.query.token || null);
+  if (!t) return res.status(401).json({ error: 'No token' });
   try {
-    req.user = jwt.verify(h.slice(7), JWT_SECRET);
+    req.user = jwt.verify(t, JWT_SECRET);
     next();
   } catch { res.status(401).json({ error: 'Token invÃÂÃÂ¡lido o expirado' }); }
 }

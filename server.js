@@ -3209,11 +3209,17 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
       const sfConf = empresa.simplefactura || {};
       const token = await sfGetToken(sfConf.username, sfConf.password, sfConf.api_token || null);
       const rutEmisor = rutParaSF(sfConf.rut_emisor || empresa.rut || '');
-      const sfPdfUrl = `${SF_API}/getDocumentPdf?RutEmisor=${encodeURIComponent(rutEmisor)}&TipoDTE=${mov.tipo_dte}&Folio=${folio}`;
-      console.log('[PDF] Calling SF URL:', sfPdfUrl, 'rutEmisor:', rutEmisor, 'folio:', folio, 'tipoDTE:', mov.tipo_dte);
-      const sfRes = await fetch(sfPdfUrl, {
-        headers: { 'Authorization': `Bearer ${token}` }, signal: AbortSignal.timeout(10000)
-      });
+      const sfPdfUrl = `${SF_API}/dte/pdf`;
+    console.log('[PDF] Calling SF POST /dte/pdf rutEmisor:', rutEmisor, 'folio:', folio, 'tipoDTE:', mov.tipo_dte);
+    const sfRes = await fetch(sfPdfUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        credenciales: { rutEmisor, nombreSucursal: 'Casa Matriz' },
+        dteReferenciadoExterno: { folio: parseInt(folio), codigoTipoDte: mov.tipo_dte, ambiente: 1 }
+      }),
+      signal: AbortSignal.timeout(10000)
+    });
       if (!sfRes.ok) {
         const sfErrBody = await sfRes.text().catch(() => '');
         console.error('[PDF] SF error status:', sfRes.status, 'body:', sfErrBody.substring(0, 300));

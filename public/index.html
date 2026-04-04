@@ -331,6 +331,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-item" onclick="adminNav('clientes')">&#x1F465; Base de Clientes</div>
           <div class="nav-item" onclick="adminNav('importar')">&#x1F4E5; Importar Clientes</div>
           <div class="nav-item" onclick="adminNav('base-historica')">&#x1F4DA; Base Histórica DTE</div>
+          <div class="nav-item" onclick="adminNav('silver5')">&#x1F4E7; Emails P2P</div>
         </div>
         <div class="nav-section">
           <div class="nav-section-title">Sistema</div>
@@ -947,6 +948,54 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             </table>
           </div>
         </div>
+      <div class="view" id="view-silver5">
+        <div class="topbar">
+          <h1>&#x1F4E7; Emails P2P</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadSilver5Stats()">&#x21BB; Stats</button>
+            <button class="btn btn-primary btn-sm" id="btn-sync-silver5" onclick="syncSilver5()">&#x1F503; Sincronizar Silver5</button>
+          </div>
+        </div>
+        <div id="silver5-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="silver5-search" placeholder="Buscar nickname, nombre o email..."
+              style="flex:1;min-width:200px;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;"
+              oninput="debounceSearchSilver5()">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2);cursor:pointer;">
+              <input type="checkbox" id="silver5-sin-email" onchange="loadSilver5()"> Solo sin email
+            </label>
+          </div>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrapper">
+            <table id="silver5-table">
+              <thead>
+                <tr>
+                  <th>Nickname P2P</th>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Empresa</th>
+                  <th>Notas</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="silver5-tbody"><tr><td colspan="6" class="empty-state">Cargando clientes...</td></tr></tbody>
+            </table>
+          </div>
+          <div id="silver5-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <h3 style="margin-bottom:12px;font-size:14px;">&#x2699; Token Silver5 (solo Admin)</h3>
+          <p style="font-size:12px;color:var(--txt3);margin-bottom:10px;">Para sincronizar, pega el JWT de Silver5. Obténlo en Silver5 &rarr; Consola del navegador: <code>JSON.parse(localStorage.auth_token)</code></p>
+          <div style="display:flex;gap:8px;">
+            <input type="password" id="silver5-token-input" placeholder="Pegar token JWT de Silver5..."
+              style="flex:1;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
+            <button class="btn btn-primary btn-sm" onclick="saveSilver5Token()">Guardar Token</button>
+          </div>
+          <div id="silver5-token-status" style="margin-top:8px;font-size:12px;color:var(--txt3);"></div>
+        </div>
+      </div>
       </div>
     </main>
   </div>
@@ -971,6 +1020,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-item" onclick="empNav('historial')">&#x1F4CB; Historial</div>
           <div class="nav-item" onclick="empNav('exportar')">&#x2B07; Exportar CSV</div>
           <div class="nav-item" onclick="empNav('clientes')">&#x1F465; Clientes</div>
+          <div class="nav-item" onclick="empNav('silver5')">&#x1F4E7; Emails P2P</div>
         </div>
       </nav>
       <div class="sidebar-footer">
@@ -1155,6 +1205,36 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table>
           </div>
         </div>
+      <div class="view" id="emp-view-silver5">
+        <div class="topbar">
+          <h1>&#x1F4E7; Emails P2P</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadSilver5Stats()">&#x21BB; Stats</button>
+          </div>
+        </div>
+        <div id="emp-silver5-stats-row" class="kpi-grid" style="margin-bottom:16px;display:none;"></div>
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="silver5-search" placeholder="Buscar nickname, nombre o email..."
+              style="flex:1;min-width:200px;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;"
+              oninput="debounceSearchSilver5()">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2);cursor:pointer;">
+              <input type="checkbox" id="silver5-sin-email" onchange="loadSilver5()"> Solo sin email
+            </label>
+          </div>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Nickname P2P</th><th>Nombre</th><th>Email</th><th>Empresa</th><th>Notas</th><th>Acciones</th></tr>
+              </thead>
+              <tbody id="silver5-tbody"><tr><td colspan="6" class="empty-state">Cargando clientes...</td></tr></tbody>
+            </table>
+          </div>
+          <div id="silver5-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px;"></div>
+        </div>
+      </div>
       </div>
     </main>
   </div>
@@ -1357,6 +1437,7 @@ function adminNav(view) {
   else if (view === 'usuarios') renderUsuarios();
   else if (view === 'cartolas') loadHistorialCartolas();
   else if (view === 'base-historica') loadBaseHistoricaStats();
+  else if (view === 'silver5') loadSilver5();
 }
 
 function empNav(view) {
@@ -1376,6 +1457,7 @@ function empNav(view) {
   else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
+  else if (view === 'silver5') loadSilver5();
 }
 
 function selectEmpresa(emp) {
@@ -4114,6 +4196,160 @@ document.querySelectorAll('.upload-area').forEach(area => {
 
 // Auto-login on page load
 tryAutoLogin();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SILVER5 - EMAILS P2P
+// ══════════════════════════════════════════════════════════════════════════════
+let SILVER5_PAGE = 1;
+let SILVER5_SEARCH_TIMER = null;
+
+function debounceSearchSilver5() {
+  clearTimeout(SILVER5_SEARCH_TIMER);
+  SILVER5_SEARCH_TIMER = setTimeout(() => { SILVER5_PAGE = 1; loadSilver5(); }, 400);
+}
+
+async function loadSilver5() {
+  const search = document.getElementById('silver5-search')?.value || '';
+  const sinEmail = document.getElementById('silver5-sin-email')?.checked ? '1' : '0';
+  const params = new URLSearchParams({ search, page: SILVER5_PAGE, limit: 50, sin_email: sinEmail });
+  const data = await apiFetch('/api/silver5/clientes?' + params);
+  if (!data) return;
+
+  const tbody = document.getElementById('silver5-tbody');
+  if (!tbody) return;
+
+  if (!data.clientes || data.clientes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No se encontraron clientes. Sincroniza desde Silver5 primero.</td></tr>';
+  } else {
+    tbody.innerHTML = data.clientes.map(c => {
+      const hasEmail = c.email && c.email.trim();
+      const emailDisplay = hasEmail
+        ? `<span style="color:var(--green);font-size:12px;">${escHtml(c.email)}</span>`
+        : `<span style="color:var(--txt3);font-style:italic;font-size:12px;">Sin email</span>`;
+      return `<tr>
+        <td><strong style="font-size:13px;">${escHtml(c.nickname || '')}</strong></td>
+        <td style="font-size:12px;color:var(--txt2);">${escHtml(c.nombre_completo || '')}</td>
+        <td>${emailDisplay}</td>
+        <td style="font-size:12px;">${escHtml(c.empresa_binance || '')}</td>
+        <td style="font-size:12px;color:var(--txt3);">${escHtml(c.notas || '')}</td>
+        <td><button class="btn btn-secondary btn-sm" style="font-size:11px;" onclick="editarEmailSilver5(${c.id},'${escHtml(c.nickname||'')}','${escHtml(c.email||'')}','${escHtml(c.notas||'')}','${escHtml(c.empresa_binance||'')}')">✏️ Editar</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Pagination
+  const pag = document.getElementById('silver5-pagination');
+  if (pag && data.pages > 1) {
+    let html = '';
+    if (SILVER5_PAGE > 1) html += `<button class="btn btn-secondary btn-sm" onclick="silver5GoPage(${SILVER5_PAGE-1})">← Ant</button>`;
+    html += `<span style="font-size:13px;color:var(--txt2);">Pág ${SILVER5_PAGE} / ${data.pages} (${data.total} clientes)</span>`;
+    if (SILVER5_PAGE < data.pages) html += `<button class="btn btn-secondary btn-sm" onclick="silver5GoPage(${SILVER5_PAGE+1})">Sig →</button>`;
+    pag.innerHTML = html;
+    pag.style.display = 'flex';
+  } else if (pag) {
+    pag.innerHTML = `<span style="font-size:12px;color:var(--txt3);">${data.total} clientes en total</span>`;
+  }
+
+  // Load stats too
+  loadSilver5Stats();
+}
+
+function silver5GoPage(p) {
+  SILVER5_PAGE = p;
+  loadSilver5();
+}
+
+async function loadSilver5Stats() {
+  const data = await apiFetch('/api/silver5/stats');
+  if (!data) return;
+  const statsHtml = `
+    <div class="kpi-card"><div class="kpi-value">${data.total}</div><div class="kpi-label">Total Clientes</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--green);">${data.con_email}</div><div class="kpi-label">Con Email</div></div>
+    <div class="kpi-card"><div class="kpi-value" style="color:var(--red);">${data.sin_email}</div><div class="kpi-label">Sin Email</div></div>
+    <div class="kpi-card"><div class="kpi-label">Última Sync</div><div style="font-size:12px;color:var(--txt2);margin-top:4px;">${data.ultima_sync ? data.ultima_sync.replace('T',' ').substring(0,16) : 'Nunca'}</div></div>
+  `;
+  const rows = document.querySelectorAll('#silver5-stats-row, #emp-silver5-stats-row');
+  rows.forEach(r => { if(r){ r.innerHTML = statsHtml; r.style.display = 'grid'; } });
+}
+
+async function syncSilver5() {
+  const btn = document.getElementById('btn-sync-silver5');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  const data = await apiFetch('/api/silver5/sync', { method: 'POST', body: JSON.stringify({}) });
+  if (btn) { btn.disabled = false; btn.textContent = '🔃 Sincronizar Silver5'; }
+  if (!data) return;
+  if (data.error) { showToast('❌ ' + data.error, 'error'); return; }
+  showToast(`✅ Sync completado: ${data.insertados} nuevos, ${data.actualizados} actualizados (Total: ${data.total})`, 'success');
+  SILVER5_PAGE = 1;
+  loadSilver5();
+}
+
+async function saveSilver5Token() {
+  const input = document.getElementById('silver5-token-input');
+  const status = document.getElementById('silver5-token-status');
+  if (!input || !input.value.trim()) { if(status) status.textContent = 'Pega el token antes de guardar.'; return; }
+  const data = await apiFetch('/api/silver5/config', { method: 'PUT', body: JSON.stringify({ token: input.value.trim() }) });
+  if (!data) return;
+  if (data.ok) {
+    if(status) { status.textContent = '✅ Token guardado correctamente.'; status.style.color = 'var(--green)'; }
+    input.value = '';
+    showToast('Token Silver5 guardado', 'success');
+  } else {
+    if(status) { status.textContent = '❌ Error: ' + (data.error || 'desconocido'); status.style.color = 'var(--red)'; }
+  }
+}
+
+function editarEmailSilver5(id, nickname, emailActual, notasActual, empresaActual) {
+  const html = `
+    <h3 style="margin-bottom:16px;">Editar Email P2P</h3>
+    <p style="margin-bottom:16px;color:var(--txt2);font-size:13px;">Cliente: <strong>${escHtml(nickname)}</strong></p>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Email</label>
+        <input type="email" id="s5-email-input" value="${escHtml(emailActual)}" placeholder="email@ejemplo.com"
+          style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;box-sizing:border-box;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Empresa Binance</label>
+        <select id="s5-empresa-input" style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;">
+          <option value="">-- Sin especificar --</option>
+          <option value="TG" ${empresaActual==='TG'?'selected':''}>TG Inversiones</option>
+          <option value="MT" ${empresaActual==='MT'?'selected':''}>MT Inversiones</option>
+          <option value="TS" ${empresaActual==='TS'?'selected':''}>TS Capital</option>
+          <option value="Vanher" ${empresaActual==='Vanher'?'selected':''}>Vanher Capital</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--txt3);display:block;margin-bottom:4px;">Notas</label>
+        <textarea id="s5-notas-input" placeholder="Notas opcionales..."
+          style="width:100%;padding:8px 12px;background:var(--bg);border:1px solid var(--card-b);border-radius:var(--radius-sm);color:var(--txt);font-size:13px;min-height:60px;resize:vertical;box-sizing:border-box;">${escHtml(notasActual)}</textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEmailSilver5(${id})">Guardar</button>
+      </div>
+    </div>
+  `;
+  showModal(html);
+}
+
+async function guardarEmailSilver5(id) {
+  const email = document.getElementById('s5-email-input')?.value.trim() || null;
+  const notas = document.getElementById('s5-notas-input')?.value.trim() || null;
+  const empresa_binance = document.getElementById('s5-empresa-input')?.value || null;
+  const data = await apiFetch('/api/silver5/clientes/' + id, {
+    method: 'PUT', body: JSON.stringify({ email, notas, empresa_binance })
+  });
+  if (!data) return;
+  closeModal();
+  showToast('✅ Email guardado correctamente', 'success');
+  loadSilver5();
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 </script>
 </body>
 </html>

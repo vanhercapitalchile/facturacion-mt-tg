@@ -115,6 +115,24 @@ try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN folio_dte TEXT'); } catch(e){}
 
+// ── Silver5 clientes (emails P2P) ─────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS silver5_clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    silver5_id INTEGER,
+    nickname TEXT,
+    nombre_completo TEXT,
+    empresa_binance TEXT,
+    email TEXT,
+    notas TEXT,
+    ultima_sync TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`); } catch(e){}
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_s5_nickname ON silver5_clientes(nickname)'); } catch(e){}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_s5_nombre ON silver5_clientes(nombre_completo)'); } catch(e){}
+
 // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ RUTs internos excluidos de facturaciÃÂÃÂ³n (transferencias entre empresas propias) ÃÂ¢ÃÂÃÂ
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
@@ -3243,6 +3261,127 @@ app.get('/api/dte/:id/pdf', requireAuth, async (req, res) => {
 });
 
 // ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ SPA catch-all ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+
+// -- Silver5 Emails P2P -------------------------------------------------------
+app.get('/api/silver5/config', requireAuth, requireAdmin, (req, res) => {
+  const cfg = getAppData('silver5_config') || {};
+  const total = db.prepare('SELECT COUNT(*) as c FROM silver5_clientes').get().c;
+  const conEmail = db.prepare("SELECT COUNT(*) as c FROM silver5_clientes WHERE email IS NOT NULL AND email != ''").get().c;
+  res.json({
+    token_guardado: !!(cfg.token),
+    token_preview: cfg.token ? cfg.token.substring(0, 30) + '...' : null,
+    ultima_sync: cfg.ultima_sync || null,
+    total_clientes: total,
+    con_email: conEmail
+  });
+});
+
+app.put('/api/silver5/config', requireAuth, requireAdmin, (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'token requerido' });
+  const cfg = getAppData('silver5_config') || {};
+  cfg.token = token.startsWith('Bearer ') ? token : ('Bearer ' + token);
+  setAppData('silver5_config', cfg);
+  res.json({ ok: true, message: 'Token Silver5 guardado correctamente' });
+});
+
+app.post('/api/silver5/sync', requireAuth, requireAdmin, async (req, res) => {
+  const cfg = getAppData('silver5_config') || {};
+  if (!cfg.token) return res.status(400).json({ error: 'Token Silver5 no configurado. Ve a Configuracion > Silver5.' });
+  try {
+    const csvRes = await fetch('https://api.silver5ai.com/api/v1/clients/export?format=csv', {
+      headers: { 'Authorization': cfg.token, 'Accept': 'text/csv' }
+    });
+    if (csvRes.status === 401) return res.status(401).json({ error: 'Token Silver5 expirado. Actualiza el token en Configuracion.' });
+    if (!csvRes.ok) return res.status(502).json({ error: 'Error al obtener CSV Silver5: ' + csvRes.status });
+    const csvText = await csvRes.text();
+    const lines = csvText.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return res.status(502).json({ error: 'CSV Silver5 vacio o invalido' });
+
+    // Parse header
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+    const idIdx = headers.findIndex(h => h.includes('id') && !h.includes('client'));
+    const nickIdx = headers.findIndex(h => h.includes('nick') || h.includes('nombre') || h.includes('name'));
+    const fullNameIdx = headers.findIndex(h => h.includes('full') || h.includes('completo'));
+    const emailIdx = headers.findIndex(h => h.includes('email') || h.includes('correo'));
+
+    const upsert = db.prepare(`
+      INSERT INTO silver5_clientes (silver5_id, nickname, nombre_completo, email, ultima_sync, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(nickname) DO UPDATE SET
+        silver5_id = excluded.silver5_id,
+        nombre_completo = excluded.nombre_completo,
+        ultima_sync = excluded.ultima_sync,
+        updated_at = excluded.updated_at
+    `);
+
+    const syncTime = nowCL();
+    let insertados = 0, actualizados = 0;
+    const upsertMany = db.transaction((rows) => {
+      for (const row of rows) {
+        const parts = row.split(',').map(p => p.trim().replace(/"/g, ''));
+        const silvId = idIdx >= 0 ? (parseInt(parts[idIdx]) || null) : null;
+        const nick = nickIdx >= 0 ? (parts[nickIdx] || null) : null;
+        const fullName = fullNameIdx >= 0 ? (parts[fullNameIdx] || null) : null;
+        const emailVal = emailIdx >= 0 ? (parts[emailIdx] === 'N/A' ? null : parts[emailIdx] || null) : null;
+        if (!nick) continue;
+        const existing = db.prepare('SELECT id FROM silver5_clientes WHERE nickname = ?').get(nick);
+        const result = upsert.run(silvId, nick, fullName, emailVal, syncTime, syncTime);
+        if (result.changes > 0) {
+          if (existing) actualizados++; else insertados++;
+        }
+      }
+    });
+    upsertMany(lines.slice(1).filter(l => l.trim()));
+
+    cfg.ultima_sync = syncTime;
+    setAppData('silver5_config', cfg);
+    const total = db.prepare('SELECT COUNT(*) as c FROM silver5_clientes').get().c;
+    res.json({ ok: true, insertados, actualizados, total, ultima_sync: syncTime });
+  } catch(e) {
+    console.error('[Silver5 Sync]', e.message);
+    res.status(500).json({ error: 'Error en sync Silver5: ' + e.message });
+  }
+});
+
+app.get('/api/silver5/clientes', requireAuth, (req, res) => {
+  const { search, page = 1, limit = 50, sin_email } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  let where = '';
+  const params = [];
+  if (search) {
+    where += ' WHERE (nickname LIKE ? OR nombre_completo LIKE ? OR email LIKE ?)';
+    const s = '%' + search + '%';
+    params.push(s, s, s);
+  }
+  if (sin_email === '1') {
+    where += (where ? ' AND' : ' WHERE') + " (email IS NULL OR email = '')";
+  }
+  const total = db.prepare('SELECT COUNT(*) as c FROM silver5_clientes' + where).get(...params).c;
+  const rows = db.prepare(
+    'SELECT * FROM silver5_clientes' + where +
+    " ORDER BY CASE WHEN email IS NULL OR email = '' THEN 0 ELSE 1 END, nickname COLLATE NOCASE" +
+    ' LIMIT ? OFFSET ?'
+  ).all(...params, parseInt(limit), offset);
+  res.json({ clientes: rows, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+});
+
+app.put('/api/silver5/clientes/:id', requireAuth, (req, res) => {
+  const { email, notas, empresa_binance } = req.body;
+  const { id } = req.params;
+  const now = nowCL();
+  db.prepare('UPDATE silver5_clientes SET email = ?, notas = ?, empresa_binance = ?, updated_at = ? WHERE id = ?')
+    .run(email || null, notas || null, empresa_binance || null, now, id);
+  res.json({ ok: true });
+});
+
+app.get('/api/silver5/stats', requireAuth, (req, res) => {
+  const cfg = getAppData('silver5_config') || {};
+  const total = db.prepare('SELECT COUNT(*) as c FROM silver5_clientes').get().c;
+  const conEmail = db.prepare("SELECT COUNT(*) as c FROM silver5_clientes WHERE email IS NOT NULL AND email != ''").get().c;
+  res.json({ total, con_email: conEmail, sin_email: total - conEmail, ultima_sync: cfg.ultima_sync || null });
+});
+
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // Admin: actualizar folio_dte para un movimiento especÃ­fico

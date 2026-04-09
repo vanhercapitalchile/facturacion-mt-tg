@@ -3236,4 +3236,66 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 
         stmtInsertMov.run(
           empresaId, idTransf, fechaStr, monto, monto, descProd || nombreProd,
-          rutFmt, rutN
+          rutFmt, rutNorm, razon, razon, giro,
+          dir, comuna, ciudad, email,
+          bancoUp, bancoUp, idComp,
+          'facturado', tipoDte, fechaStr, loteId,
+          nombreProd, descProd, precio,
+          now, now, now
+        );
+
+        // Insertar/ignorar cliente
+        if (rutNorm) {
+          const antes = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresaId);
+          if (!antes) {
+            stmtInsertCliente.run(
+              empresaId, tipoCliente, rutFmt, rutNorm, razon || null, giro || null,
+              dir || null, comuna || null, ciudad || null, email || null, now, now
+            );
+            clientesNuevos++;
+          }
+        }
+
+        nuevosIdCompuesto.add(idCompUpper);
+        insertados++;
+      } catch(rowErr) {
+        errores++;
+      }
+    }
+  };
+
+  try {
+    db.transaction(() => {
+      // Crear lote registral antes de insertar movimientos
+      db.prepare(
+        'INSERT OR IGNORE INTO lotes_facturacion (lote_id, empresa_id, nombre, cantidad, monto_total, estado, metodo, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).run(loteId, empresaId, nombreLote, 0, 0, 'facturado_manual', 'importacion_historica', now, now);
+
+      // Procesar todas las hojas
+      for (const hoja of HOJAS_OBJETIVO) procesarHoja(hoja);
+
+      // Actualizar totales reales del lote tras procesar filas
+      const totalesLote = db.prepare(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(monto_total),0) as monto FROM movimientos WHERE lote_id = ? AND empresa_id = ?"
+      ).get(loteId, empresaId);
+      db.prepare('UPDATE lotes_facturacion SET cantidad = ?, monto_total = ?, updated_at = ? WHERE lote_id = ?')
+        .run(totalesLote.cnt, totalesLote.monto, now, loteId);
+    })();
+
+    res.json({
+      ok: true,
+      insertados,
+      reconciliados,
+      duplicados,
+      clientesNuevos,
+      errores,
+      lote_id: loteId,
+      nombre: nombreLote
+    });
+  } catch(e) {
+    console.error('[BASE HISTORICA]', e);
+    res.status(500).json({ error: 'Error procesando base histórica: ' + e.message });
+  }
+});
+
+app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));

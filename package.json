@@ -1,6 +1,6 @@
 {
   "name": "facturacion-mt-tg",
-  "version": "1.0.0",
+    "version": "1.0.1",
   "description": "Sistema integrado de facturación MT & TG Inversiones",
   "main": "server.js",
   "scripts": {

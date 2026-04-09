@@ -114,6 +114,30 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 
+// ── Migration: limpiar CR/LF en campos de texto (emails con newline al final) ─
+// Causa de error SF: "Field at index N does not exist" cuando un email tiene \n
+try {
+  const cleaned = db.prepare(`UPDATE movimientos SET
+    email_receptor = TRIM(REPLACE(REPLACE(email_receptor, char(13), ''), char(10), '')),
+    nombre_origen  = TRIM(REPLACE(REPLACE(nombre_origen,  char(13), ''), char(10), '')),
+    razon_social   = TRIM(REPLACE(REPLACE(razon_social,   char(13), ''), char(10), '')),
+    giro           = TRIM(REPLACE(REPLACE(giro,           char(13), ''), char(10), ''))
+    WHERE email_receptor LIKE '%' || char(10) || '%'
+       OR email_receptor LIKE '%' || char(13) || '%'
+       OR nombre_origen  LIKE '%' || char(10) || '%'
+       OR razon_social   LIKE '%' || char(10) || '%'
+       OR giro           LIKE '%' || char(10) || '%'`).run();
+  if (cleaned.changes > 0) console.log(`[MIGRATION] Limpiados CR/LF en ${cleaned.changes} movimientos`);
+} catch(e) { console.warn('[MIGRATION] Error limpiando CR/LF en movimientos:', e.message); }
+try {
+  const cleanedCli = db.prepare(`UPDATE clientes SET
+    email = TRIM(REPLACE(REPLACE(email, char(13), ''), char(10), '')),
+    razon_social = TRIM(REPLACE(REPLACE(razon_social, char(13), ''), char(10), ''))
+    WHERE email LIKE '%' || char(10) || '%'
+       OR email LIKE '%' || char(13) || '%'`).run();
+  if (cleanedCli.changes > 0) console.log(`[MIGRATION] Limpiados CR/LF en ${cleanedCli.changes} clientes`);
+} catch(e) { console.warn('[MIGRATION] Error limpiando CR/LF en clientes:', e.message); }
+
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
@@ -437,16 +461,81 @@ app.post('/api/clientes', requireAuth, (req, res) => {
 app.put('/api/clientes/:id', requireAuth, (req, res) => {
   const c = req.body;
   const now = nowCL();
-  db.prepare(`
-    UPDATE clientes SET tipo=?, rut=?, rut_normalizado=?, razon_social=?, giro=?, direccion=?, comuna=?, ciudad=?, nombre=?, email=?, telefono=?, representante_legal=?, rut_representante=?, updated_at=?
-    WHERE id=?
-  `).run(c.tipo, c.rut, normalizeRut(c.rut), c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, now, req.params.id);
+  const rutNorm = normalizeRut(c.rut);
+
+  db.transaction(() => {
+    // Actualizar datos del cliente
+    db.prepare(`
+      UPDATE clientes SET tipo=?, rut=?, rut_normalizado=?, razon_social=?, giro=?, direccion=?, comuna=?, ciudad=?, nombre=?, email=?, telefono=?, representante_legal=?, rut_representante=?, updated_at=?
+      WHERE id=?
+    `).run(c.tipo, c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, now, req.params.id);
+
+    // Sincronizar email_receptor en movimientos pendientes/listos del mismo RUT
+    if (c.email && rutNorm) {
+      const synced = db.prepare(`
+        UPDATE movimientos
+        SET email_receptor = ?, updated_at = ?
+        WHERE rut_normalizado = ? AND estado IN ('pendiente', 'listo') AND (email_receptor IS NULL OR email_receptor = '')
+      `).run(c.email, now, rutNorm);
+      console.log(`[CLIENTES] Email sincronizado en ${synced.changes} movimientos para RUT ${rutNorm}`);
+    }
+  })();
+
   res.json({ ok: true });
 });
 
 app.delete('/api/clientes/:id', requireAuth, requireAdmin, (req, res) => {
   db.prepare('DELETE FROM clientes WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// ── Email rápido: asignar email a un cliente por RUT (y sincronizar movimientos) ──
+// Uso desde Binance: el operador copia el email del chat y lo asigna al RUT del cliente
+app.post('/api/clientes/email-rapido', requireAuth, (req, res) => {
+  const { rut, email } = req.body;
+  if (!rut || !email) return res.status(400).json({ error: 'RUT y email son requeridos' });
+  const rutNorm = normalizeRut(rut);
+  const empresaId = filterByEmpresa(req);
+  const now = nowCL();
+
+  let clienteId = null;
+  let accion = 'no_encontrado';
+  let movsSincronizados = 0;
+
+  db.transaction(() => {
+    // Buscar cliente existente
+    const cliente = empresaId
+      ? db.prepare('SELECT * FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresaId)
+      : db.prepare('SELECT * FROM clientes WHERE rut_normalizado = ?').get(rutNorm);
+
+    if (cliente) {
+      // Actualizar email del cliente existente
+      db.prepare('UPDATE clientes SET email = ?, updated_at = ? WHERE id = ?').run(email, now, cliente.id);
+      clienteId = cliente.id;
+      accion = 'actualizado';
+    } else {
+      // Crear cliente mínimo si no existe (se completará luego)
+      const result = db.prepare(`
+        INSERT INTO clientes (empresa_id, tipo, rut, rut_normalizado, email, created_at, updated_at)
+        VALUES (?, 'empresa', ?, ?, ?, ?, ?)
+      `).run(empresaId || 'mt', rut, rutNorm, email, now, now);
+      clienteId = result.lastInsertRowid;
+      accion = 'creado';
+    }
+
+    // Sincronizar email en todos los movimientos de ese RUT que estén pendientes/listos
+    const empQuery = empresaId ? ' AND empresa_id = ?' : '';
+    const empParams = empresaId ? [email, now, rutNorm, empresaId] : [email, now, rutNorm];
+    const synced = db.prepare(`
+      UPDATE movimientos
+      SET email_receptor = ?, updated_at = ?
+      WHERE rut_normalizado = ? AND estado IN ('pendiente', 'listo') ${empQuery}
+    `).run(...empParams);
+    movsSincronizados = synced.changes;
+  })();
+
+  console.log(`[EMAIL-RAPIDO] RUT ${rutNorm} → ${email} (${accion}) | ${movsSincronizados} movs sincronizados`);
+  res.json({ ok: true, accion, clienteId, movsSincronizados });
 });
 
 // Bulk import clientes from uploaded Excel data
@@ -514,10 +603,16 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (pag === '1') {
     const countSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT COUNT(*) as total FROM movimientos WHERE 1=1');
     const total = db.prepare(countSql).get(...params)?.total || 0;
-    // Conteo por tipo DTE (sin filtro de tipo_dte para obtener totales reales)
-    const baseSql = sql.replace('SELECT * FROM movimientos WHERE 1=1', 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1');
-    const baseParams = [...params];
-    const dteCounts = db.prepare(baseSql + ' GROUP BY tipo_dte').all(...baseParams);
+    // Conteo por tipo DTE PENDIENTES (estado=listo, SIN filtro tipo_dte para mostrar ambos totales siempre)
+    let typeSql = 'SELECT tipo_dte, COUNT(*) as cnt FROM movimientos WHERE 1=1';
+    const typeParams = [];
+    if (empresaId) { typeSql += ' AND empresa_id = ?'; typeParams.push(empresaId); }
+    if (estado)    { typeSql += ' AND estado = ?';     typeParams.push(estado); }
+    if (banco)     { typeSql += ' AND banco_cartola = ?'; typeParams.push(banco); }
+    if (fecha_desde) { typeSql += ' AND fecha >= ?';   typeParams.push(fecha_desde); }
+    if (fecha_hasta) { typeSql += ' AND fecha <= ?';   typeParams.push(fecha_hasta); }
+    typeSql += ' GROUP BY tipo_dte';
+    const dteCounts = db.prepare(typeSql).all(...typeParams);
     const total_34 = dteCounts.find(r => r.tipo_dte === 34)?.cnt || 0;
     const total_41 = dteCounts.find(r => r.tipo_dte === 41)?.cnt || 0;
     sql += ` ORDER BY ${sortCol} ${sortDir}, id ${sortDir}`;
@@ -1133,7 +1228,8 @@ function fechaParaSF(fechaISO) {
 }
 
 function escaparCsvSF(val) {
-  const s = String(val ?? '');
+  // Eliminar CR/LF que rompen filas CSV (e.g. emails con newline al final)
+  const s = String(val ?? '').replace(/[\r\n\t]/g, ' ').trim();
   // Envolver en comillas si contiene punto y coma o comillas
   if (s.includes(';') || s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
   return s;
@@ -1233,7 +1329,8 @@ const HAULMER_CSV_ROW2  = [
 ].join(';');
 
 function escaparCsvHaulmer(val) {
-  const s = String(val ?? '');
+  // Eliminar CR/LF que rompen filas CSV
+  const s = String(val ?? '').replace(/[\r\n\t]/g, ' ').trim();
   // Envolver en comillas si contiene punto y coma o comillas
   if (s.includes(';') || s.includes('"')) return `"${s.replace(/"/g, '""')}"`;
   return s;

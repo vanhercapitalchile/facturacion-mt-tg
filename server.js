@@ -946,6 +946,22 @@ app.get('/api/facturacion/lotes', requireAuth, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// Eliminar lote (solo admin) — devuelve movimientos a estado 'listo'
+app.delete('/api/facturacion/lotes/:lote_id', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden eliminar lotes' });
+  const loteId = req.params.lote_id;
+  const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  if (lote.estado === 'emitido') return res.status(400).json({ error: 'No se puede eliminar un lote ya emitido' });
+  const now = nowCL();
+  db.transaction(() => {
+    db.prepare(`UPDATE movimientos SET estado = 'listo', lote_id = NULL, updated_at = ? WHERE lote_id = ?`).run(now, loteId);
+    db.prepare(`DELETE FROM lotes_facturacion WHERE lote_id = ?`).run(loteId);
+  })();
+  console.log(`[LOTE DELETE] Lote ${loteId} eliminado por ${req.user.username}`);
+  res.json({ ok: true, mensaje: `Lote eliminado. Los movimientos volvieron a estado "listo".` });
+});
+
 // Detalle de movimientos de un lote
 app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) => {
   const movs = db.prepare(
@@ -3220,55 +3236,4 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 
         stmtInsertMov.run(
           empresaId, idTransf, fechaStr, monto, monto, descProd || nombreProd,
-          rutFmt, rutNorm, razon, razon, giro,
-          dir, comuna, ciudad, email,
-          bancoUp, bancoUp, idComp,
-          'facturado', tipoDte, fechaStr, loteId,
-          nombreProd, descProd, precio,
-          now, now, now
-        );
-
-        // Insertar/ignorar cliente
-        if (rutNorm) {
-          const antes = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresaId);
-          if (!antes) {
-            stmtInsertCliente.run(
-              empresaId, tipoCliente, rutFmt, rutNorm, razon || null, giro || null,
-              dir || null, comuna || null, ciudad || null, email || null, now, now
-            );
-            clientesNuevos++;
-          }
-        }
-
-        nuevosIdCompuesto.add(idCompUpper);
-        insertados++;
-      } catch(rowErr) {
-        errores++;
-      }
-    }
-  };
-
-  try {
-    db.transaction(() => {
-      // Crear lote registral antes de insertar movimientos
-      db.prepare(
-        'INSERT OR IGNORE INTO lotes_facturacion (lote_id, empresa_id, nombre, cantidad, monto_total, estado, metodo, created_at, updated_at) VALUES (?,?,?,0,0,?,?,?,?)'
-      ).run(loteId, empresaId, nombreLote, 'facturado_manual', 'importacion_historica', now, now);
-
-      HOJAS_OBJETIVO.forEach(procesarHoja);
-
-      // Actualizar contadores del lote (insertados nuevos + reconciliados)
-      db.prepare('UPDATE lotes_facturacion SET cantidad = ?, updated_at = ? WHERE lote_id = ?')
-        .run(insertados + reconciliados, now, loteId);
-    })();
-  } catch(txErr) {
-    return res.status(500).json({ error: 'Error en transacción: ' + txErr.message });
-  }
-
-  res.json({ ok: true, insertados, reconciliados, duplicados, errores, clientes_nuevos: clientesNuevos, lote_id: loteId });
-});
-
-// ── SPA catch-all ────────────────────────────────────────────────────────────
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-app.listen(PORT, () => console.log(`[FACTURACION MT-TG] Running on http://localhost:${PORT}`));
+          rutFmt, rutN

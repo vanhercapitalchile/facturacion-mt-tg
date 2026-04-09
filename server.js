@@ -138,6 +138,33 @@ try {
   if (cleanedCli.changes > 0) console.log(`[MIGRATION] Limpiados CR/LF en ${cleanedCli.changes} clientes`);
 } catch(e) { console.warn('[MIGRATION] Error limpiando CR/LF en clientes:', e.message); }
 
+// ── Migration: Santander id_compuesto → incluir fecha para evitar duplicados entre meses ─
+// Santander usa un contador secuencial (1,2,3...) que se reinicia cada período.
+// Sin la fecha, "1_SANTANDER" de marzo bloquea "1_SANTANDER" de abril.
+try {
+  const staleRows = db.prepare(`
+    SELECT id, fecha, id_transferencia
+    FROM movimientos
+    WHERE banco_cartola = 'SANTANDER'
+    AND id_compuesto NOT LIKE '____-__-__%'
+  `).all();
+  if (staleRows.length > 0) {
+    const updateRow = db.prepare(`UPDATE movimientos SET id_transferencia = ?, id_compuesto = ? WHERE id = ?`);
+    let migrated = 0;
+    for (const row of staleRows) {
+      const fechaPrefix = (row.fecha || '').substring(0, 10); // YYYY-MM-DD
+      if (!fechaPrefix || fechaPrefix.length < 10) continue;
+      try {
+        updateRow.run(`${fechaPrefix}_${row.id_transferencia}`, `${fechaPrefix}_${row.id_transferencia}_SANTANDER`, row.id);
+        migrated++;
+      } catch(innerErr) {
+        console.warn(`[MIGRATION] Santander ID skip id=${row.id}: ${innerErr.message}`);
+      }
+    }
+    console.log(`[MIGRATION] Santander IDs migrados con fecha: ${migrated}/${staleRows.length}`);
+  }
+} catch(e) { console.warn('[MIGRATION] Error en migración Santander IDs:', e.message); }
+
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
 try {
@@ -685,7 +712,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
   const loteCargaId = `${empresaId}-${banco_cartola}-${Date.now()}`.toLowerCase().replace(/\s/g,'-');
 
   const cargadoPor = req.user.username || 'sistema';
-  const checkDup = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
+  const checkDup = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
   const insertMov = db.prepare(`
     INSERT INTO movimientos (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado, nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto, estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor, nombre_item, descripcion_item, precio, monto_exento, monto_total, fecha_carga, created_at, updated_at, lote_carga_id, cargado_por)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -706,7 +733,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         const idCompuesto = `${idTransf}_${banco_cartola}`;
 
         // Check duplicate
-        const existing = checkDup.get(idCompuesto);
+        const existing = checkDup.get(idCompuesto, empresaId);
         if (existing) {
           duplicados++;
           results.push({ id_compuesto: idCompuesto, status: 'duplicado', existing_estado: existing.estado });
@@ -2485,9 +2512,11 @@ function parseSantanderCartola(buffer) {
 
     // ID único: si todos ceros usar "S{i}"
     const useId = idRaw.replace(/0/g,'') === '' ? `S${i}` : idRaw;
+    // Santander reutiliza números secuenciales cada mes → prefijamos fecha para unicidad entre períodos
+    const idConFecha = fecha ? `${fecha}_${useId}` : useId;
 
     movimientos.push({
-      id_transferencia: useId,
+      id_transferencia: idConFecha,
       fecha, monto, glosa,
       rut: rutDigits ? formatRutDigits(rutDigits) : '',
       rut_digits: rutDigits,                  // solo dígitos para consulta API
@@ -2710,7 +2739,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     }
 
     // ── Procesar e insertar movimientos ───────────────────────────────────────
-    const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ?');
+    const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
         (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado,
@@ -2739,7 +2768,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           const idCompuesto = `${idTransf}_${bancoCartola}`;
 
           // ── Verificar duplicado ──────────────────────────────────────────
-          const existing = checkDup.get(idCompuesto);
+          const existing = checkDup.get(idCompuesto, empresaId);
           if (existing) {
             duplicados++;
             resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado });
@@ -3013,7 +3042,7 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
   const importarMov = req.body.importar_movimientos === 'true';
   if (importarMov && wb.SheetNames.includes('RECIBIDAS')) {
     const rows      = XLSX_LIB.utils.sheet_to_json(wb.Sheets['RECIBIDAS'], { header: 1, defval: '' });
-    const checkDup  = db.prepare('SELECT id FROM movimientos WHERE id_compuesto=?');
+    const checkDup  = db.prepare('SELECT id FROM movimientos WHERE id_compuesto=? AND empresa_id=?');
     const insertMov = db.prepare(`
       INSERT OR IGNORE INTO movimientos
         (empresa_id, id_transferencia, fecha, monto, rut, rut_normalizado,
@@ -3028,7 +3057,7 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
         const idTransf    = String(r[0]).trim();
         const bancoCol    = String(r[10]||'').toUpperCase().trim() || 'IMPORTADO';
         const idCompuesto = `${idTransf}_${bancoCol}`;
-        if (checkDup.get(idCompuesto)) { omitidosMov++; continue; }
+        if (checkDup.get(idCompuesto, empresaId)) { omitidosMov++; continue; }
 
         const rutEmp = String(r[2]||'').trim();
         const rutPer = String(r[3]||'').trim();

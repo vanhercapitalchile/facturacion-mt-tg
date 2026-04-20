@@ -188,13 +188,39 @@ try {
 } catch(e) { console.warn('[MIGRATION] Error prefijando id_compuesto con empresa:', e.message); }
 
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
-const RUTS_INTERNOS = ['778593769', '778856980', '775063432', '779766063']; // TG / MT / TS Capital / Vanher Capital
+const RUTS_INTERNOS = [
+  '778593769', '778856980', '775063432', '779766063', // TG / MT / TS Capital / Vanher Capital
+  '167938582'  // Hernán Ariel Turra Guzmán — no facturable en ninguna empresa
+];
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
-           WHERE rut_normalizado IN ('778593769','778856980','775063432','779766063')
+           WHERE rut_normalizado IN ('778593769','778856980','775063432','779766063','167938582')
            AND estado IN ('pendiente','listo')`);
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
+
+// ── Nombres internos — coincidencia por nombre cuando el RUT no viene en la cartola ─
+// Aplica a TS Capital (y cualquier empresa) donde el nombre puede aparecer sin RUT.
+const NOMBRES_INTERNOS = [
+  'TURRAGUZMAN',    // Hernán Ariel Turra Guzmán — normalizado sin espacios
+];
+
+function esNombreInterno(nombreOrigen) {
+  if (!nombreOrigen) return false;
+  const norm = String(nombreOrigen).toUpperCase().replace(/[\s.\-]/g, '');
+  return NOMBRES_INTERNOS.some(frag => norm.includes(frag));
+}
+
+// Migración: marcar por nombre además de RUT
+try {
+  const byName = db.prepare(`
+    UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+    WHERE estado IN ('pendiente','listo')
+      AND UPPER(REPLACE(REPLACE(nombre_origen,' ',''),'.','')) LIKE '%TURRAGUZMAN%'
+  `).run();
+  if (byName.changes > 0)
+    console.log(`[STARTUP] ${byName.changes} movimientos de Hernán Turra marcados como interno (por nombre)`);
+} catch(e) { console.warn('[STARTUP] Error marcando Turra Guzmán por nombre:', e.message); }
 
 // ── RUTs excluidos por empresa (representantes legales, socios propios, etc.) ──
 // Vanher Capital: excluir RUT propio + representantes legales Vanessa Soto / Hernán Turra
@@ -454,11 +480,18 @@ function checkEmpresaAdminOnly(req, res, empresaId) {
 // Devuelve true si el RUT está excluido de facturación para una empresa específica
 // Combina los globales (RUTS_INTERNOS) con los excluidos por config de empresa
 function esRutExcluido(rutNorm, empresaId) {
-  if (!rutNorm) return false;
-  if (RUTS_INTERNOS.includes(rutNorm)) return true;
+  if (rutNorm && RUTS_INTERNOS.includes(rutNorm)) return true;
   const empConf = getAppData('empresas')?.[empresaId] || {};
   const excluidos = empConf.ruts_excluidos || [];
-  return excluidos.includes(rutNorm);
+  if (rutNorm && excluidos.includes(rutNorm)) return true;
+  return false;
+}
+
+// Devuelve true si el movimiento debe excluirse por nombre (cuando RUT no disponible)
+function esMovimientoInterno(rutNorm, nombreOrigen, empresaId) {
+  if (esRutExcluido(rutNorm, empresaId)) return true;
+  if (esNombreInterno(nombreOrigen)) return true;
+  return false;
 }
 
 function normalizeRut(rut) {
@@ -863,8 +896,8 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // RUT excluido: empresas propias o representantes legales excluidos por empresa
-        if (esRutExcluido(rutNorm, empresaId)) {
+        // RUT o nombre excluido: empresas propias, representantes o personas internas
+        if (esMovimientoInterno(rutNorm, mov.nombre_origen, empresaId)) {
           estado = 'interno';
         } else if (rutNorm) {
           // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
@@ -3029,8 +3062,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
           let clienteEsNuevo = false, fuenteRazonSocial = 'cartola';
 
-          // RUT excluido: empresas propias o representantes legales excluidos por empresa
-          if (esRutExcluido(rutNorm, empresaId)) {
+          // RUT o nombre excluido: empresas propias, representantes o personas internas
+          if (esMovimientoInterno(rutNorm, mov.nombre_origen, empresaId)) {
             estado = 'interno';
           } else if (rutNorm) {
             tipoDte = getTipoDte(rutNorm, empConf);

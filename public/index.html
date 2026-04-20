@@ -341,6 +341,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <button class="empresa-btn" onclick="selectEmpresa('tg-inversiones')" data-emp="tg-inversiones">TG Inversiones</button>
         <button class="empresa-btn" onclick="selectEmpresa('mt-inversiones')" data-emp="mt-inversiones">MT Inversiones</button>
         <button class="empresa-btn" onclick="selectEmpresa('ts-capital')" data-emp="ts-capital">TS Capital</button>
+        <button class="empresa-btn" onclick="selectEmpresa('vanher-capital')" data-emp="vanher-capital">Vanher Capital</button>
       </div>
 
       <!-- DASHBOARD VIEW (ADMIN) -->
@@ -416,6 +417,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
                 <option value="ts-capital">TS Capital</option>
+                <option value="vanher-capital">Vanher Capital</option>
               </select>
             </div>
             <div class="form-group" style="flex:1;min-width:160px;">
@@ -423,6 +425,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
               <select id="cartola-banco" class="inline-input">
                 <option value="BCI">BCI</option>
                 <option value="SANTANDER">Santander</option>
+                <option value="BANCO CHILE">Banco Chile</option>
               </select>
             </div>
           </div>
@@ -436,7 +439,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                onclick="document.getElementById('cartola-file-auto').click()">
             <div style="font-size:36px;margin-bottom:8px;">&#x1F4E4;</div>
             <p style="margin:0;font-weight:600;">Arrastra la cartola aquí o haz clic para seleccionar</p>
-            <p style="margin:4px 0 0;font-size:12px;color:var(--txt2);">Formatos: .xls (BCI) · .xlsx (Santander / Banco Estado)</p>
+            <p style="margin:4px 0 0;font-size:12px;color:var(--txt2);">Formatos: .xls (BCI · Banco Chile) · .xlsx (Santander / Banco Estado)</p>
             <input type="file" id="cartola-file-auto" accept=".xls,.xlsx,.csv" style="display:none"
                    onchange="procesarCartolaAuto(this.files[0])">
           </div>
@@ -468,6 +471,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
                 <option value="ts-capital">TS Capital</option>
+                <option value="vanher-capital">Vanher Capital</option>
               </select>
               <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:10px;cursor:pointer;">
                 <input type="checkbox" id="import-incluir-movimientos"> Incluir historial RECIBIDAS (marcar como facturados)
@@ -486,6 +490,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                   <option value="tg-inversiones">TG</option>
                   <option value="mt-inversiones">MT</option>
                   <option value="ts-capital">TS</option>
+                  <option value="vanher-capital">VH</option>
                 </select>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="consultarRUTManual()">Consultar</button>
@@ -776,6 +781,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                 <option value="tg-inversiones">TG Inversiones</option>
                 <option value="mt-inversiones">MT Inversiones</option>
                 <option value="ts-capital">TS Capital</option>
+                <option value="vanher-capital">Vanher Capital</option>
               </select>
             </div>
           </div>
@@ -854,6 +860,22 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                        onchange="importarBaseHistorica('ts-capital', this.files[0])">
               </div>
               <div id="bh-status-ts" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- Vanher Capital -->
+            <div style="border:1px solid var(--card-b);border-radius:var(--radius);padding:20px;">
+              <h4 style="margin-bottom:12px;color:#f59e0b;">Vanher Capital</h4>
+              <div class="upload-area" style="padding:20px;cursor:pointer;"
+                   ondragover="event.preventDefault();"
+                   ondrop="handleBHDrop(event,'vanher-capital')"
+                   onclick="document.getElementById('bh-file-vh').click()">
+                <div class="upload-icon" style="font-size:24px;">&#x1F4C2;</div>
+                <p style="margin:4px 0 0;font-size:13px;">Arrastra o haz clic</p>
+                <p style="margin:2px 0 0;font-size:11px;color:var(--txt3);">.xlsx — Sistema de facturación Vanher</p>
+                <input type="file" id="bh-file-vh" accept=".xlsx,.xls" style="display:none"
+                       onchange="importarBaseHistorica('vanher-capital', this.files[0])">
+              </div>
+              <div id="bh-status-vh" style="margin-top:12px;"></div>
             </div>
           </div>
         </div>
@@ -981,6 +1003,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
             <select id="emp-cartola-banco" class="inline-input">
               <option value="BCI">BCI</option>
               <option value="SANTANDER">Santander</option>
+              <option value="BANCO CHILE">Banco Chile</option>
             </select>
           </div>
           <div class="upload-area" style="cursor:pointer;"
@@ -1468,11 +1491,12 @@ async function loadDashboard() {
   // 1. Monthly DTE stacked bar chart
   const labels = adv.monthlySeries.map(m => m.label);
   const empresaColors = {
-    'tg-inversiones': { bg: 'rgba(0,212,170,.7)', border: '#00d4aa' },
-    'mt-inversiones': { bg: 'rgba(74,158,255,.7)', border: '#4a9eff' },
-    'ts-capital':     { bg: 'rgba(160,120,240,.7)', border: '#a078f0' }
+    'tg-inversiones':  { bg: 'rgba(0,212,170,.7)', border: '#00d4aa' },
+    'mt-inversiones':  { bg: 'rgba(74,158,255,.7)', border: '#4a9eff' },
+    'ts-capital':      { bg: 'rgba(160,120,240,.7)', border: '#a078f0' },
+    'vanher-capital':  { bg: 'rgba(245,158,11,.7)', border: '#f59e0b' }
   };
-  const empresaNames = { 'tg-inversiones': 'TG Inversiones', 'mt-inversiones': 'MT Inversiones', 'ts-capital': 'TS Capital' };
+  const empresaNames = { 'tg-inversiones': 'TG Inversiones', 'mt-inversiones': 'MT Inversiones', 'ts-capital': 'TS Capital', 'vanher-capital': 'Vanher Capital' };
 
   const monthlyDatasets = (adv.empresaIds || []).map(eid => ({
     label: empresaNames[eid] || eid,
@@ -1784,6 +1808,8 @@ function actualizarBancosCartola() {
   const sel = document.getElementById('cartola-banco');
   if (empresa === 'ts-capital') {
     sel.innerHTML = `<option value="BCI">BCI</option><option value="BANCO ESTADO">Banco Estado</option>`;
+  } else if (empresa === 'vanher-capital') {
+    sel.innerHTML = `<option value="BCI">BCI</option><option value="SANTANDER">Santander</option><option value="BANCO CHILE">Banco Chile</option>`;
   } else {
     sel.innerHTML = `<option value="BCI">BCI</option><option value="SANTANDER">Santander</option>`;
   }
@@ -2120,8 +2146,9 @@ function renderDetalleResultados(results) {
     const fuenteBadge = {
       'simpleapi':    '<span style="font-size:10px;background:#3b82f6;color:#fff;padding:1px 6px;border-radius:4px;">SimpleAPI</span>',
       'bd':           '<span style="font-size:10px;background:#10b981;color:#fff;padding:1px 6px;border-radius:4px;">BD</span>',
-      'cartola_bci':  '<span style="font-size:10px;background:#6366f1;color:#fff;padding:1px 6px;border-radius:4px;">BCI</span>',
-      'glosa_limpia': '<span style="font-size:10px;background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;">Glosa</span>'
+      'cartola_bci':          '<span style="font-size:10px;background:#6366f1;color:#fff;padding:1px 6px;border-radius:4px;">BCI</span>',
+      'cartola_banco_chile':  '<span style="font-size:10px;background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;">Bco Chile</span>',
+      'glosa_limpia':         '<span style="font-size:10px;background:#f59e0b;color:#fff;padding:1px 6px;border-radius:4px;">Glosa</span>'
     }[r.fuente] || '';
 
     const estadoBadge = r.status === 'listo'
@@ -3170,8 +3197,9 @@ async function loadBaseHistoricaStats() {
 
   // Stats por empresa (conteo de movimientos facturados en base histórica)
   const empresas = [
-    { id: 'tg-inversiones', label: 'TG Inversiones', color: 'var(--green)' },
-    { id: 'mt-inversiones', label: 'MT Inversiones', color: 'var(--blue)'  }
+    { id: 'tg-inversiones',  label: 'TG Inversiones',  color: 'var(--green)'  },
+    { id: 'mt-inversiones',  label: 'MT Inversiones',  color: 'var(--blue)'   },
+    { id: 'vanher-capital',  label: 'Vanher Capital',  color: '#f59e0b'        }
   ];
 
   statsEl.innerHTML = '';

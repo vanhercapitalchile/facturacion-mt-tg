@@ -166,10 +166,10 @@ try {
 } catch(e) { console.warn('[MIGRATION] Error en migración Santander IDs:', e.message); }
 
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
-const RUTS_INTERNOS = ['778593769', '778856980', '775063432']; // TG / MT / TS Capital
+const RUTS_INTERNOS = ['778593769', '778856980', '775063432', '779766063']; // TG / MT / TS Capital / Vanher Capital
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
-           WHERE rut_normalizado IN ('778593769','778856980','775063432')
+           WHERE rut_normalizado IN ('778593769','778856980','775063432','779766063')
            AND estado IN ('pendiente','listo')`);
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
@@ -261,6 +261,25 @@ try {
       }
     }
   } catch(e) { console.warn('[MIGRATE] ensureHaulmerConfig error:', e.message); }
+})();
+
+// ── Migration: asegurar que vanher-capital esté en la BD ──────────────────────
+(function ensureVanherCapital() {
+  try {
+    const empresas = getAppData('empresas');
+    if (!empresas) return;
+    if (!empresas['vanher-capital']) {
+      const seedPath = path.join(__dirname, 'seed-data.json');
+      if (fs.existsSync(seedPath)) {
+        const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        if (seed.empresas?.['vanher-capital']) {
+          empresas['vanher-capital'] = seed.empresas['vanher-capital'];
+          setAppData('empresas', empresas);
+          console.log('[MIGRATE] vanher-capital insertada desde seed-data.json');
+        }
+      }
+    }
+  } catch(e) { console.warn('[MIGRATE] ensureVanherCapital error:', e.message); }
 })();
 
 // ── Password migration: actualizar credenciales y renombrar hturra→admin ─────
@@ -1053,9 +1072,16 @@ function sfTokenFromCache(email) {
   return null;
 }
 
-// Obtener token SF usando login email/password (el "api_token" de SF Integraciones
-// es para webhooks salientes, NO para autenticar llamadas REST → se ignora aquí)
-async function sfGetToken(email, password, _apiTokenIgnored) {
+// Obtener token SF: prioridad → api_token directo → login email/password
+// Si api_token está configurado se usa como Bearer directamente (APIs con clave estática).
+// Si no, se hace login con email+password para obtener JWT temporal.
+async function sfGetToken(email, password, apiToken) {
+  // 0. Si hay API token estático, usarlo directamente como Bearer
+  if (apiToken && apiToken.length > 10) {
+    console.log(`[SF TOKEN] Usando API token estático para ${email}`);
+    return apiToken;
+  }
+
   // 1. Return cached token if still valid (login previo)
   const cached = sfTokenFromCache(email);
   if (cached) {
@@ -2611,6 +2637,78 @@ function parseBancoEstadoCartola(buffer) {
   return movimientos;
 }
 
+// ── Parser Banco Chile (.xls) ─────────────────────────────────────────────────
+// Formato sheet "TEF Empresa":
+// Row ~10 (header): ["","Fecha y hora","Nombre o razón social origen","Rut origen","Banco Origen","Cuenta Origen","Tipo de operación","Cuenta Destino","Monto","ID Transacción","Tipo Moneda","Tipo Operador","Comentario"]
+// Col 0 siempre vacía (offset de 1). Banco Chile entrega nombre directo del comprador.
+function parseBancoChileCartola(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const movimientos = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(20, data.length); i++) {
+    const rowStr = data[i].map(c => String(c || '')).join('|');
+    if (rowStr.includes('Fecha y hora') && rowStr.includes('Nombre o raz')) { headerIdx = i; break; }
+    if (rowStr.includes('ID Transacci') && rowStr.includes('Monto'))         { headerIdx = i; break; }
+  }
+  const dataStart = headerIdx >= 0 ? headerIdx + 1 : 11;
+
+  for (let i = dataStart; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 10) continue;
+
+    // Col 1: "Fecha y hora" → "DD-MM-YYYY HH:MM"
+    const fechaRaw = String(row[1] || '').trim();
+    if (!fechaRaw) continue;
+    let fecha = '';
+    const mf = fechaRaw.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (mf) fecha = `${mf[3]}-${mf[2]}-${mf[1]}`;
+    if (!fecha) continue;
+
+    // Col 9: "ID Transacción" → "TEF_IPE..."
+    const idTransf = String(row[9] || '').trim();
+    if (!idTransf) continue;
+
+    // Col 2: "Nombre o razón social origen" — entregado directamente por el banco
+    const nombre = String(row[2] || '').trim();
+
+    // Col 3: "Rut origen" → "14.318.511-7" (ya con puntos y guión)
+    const rutRaw = String(row[3] || '').trim();
+
+    // Col 4: "Banco Origen"
+    const bancoOrigen = String(row[4] || '').trim();
+
+    // Col 5: "Cuenta Origen"
+    const cuentaOrig = String(row[5] || '').trim();
+
+    // Col 8: "Monto" → "$350.000"
+    let monto = row[8];
+    if (typeof monto === 'string') {
+      monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+    }
+    monto = parseFloat(monto) || 0;
+    if (monto <= 0) continue;
+
+    // Col 12: "Comentario" → glosa
+    const glosa = String(row[12] || '').trim();
+
+    movimientos.push({
+      id_transferencia: idTransf,
+      fecha,
+      monto,
+      glosa: glosa || nombre,
+      rut: rutRaw,
+      nombre_origen: nombre,
+      banco_origen: bancoOrigen || 'Banco Chile',
+      cuenta_origen: cuentaOrig
+    });
+  }
+  return movimientos;
+}
+
 // ── Consultar RUT en SimpleAPI ────────────────────────────────────────────────
 async function consultarRUTSimpleAPI(rutNorm, apiKey) {
   if (!apiKey || !rutNorm || rutNorm.length < 3) return null;
@@ -2669,17 +2767,21 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       if (fname.includes('santander'))                            bancoCartola = 'SANTANDER';
       else if (fname.includes('banco_estado') || fname.includes('bancoestado') || fname.includes('banco estado'))
                                                                   bancoCartola = 'BANCO ESTADO';
+      else if (fname.includes('banco_chile') || fname.includes('bancochile') || fname.includes('banco chile') || fname.includes('bchile') || fname.includes('chile'))
+                                                                  bancoCartola = 'BANCO CHILE';
       else if (fname.includes('bci'))                             bancoCartola = 'BCI';
       else bancoCartola = fname.endsWith('.xlsx') ? 'SANTANDER' : 'BCI';
     }
-    // Normalizar variantes del nombre Banco Estado
+    // Normalizar variantes
     if (['BANCOESTADO','BANCO_ESTADO','ESTADO'].includes(bancoCartola)) bancoCartola = 'BANCO ESTADO';
+    if (['CHILE','BCHILE','BANCO_CHILE','BANCOCHILE'].includes(bancoCartola)) bancoCartola = 'BANCO CHILE';
 
     // Parsear cartola
     let movimientosRaw = [];
     try {
-      if (bancoCartola === 'SANTANDER')        movimientosRaw = parseSantanderCartola(req.file.buffer);
+      if (bancoCartola === 'SANTANDER')         movimientosRaw = parseSantanderCartola(req.file.buffer);
       else if (bancoCartola === 'BANCO ESTADO') movimientosRaw = parseBancoEstadoCartola(req.file.buffer);
+      else if (bancoCartola === 'BANCO CHILE')  movimientosRaw = parseBancoChileCartola(req.file.buffer);
       else                                      movimientosRaw = parseBCICartola(req.file.buffer);
     } catch(parseErr) {
       return res.status(422).json({ error: 'Error al parsear archivo: ' + parseErr.message });
@@ -2810,11 +2912,11 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 emailReceptor = apiData.email         || '';
                 estado        = 'listo';
                 fuenteRazonSocial = 'simpleapi';
-              } else if (bancoCartola === 'BCI') {
-                // BCI tiene nombre y RUT completo en la cartola
+              } else if (bancoCartola === 'BCI' || bancoCartola === 'BANCO CHILE') {
+                // BCI y Banco Chile entregan nombre y RUT completo directamente
                 razonSocial = (mov.nombre_origen || '').trim();
                 estado      = tipoDte === 41 ? 'listo' : 'pendiente';
-                fuenteRazonSocial = 'cartola_bci';
+                fuenteRazonSocial = bancoCartola === 'BANCO CHILE' ? 'cartola_banco_chile' : 'cartola_bci';
               } else {
                 // Santander sin datos API → limpiar nombre de glosa
                 razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();

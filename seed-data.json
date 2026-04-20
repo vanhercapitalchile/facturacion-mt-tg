@@ -51,6 +51,22 @@
         "rut_emisor": "77885698-0"
       }
     },
+    "vanher-capital": {
+      "nombre": "Vanher Capital SpA",
+      "rut": "77.976.606-3",
+      "giro": "Otras actividades auxiliares de las actividades de servicios financieros",
+      "direccion": "",
+      "comuna": "",
+      "ciudad": "",
+      "email_facturacion": "vanhercapitalchile@gmail.com",
+      "proveedor_dte": "simplefactura",
+      "simplefactura": {
+        "username": "vanhercapitalchile@gmail.com",
+        "password": "",
+        "api_token": "XYerxxLiZuBM63Pq3iGPgrHLfwUh_4ouBTL6LaDdwIs",
+        "rut_emisor": "77976606-3"
+      }
+    },
     "ts-capital": {
       "nombre": "TS Capital SPA",
       "rut": "77.506.343-2",

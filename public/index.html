@@ -3712,9 +3712,10 @@ function renderConfig() {
         <span id="haulmer-test-result-${id}" style="margin-left:10px;font-size:13px;"></span>
       </div>`;
 
+    const empColor = id === 'vanher-capital' ? '#f59e0b' : esHaulmer ? 'var(--purple)' : 'var(--green)';
     return `
     <div style="border:1px solid var(--card-b);border-radius:var(--radius-sm);padding:16px;margin-bottom:12px;">
-      <h4 style="margin-bottom:12px;color:${esHaulmer ? 'var(--purple)' : 'var(--green)'};">${emp.nombre} (${id}) ${provBadge}</h4>
+      <h4 style="margin-bottom:12px;color:${empColor};">${emp.nombre} (${id}) ${provBadge}</h4>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         ${esHaulmer ? haulmerBlock : sfBlock}
       </div>

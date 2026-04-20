@@ -63,9 +63,11 @@
       "ruts_excluidos": ["779766063", "168693591", "167938582"],
       "simplefactura": {
         "username": "vanhercapitalchile@gmail.com",
-        "password": "",
+        "password": "Vanenan87.",
         "api_token": "XYerxxLiZuBM63Pq3iGPgrHLfwUh_4ouBTL6LaDdwIs",
-        "rut_emisor": "77976606-3"
+        "rut_emisor": "77976606-3",
+        "rut_emisor_sf": "77976606-3",
+        "nombre_sucursal": "Casa Matriz"
       }
     },
     "ts-capital": {

@@ -290,13 +290,30 @@ try {
       setAppData('empresas', empresas);
       console.log('[MIGRATE] vanher-capital insertada desde seed-data.json');
     } else {
-      // Ya existe: asegurar que ruts_excluidos esté actualizado
+      // Ya existe: sincronizar campos que el admin no debería perder (ruts_excluidos, credenciales SF)
       const vh = empresas['vanher-capital'];
+      let changed = false;
+
       if (!vh.ruts_excluidos || vh.ruts_excluidos.length < 3) {
         vh.ruts_excluidos = seedVH.ruts_excluidos;
+        changed = true;
+      }
+      // Restaurar credenciales SF si faltan
+      if (!vh.simplefactura) vh.simplefactura = {};
+      const sf = vh.simplefactura;
+      const sfSeed = seedVH.simplefactura || {};
+      if (!sf.api_token   && sfSeed.api_token)   { sf.api_token = sfSeed.api_token; changed = true; }
+      if (!sf.username    && sfSeed.username)    { sf.username  = sfSeed.username;  changed = true; }
+      if (!sf.password    && sfSeed.password)    { sf.password  = sfSeed.password;  changed = true; }
+      if (!sf.rut_emisor  && sfSeed.rut_emisor)  { sf.rut_emisor = sfSeed.rut_emisor; changed = true; }
+      if (!sf.rut_emisor_sf && sfSeed.rut_emisor_sf) { sf.rut_emisor_sf = sfSeed.rut_emisor_sf; changed = true; }
+      if (!sf.nombre_sucursal) { sf.nombre_sucursal = sfSeed.nombre_sucursal || 'Casa Matriz'; changed = true; }
+
+      if (changed) {
+        vh.simplefactura = sf;
         empresas['vanher-capital'] = vh;
         setAppData('empresas', empresas);
-        console.log('[MIGRATE] ruts_excluidos Vanher actualizados');
+        console.log('[MIGRATE] Credenciales y config Vanher actualizadas en BD');
       }
     }
   } catch(e) { console.warn('[MIGRATE] ensureVanherCapital error:', e.message); }

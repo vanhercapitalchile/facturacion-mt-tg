@@ -174,6 +174,16 @@ try {
   console.log('[STARTUP] RUTs internos marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
 
+// ── RUTs excluidos por empresa (representantes legales, socios propios, etc.) ──
+// Vanher Capital: excluir RUT propio + representantes legales Vanessa Soto / Hernán Turra
+try {
+  db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+           WHERE empresa_id='vanher-capital'
+           AND rut_normalizado IN ('779766063','168693591','167938582')
+           AND estado IN ('pendiente','listo')`);
+  console.log('[STARTUP] RUTs excluidos Vanher marcados como interno');
+} catch(e) { console.warn('[STARTUP] Error marcando RUTs excluidos Vanher:', e.message); }
+
 // ── Cleanup: eliminar intentos fallidos de facturación anteriores al deploy ──
 // Resetea movimientos y borra lotes con estado 'error'. Seguro de correr múltiples veces.
 try {
@@ -263,20 +273,30 @@ try {
   } catch(e) { console.warn('[MIGRATE] ensureHaulmerConfig error:', e.message); }
 })();
 
-// ── Migration: asegurar que vanher-capital esté en la BD ──────────────────────
+// ── Migration: asegurar que vanher-capital esté en la BD con config completa ──
 (function ensureVanherCapital() {
   try {
     const empresas = getAppData('empresas');
     if (!empresas) return;
+    const seedPath = path.join(__dirname, 'seed-data.json');
+    if (!fs.existsSync(seedPath)) return;
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const seedVH = seed.empresas?.['vanher-capital'];
+    if (!seedVH) return;
+
     if (!empresas['vanher-capital']) {
-      const seedPath = path.join(__dirname, 'seed-data.json');
-      if (fs.existsSync(seedPath)) {
-        const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-        if (seed.empresas?.['vanher-capital']) {
-          empresas['vanher-capital'] = seed.empresas['vanher-capital'];
-          setAppData('empresas', empresas);
-          console.log('[MIGRATE] vanher-capital insertada desde seed-data.json');
-        }
+      // Primera vez: insertar completo
+      empresas['vanher-capital'] = seedVH;
+      setAppData('empresas', empresas);
+      console.log('[MIGRATE] vanher-capital insertada desde seed-data.json');
+    } else {
+      // Ya existe: asegurar que ruts_excluidos esté actualizado
+      const vh = empresas['vanher-capital'];
+      if (!vh.ruts_excluidos || vh.ruts_excluidos.length < 3) {
+        vh.ruts_excluidos = seedVH.ruts_excluidos;
+        empresas['vanher-capital'] = vh;
+        setAppData('empresas', empresas);
+        console.log('[MIGRATE] ruts_excluidos Vanher actualizados');
       }
     }
   } catch(e) { console.warn('[MIGRATE] ensureVanherCapital error:', e.message); }
@@ -372,6 +392,16 @@ function checkEmpresaAdminOnly(req, res, empresaId) {
     return true;
   }
   return false;
+}
+
+// Devuelve true si el RUT está excluido de facturación para una empresa específica
+// Combina los globales (RUTS_INTERNOS) con los excluidos por config de empresa
+function esRutExcluido(rutNorm, empresaId) {
+  if (!rutNorm) return false;
+  if (RUTS_INTERNOS.includes(rutNorm)) return true;
+  const empConf = getAppData('empresas')?.[empresaId] || {};
+  const excluidos = empConf.ruts_excluidos || [];
+  return excluidos.includes(rutNorm);
 }
 
 function normalizeRut(rut) {
@@ -776,8 +806,8 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         let tipoDte = null;
         let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
 
-        // RUT interno: transferencia entre empresas propias → no facturar
-        if (RUTS_INTERNOS.includes(rutNorm)) {
+        // RUT excluido: empresas propias o representantes legales excluidos por empresa
+        if (esRutExcluido(rutNorm, empresaId)) {
           estado = 'interno';
         } else if (rutNorm) {
           // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
@@ -2899,7 +2929,10 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           let razonSocial = '', giro = '', direccion = '', comuna = '', ciudad = '', emailReceptor = '';
           let clienteEsNuevo = false, fuenteRazonSocial = 'cartola';
 
-          if (rutNorm) {
+          // RUT excluido: empresas propias o representantes legales excluidos por empresa
+          if (esRutExcluido(rutNorm, empresaId)) {
+            estado = 'interno';
+          } else if (rutNorm) {
             tipoDte = getTipoDte(rutNorm, empConf);
             const clienteExistente = clienteMap.get(rutNorm);
 

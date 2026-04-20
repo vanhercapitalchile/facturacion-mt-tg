@@ -60,6 +60,7 @@
       "ciudad": "",
       "email_facturacion": "vanhercapitalchile@gmail.com",
       "proveedor_dte": "simplefactura",
+      "ruts_excluidos": ["779766063", "168693591", "167938582"],
       "simplefactura": {
         "username": "vanhercapitalchile@gmail.com",
         "password": "",

@@ -146,7 +146,7 @@ try {
     SELECT id, fecha, id_transferencia
     FROM movimientos
     WHERE banco_cartola = 'SANTANDER'
-    AND id_compuesto NOT LIKE '____-__-__%'
+    AND id_compuesto NOT LIKE '%____-__-__%'
   `).all();
   if (staleRows.length > 0) {
     const updateRow = db.prepare(`UPDATE movimientos SET id_transferencia = ?, id_compuesto = ? WHERE id = ?`);
@@ -164,6 +164,28 @@ try {
     console.log(`[MIGRATION] Santander IDs migrados con fecha: ${migrated}/${staleRows.length}`);
   }
 } catch(e) { console.warn('[MIGRATION] Error en migración Santander IDs:', e.message); }
+
+// ── Migration: prefixar id_compuesto con empresa_id para unicidad per-empresa ──
+// Evita que la constraint UNIQUE global bloquee IDs idénticos entre empresas distintas.
+// Seguro de correr múltiples veces: omite filas cuyo id_compuesto ya tiene el prefijo.
+try {
+  const rows = db.prepare(`
+    SELECT id, empresa_id, id_compuesto
+    FROM movimientos
+    WHERE id_compuesto IS NOT NULL AND id_compuesto != ''
+      AND id_compuesto NOT LIKE (empresa_id || '_%')
+  `).all();
+  if (rows.length > 0) {
+    const stmtPfx = db.prepare(`UPDATE movimientos SET id_compuesto = ? WHERE id = ?`);
+    let pfxMigrated = 0, pfxSkipped = 0;
+    for (const row of rows) {
+      const newId = `${row.empresa_id}_${row.id_compuesto}`;
+      try { stmtPfx.run(newId, row.id); pfxMigrated++; }
+      catch(e) { pfxSkipped++; }
+    }
+    console.log(`[MIGRATION] id_compuesto empresa-prefix: ${pfxMigrated} migrados, ${pfxSkipped} omitidos`);
+  }
+} catch(e) { console.warn('[MIGRATION] Error prefijando id_compuesto con empresa:', e.message); }
 
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
 const RUTS_INTERNOS = ['778593769', '778856980', '775063432', '779766063']; // TG / MT / TS Capital / Vanher Capital
@@ -808,7 +830,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
     for (const mov of movs) {
       try {
         const idTransf = String(mov.id_transferencia || '').trim();
-        const idCompuesto = `${idTransf}_${banco_cartola}`;
+        const idCompuesto = `${empresaId}_${idTransf}_${banco_cartola}`;
 
         // Check duplicate
         const existing = checkDup.get(idCompuesto, empresaId);
@@ -2930,7 +2952,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       for (const mov of movimientosRaw) {
         try {
           const idTransf    = String(mov.id_transferencia || '').trim();
-          const idCompuesto = `${idTransf}_${bancoCartola}`;
+          const idCompuesto = `${empresaId}_${idTransf}_${bancoCartola}`;
 
           // ── Verificar duplicado ──────────────────────────────────────────
           const existing = checkDup.get(idCompuesto, empresaId);
@@ -3224,7 +3246,7 @@ app.post('/api/importar/base-datos', requireAuth, upload.single('base'), (req, r
         if (!r[0]) continue;
         const idTransf    = String(r[0]).trim();
         const bancoCol    = String(r[10]||'').toUpperCase().trim() || 'IMPORTADO';
-        const idCompuesto = `${idTransf}_${bancoCol}`;
+        const idCompuesto = `${empresaId}_${idTransf}_${bancoCol}`;
         if (checkDup.get(idCompuesto, empresaId)) { omitidosMov++; continue; }
 
         const rutEmp = String(r[2]||'').trim();
@@ -3297,10 +3319,11 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   const now = nowCL();
 
   // Normalizar el banco del id_compuesto para que coincida con el sistema (siempre MAYÚSCULAS)
+  // Incluye empresa_id como prefijo para garantizar unicidad global entre empresas
   function normalizarIdCompuesto(idTransf, cartola) {
     const banco = String(cartola || '').trim().toUpperCase();
     const id    = String(idTransf || '').trim();
-    return id && banco ? `${id}_${banco}` : '';
+    return id && banco ? `${empresaId}_${id}_${banco}` : '';
   }
 
   // Determinar tipo por RUT: >= 50.000.000 → empresa (34) · < 50M → persona (41)

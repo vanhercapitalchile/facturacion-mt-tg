@@ -2297,7 +2297,7 @@ async function reclasificarMovimientos() {
 async function loadMovimientos(page) {
   if (typeof page === 'number') MOV_PAGE = page;
   const empId = getEmpresaId();
-  let url = `/api/movimientos?pag=1&limit=${MOV_PER_PAGE}&offset=${MOV_PAGE * MOV_PER_PAGE}`;
+  let url = `/api/movimientos?pag=1&limit=${MOV_PER_PAGE}&offset=${MOV_PAGE * MOV_PER_PAGE}&orden=id&dir=desc`;
   if (empId) url += `&empresa_id=${empId}`;
   if (MOV_FILTER !== 'todos') url += `&estado=${MOV_FILTER}`;
   // Operadores: solo ven movimientos de los últimos 45 días
@@ -2872,6 +2872,7 @@ async function toggleLoteDetalle(loteId, btn) {
     return;
   }
 
+  const puedeQuitar = isAdmin();
   let html = `<div style="overflow-x:auto;">
     <table style="width:100%;font-size:12px;border-collapse:collapse;">
       <thead>
@@ -2884,6 +2885,7 @@ async function toggleLoteDetalle(loteId, btn) {
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">Monto</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Banco</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Estado</th>
+          ${puedeQuitar ? `<th style="padding:6px 8px;border-bottom:1px solid var(--border);"></th>` : ''}
         </tr>
       </thead>
       <tbody>`;
@@ -2891,6 +2893,7 @@ async function toggleLoteDetalle(loteId, btn) {
   movs.forEach((m, i) => {
     const nombre = m.razon_social || m.nombre_origen || '—';
     const estadoColor = m.estado === 'facturado' ? '#2ecc71' : m.estado === 'error' ? '#e74c3c' : 'var(--txt3)';
+    const puedeQuitarEste = puedeQuitar && m.estado !== 'facturado';
     html += `
       <tr style="border-bottom:1px solid var(--border);">
         <td style="padding:5px 8px;color:var(--txt3);">${i + 1}</td>
@@ -2900,7 +2903,12 @@ async function toggleLoteDetalle(loteId, btn) {
         <td style="padding:5px 8px;">${tipoDteBadge(m.tipo_dte)}</td>
         <td style="padding:5px 8px;text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td style="padding:5px 8px;"><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || '—'}</span></td>
-        <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}</td>
+        <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}${m.estado === 'error' ? ' ⚠️' : ''}</td>
+        ${puedeQuitar ? `<td style="padding:5px 8px;">
+          ${puedeQuitarEste ? `<button onclick="quitarMovimientoDeLote('${loteId}', ${m.id}, this)"
+            style="font-size:10px;padding:2px 8px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;"
+            title="Quitar del lote y devolver a Facturación">✕ Quitar</button>` : ''}
+        </td>` : ''}
       </tr>`;
   });
 
@@ -2931,6 +2939,29 @@ async function emitirLote(loteId) {
     const msg = data?.mensaje || data?.error || 'Error al emitir';
     showToast(`Error SimpleFactura: ${msg}`, 'error', 10000);
     loadLotes(); // refresh to show error state
+  }
+}
+
+async function quitarMovimientoDeLote(loteId, movId, btn) {
+  if (!confirm('¿Quitar este documento del lote?\n\nVolverá a estado "listo" en Facturación para que puedas procesarlo manualmente.')) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  const data = await apiFetch(`/api/facturacion/lotes/${loteId}/quitar-movimiento`, {
+    method: 'POST',
+    body: JSON.stringify({ movimiento_id: movId })
+  });
+  if (data?.ok) {
+    showToast('✅ Documento quitado del lote — disponible en Facturación', 'success', 5000);
+    // Remover fila visualmente sin recargar toda la lista
+    const row = btn.closest('tr');
+    if (row) row.style.opacity = '0.3';
+    btn.textContent = '✓';
+    // Recargar lotes para actualizar contadores
+    loadLotes();
+  } else {
+    showToast(data?.error || 'Error al quitar el movimiento', 'error');
+    btn.disabled = false;
+    btn.textContent = '✕ Quitar';
   }
 }
 

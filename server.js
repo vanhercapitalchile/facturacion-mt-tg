@@ -1132,6 +1132,36 @@ app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) =
   res.json(movs);
 });
 
+// Quitar un movimiento específico del lote (admin) — lo devuelve a estado 'listo'
+// Útil cuando un documento tiene error OF-10 u otro y se quiere procesar por separado.
+app.post('/api/facturacion/lotes/:lote_id/quitar-movimiento', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores' });
+  const loteId   = req.params.lote_id;
+  const movId    = parseInt(req.body.movimiento_id);
+  if (!movId) return res.status(400).json({ error: 'movimiento_id requerido' });
+
+  const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  if (lote.estado === 'emitido') return res.status(400).json({ error: 'No se puede modificar un lote emitido' });
+
+  const mov = db.prepare("SELECT * FROM movimientos WHERE id = ? AND lote_id = ?").get(movId, loteId);
+  if (!mov) return res.status(404).json({ error: 'Movimiento no encontrado en este lote' });
+  if (mov.estado === 'facturado') return res.status(400).json({ error: 'El movimiento ya está facturado' });
+
+  const now = nowCL();
+  db.transaction(() => {
+    // Devolver movimiento a estado listo, desligarlo del lote
+    db.prepare("UPDATE movimientos SET estado='listo', lote_id=NULL, updated_at=? WHERE id=?").run(now, movId);
+    // Recalcular totales del lote
+    const nuevaCantidad = Math.max(0, (lote.cantidad || 1) - 1);
+    const nuevoMonto    = Math.max(0, (lote.monto_total || 0) - (mov.monto_total || mov.monto || 0));
+    db.prepare("UPDATE lotes_facturacion SET cantidad=?, monto_total=?, updated_at=? WHERE lote_id=?")
+      .run(nuevaCantidad, nuevoMonto, now, loteId);
+  })();
+  console.log(`[LOTE] Movimiento ${movId} quitado de lote ${loteId} por ${req.user.username}`);
+  res.json({ ok: true, mensaje: 'Movimiento quitado del lote. Vuelve a "listo" en Facturación.' });
+});
+
 // ── SimpleFactura helpers ─────────────────────────────────────────────────────
 // API pública documentada: https://documentacion.simplefactura.cl/
 const SF_API  = 'https://api.simplefactura.cl';

@@ -2673,16 +2673,20 @@ async function crearLoteFacturacion() {
 
 async function crearLotePorTipo(tipoDte) {
   const label = tipoDte === 34 ? 'Facturas Exentas (34)' : 'Boletas Exentas (41)';
-  const ids = ALL_FACT_MOVS.filter(m => m.tipo_dte === tipoDte).map(m => m.id);
-  if (!ids.length) return showToast(`No hay ${label} listas para facturar`, 'error');
-  if (!confirm(`Crear lote con ${ids.length} ${label}?`)) return;
+  // Contar cuántos hay del tipo (en total, no solo página actual)
+  const totalTipo = tipoDte === 34 ? FACT_TOTAL_34 : FACT_TOTAL_41;
+  if (totalTipo === 0) return showToast(`No hay ${label} listas para facturar`, 'error');
+  if (!confirm(`¿Crear lote con ${totalTipo} ${label}?\n\nSe incluyen TODOS los movimientos de este tipo (no solo los visibles en pantalla).`)) return;
   const empId = getEmpresaId();
+  showToast('⏳ Creando lote...', 'info', 4000);
+  // Enviar tipo_dte al servidor — el servidor consulta TODOS los listo de ese tipo en la empresa
   const data = await apiFetch('/api/facturacion/crear-lote', {
     method: 'POST',
-    body: JSON.stringify({ empresa_id: empId, movimiento_ids: ids })
+    body: JSON.stringify({ empresa_id: empId, tipo_dte: tipoDte })
   });
   if (data?.ok) {
-    showToast(`Lote ${label}: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
+    showToast(`✅ Lote ${label}: ${data.cantidad} documentos, ${fmt(data.monto_total)}`, 'success');
+    loadFacturacion(0); // recargar tabla
     if (isAdmin()) adminNav('lotes'); else empNav('lotes');
   } else {
     showToast(data?.error || 'Error al crear lote', 'error');

@@ -234,7 +234,9 @@ try {
         const empConfig = empresas[m.empresa_id];
         const correcto = getTipoDte(m.rut_normalizado, empConfig);
         if (m.tipo_dte !== correcto) {
-          const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
+          // Solo promover boletas (41) a 'listo'. Para facturas (34) NO bajar a 'pendiente':
+          // si ya tenía datos completos y estaba 'listo', debe seguir disponible para facturar.
+          const nuevoEstado = correcto === 41 ? 'listo' : m.estado;
           upd.run(correcto, nuevoEstado, now, m.id);
           fixed++;
         }
@@ -243,6 +245,22 @@ try {
     if (fixed > 0) console.log(`[MIGRATE] Re-clasificados ${fixed} movimientos con tipo_dte incorrecto`);
   } catch(e) { console.error('[MIGRATE] Error en reclassify:', e.message); }
 })();
+
+// ── Migration: restaurar movimientos tipo_34 que quedaron en 'pendiente' por bug ─
+// El bug anterior bajaba de 'listo' a 'pendiente' al corregir tipo_dte.
+// Si un movimiento tipo 34 tiene razon_social + email completos, puede facturarse.
+try {
+  const restored = db.prepare(`
+    UPDATE movimientos
+    SET estado = 'listo', updated_at = datetime('now')
+    WHERE tipo_dte = 34
+      AND estado = 'pendiente'
+      AND razon_social IS NOT NULL AND razon_social != ''
+      AND email_receptor IS NOT NULL AND email_receptor != ''
+  `).run();
+  if (restored.changes > 0)
+    console.log(`[MIGRATION] Restaurados ${restored.changes} movimientos tipo_34 a estado='listo' (tenían datos completos)`);
+} catch(e) { console.warn('[MIGRATION] Error restaurando movimientos tipo_34:', e.message); }
 
 // ── Seed ─────────────────────────────────────────────────────────────────────
 (function seedIfEmpty() {
@@ -988,8 +1006,9 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
       if (!m.rut_normalizado) continue;
       const empConfig = empresas[m.empresa_id];
       const correcto = getTipoDte(m.rut_normalizado, empConfig);
-      // Estado: si es boleta (41) → listo (no requiere revisión), si es factura → mantener estado actual
-      const nuevoEstado = correcto === 41 ? 'listo' : (m.estado === 'listo' ? 'pendiente' : m.estado);
+      // Solo promover boletas (41) a 'listo'. Para facturas (34) conservar estado actual:
+      // bajar de 'listo' a 'pendiente' ocultaría documentos ya listos para emitir.
+      const nuevoEstado = correcto === 41 ? 'listo' : m.estado;
       db.prepare('UPDATE movimientos SET tipo_dte=?, estado=?, updated_at=? WHERE id=?')
         .run(correcto, nuevoEstado, now, m.id);
       fixed++;
@@ -1000,15 +1019,27 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
 
 // ── Facturación (crear lote + enviar a SimpleFactura) ────────────────────────
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
-  const { empresa_id, movimiento_ids } = req.body;
+  const { empresa_id, movimiento_ids, tipo_dte } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
   if (checkEmpresaAdminOnly(req, res, empresaId)) return;
   const now = nowCL();
   const loteId = generateLoteId(empresaId);
 
-  // Get movimientos
-  const placeholders = movimiento_ids.map(() => '?').join(',');
-  const movs = db.prepare(`SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo'`).all(...movimiento_ids);
+  // Get movimientos — dos modos:
+  // 1. Por IDs específicos (selección manual o por página)
+  // 2. Por tipo_dte (todos los 'listo' de ese tipo en la empresa)
+  let movs;
+  if (tipo_dte && !movimiento_ids?.length) {
+    // Modo tipo: traer TODOS los movimientos listo del tipo dado para esta empresa
+    if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+    movs = db.prepare(
+      `SELECT * FROM movimientos WHERE empresa_id = ? AND estado = 'listo' AND tipo_dte = ? ORDER BY fecha ASC`
+    ).all(empresaId, parseInt(tipo_dte));
+  } else {
+    const placeholders = (movimiento_ids || []).map(() => '?').join(',');
+    if (!placeholders) return res.status(400).json({ error: 'Sin movimientos ni tipo_dte' });
+    movs = db.prepare(`SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo'`).all(...movimiento_ids);
+  }
 
   if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos listos para facturar' });
 

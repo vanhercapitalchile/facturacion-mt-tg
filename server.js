@@ -362,6 +362,18 @@ function filterByEmpresa(req) {
   return req.user.empresa;
 }
 
+// Empresas cuya facturación está restringida a rol admin
+const EMPRESAS_SOLO_ADMIN = ['vanher-capital'];
+
+// Devuelve true y responde 403 si el usuario no tiene permiso para facturar esa empresa
+function checkEmpresaAdminOnly(req, res, empresaId) {
+  if (EMPRESAS_SOLO_ADMIN.includes(empresaId) && req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Solo el administrador puede facturar esta empresa' });
+    return true;
+  }
+  return false;
+}
+
 function normalizeRut(rut) {
   if (!rut) return '';
   return String(rut).replace(/[.\-\s]/g, '').toUpperCase();
@@ -921,6 +933,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
+  if (checkEmpresaAdminOnly(req, res, empresaId)) return;
   const now = nowCL();
   const loteId = generateLoteId(empresaId);
 
@@ -1519,6 +1532,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
   const loteId  = req.params.lote_id;
   const lote    = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
   if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  if (checkEmpresaAdminOnly(req, res, lote.empresa_id)) return;
 
   const empresas = getAppData('empresas');
   const empresa  = empresas[lote.empresa_id] || {};
@@ -1737,6 +1751,7 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const loteId = req.params.lote_id;
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
   if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  if (checkEmpresaAdminOnly(req, res, lote.empresa_id)) return;
 
   const empresas = getAppData('empresas');
   const empresa = empresas[lote.empresa_id];
@@ -2759,6 +2774,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
 
     const empresaId = req.user.role === 'admin' ? (req.body.empresa_id || '') : req.user.empresa;
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+    if (checkEmpresaAdminOnly(req, res, empresaId)) return;
 
     // Auto-detectar banco si no viene explícito
     let bancoCartola = (req.body.banco || '').toUpperCase().trim();

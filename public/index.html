@@ -2790,6 +2790,9 @@ async function loadLotes() {
             <button class="btn btn-secondary btn-sm"
               onclick="exportarCSVHaulmerLote('${l.lote_id}')">&#x2B07; Descargar CSV</button>
             <button class="btn btn-sm" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 10px;" onclick="eliminarLote('${l.lote_id}')">&#x1F5D1; Eliminar lote</button>
+          ` : esEmitido ? `
+            ${estadoBadge(l.estado)}
+            <button class="btn btn-secondary btn-sm" onclick="${esHaulmer ? `exportarCSVHaulmerLote('${l.lote_id}')` : `exportarCSVLote('${l.lote_id}')`}">&#x2B07; Descargar CSV ${esHaulmer ? 'Haulmer' : 'SF'}</button>
           ` : estadoBadge(l.estado)}
         </div>
       </div>

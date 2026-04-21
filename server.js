@@ -447,10 +447,13 @@ function setAppData(key, value) {
 }
 
 function requireAuth(req, res, next) {
+  // Aceptar token desde header Authorization o desde query param ?token=
+  // El query param es necesario para window.open() (descargas CSV en nueva pestaña)
   const h = req.headers.authorization;
-  if (!h?.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
+  const raw = h?.startsWith('Bearer ') ? h.slice(7) : (req.query.token || null);
+  if (!raw) return res.status(401).json({ error: 'No token' });
   try {
-    req.user = jwt.verify(h.slice(7), JWT_SECRET);
+    req.user = jwt.verify(raw, JWT_SECRET);
     next();
   } catch { res.status(401).json({ error: 'Token inválido o expirado' }); }
 }

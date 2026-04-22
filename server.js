@@ -2557,6 +2557,10 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   //
   // Fecha de referencia: l.updated_at del lote (cuándo se marcó como 'emitido')
   // También en formato es-CL → mismo substr(pos 4,2) y substr(pos 7,4)
+  // Criterio de fecha: m.fecha_facturacion (set al momento exacto de emisión API)
+  // NO usamos l.updated_at porque puede modificarse después (ej: quitar-movimiento)
+  // m.fecha_facturacion para API-emitidos = nowCL() → es-CL "DD-MM-YYYY, ..."
+  // Para manuales = m.fecha en YYYY-MM-DD → no coincide con substr(pos4,2)="04"
   const DTE_MES_SQL = `
     SELECT COUNT(m.id) as cnt, COALESCE(SUM(m.monto), 0) as monto
     FROM movimientos m
@@ -2564,8 +2568,8 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     WHERE m.empresa_id IN (${empresaIds.map(() => '?').join(',')})
       AND m.estado = 'facturado'
       AND l.estado IN ('emitido', 'parcial')
-      AND substr(l.updated_at, 4, 2) = ?
-      AND substr(l.updated_at, 7, 4) = ?
+      AND substr(m.fecha_facturacion, 4, 2) = ?
+      AND substr(m.fecha_facturacion, 7, 4) = ?
   `;
   const dteMesActualRows = db.prepare(DTE_MES_SQL).get(...empresaIds, mesMM, anioYYYY);
 
@@ -2582,8 +2586,8 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
       WHERE m.empresa_id = ?
         AND m.estado = 'facturado'
         AND l.estado IN ('emitido', 'parcial')
-        AND substr(l.updated_at, 4, 2) = ?
-        AND substr(l.updated_at, 7, 4) = ?
+        AND substr(m.fecha_facturacion, 4, 2) = ?
+        AND substr(m.fecha_facturacion, 7, 4) = ?
     `).get(eid, mesMM, anioYYYY);
     dteMesActualPorEmpresa[eid] = { cnt: r?.cnt || 0, monto: r?.monto || 0 };
   }
@@ -2601,6 +2605,70 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     mesActualYM,
     mesMM,
     anioYYYY
+  });
+});
+
+// ── Diagnóstico DTE mes actual (solo admin) ──────────────────────────────────
+// GET /api/diagnostico/dte-mes-actual?empresa_id=tg-inversiones
+// Devuelve los lotes y movimientos que componen el KPI para depurar discrepancias
+app.get('/api/diagnostico/dte-mes-actual', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
+  const empresaId = req.query.empresa_id || null;
+  const empresaIds = empresaId ? [empresaId] : ['tg-inversiones','mt-inversiones','ts-capital','vanher-capital'];
+
+  const nowStr   = nowCL();
+  const mesMM    = nowStr.slice(3, 5);
+  const anioYYYY = nowStr.slice(6, 10);
+
+  // Lotes emitidos del mes con sus cantidades
+  const lotes = db.prepare(`
+    SELECT l.lote_id, l.empresa_id, l.nombre, l.cantidad, l.monto_total,
+           l.estado, l.metodo, l.created_at, l.updated_at,
+           COUNT(m.id) as movs_facturados,
+           COALESCE(SUM(m.monto),0) as monto_movs,
+           substr(l.updated_at, 4, 2) as mes_lote,
+           substr(l.updated_at, 7, 4) as anio_lote
+    FROM lotes_facturacion l
+    LEFT JOIN movimientos m ON m.lote_id = l.lote_id
+      AND m.estado = 'facturado'
+      AND substr(m.fecha_facturacion, 4, 2) = ?
+      AND substr(m.fecha_facturacion, 7, 4) = ?
+    WHERE l.empresa_id IN (${empresaIds.map(() => '?').join(',')})
+      AND l.estado IN ('emitido','parcial')
+    GROUP BY l.lote_id
+    ORDER BY l.updated_at DESC
+    LIMIT 100
+  `).all(mesMM, anioYYYY, ...empresaIds);
+
+  // Totales por estado de lote (para ver si hay lotes 'emitido' fuera del mes también)
+  const estadosLotes = db.prepare(`
+    SELECT l.estado, COUNT(*) as lotes, COALESCE(SUM(l.cantidad),0) as cantidad_total,
+           substr(l.updated_at, 4, 2) as mes_upd, substr(l.updated_at, 7, 4) as anio_upd
+    FROM lotes_facturacion l
+    WHERE l.empresa_id IN (${empresaIds.map(() => '?').join(',')})
+    GROUP BY l.estado, mes_upd, anio_upd
+    ORDER BY anio_upd DESC, mes_upd DESC
+  `).all(...empresaIds);
+
+  // Sample de fecha_facturacion para ver formatos reales
+  const sampleFechas = db.prepare(`
+    SELECT m.empresa_id, m.fecha_facturacion, m.updated_at, l.estado as lote_estado
+    FROM movimientos m
+    JOIN lotes_facturacion l ON m.lote_id = l.lote_id
+    WHERE m.empresa_id IN (${empresaIds.map(() => '?').join(',')})
+      AND m.estado = 'facturado'
+      AND l.estado IN ('emitido','parcial')
+    ORDER BY m.id DESC
+    LIMIT 20
+  `).all(...empresaIds);
+
+  res.json({
+    mesMM, anioYYYY,
+    nowStr_ejemplo: nowStr,
+    lotes_contados_mes: lotes.filter(l => l.movs_facturados > 0),
+    lotes_emitidos_sin_movs_mes: lotes.filter(l => l.movs_facturados === 0),
+    estadosLotes,
+    sample_fecha_facturacion: sampleFechas
   });
 });
 

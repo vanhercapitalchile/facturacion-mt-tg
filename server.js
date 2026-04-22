@@ -2105,18 +2105,35 @@ async function sfGetDteIssuedCount(sfConf, desdeISO, hastaISO) {
     hasta: hastaISO
   };
 
-  const resp = await fetch(`${SF_API}/documentsIssued`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(reqBody)
+  // Usar https nativo para garantizar que el body se envíe en GET
+  // (fetch nativo de Node.js puede ignorar body en GET según implementación)
+  const bodyStr = JSON.stringify(reqBody);
+  const text = await new Promise((resolve, reject) => {
+    const https = require('https');
+    const url   = new URL(`${SF_API}/documentsIssued`);
+    const opts  = {
+      hostname: url.hostname,
+      path:     url.pathname + url.search,
+      method:   'GET',
+      headers:  {
+        'Authorization':  `Bearer ${token}`,
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr)
+      }
+    };
+    const req = https.request(opts, r => {
+      let buf = '';
+      r.on('data', c => buf += c);
+      r.on('end', () => resolve(buf));
+    });
+    req.on('error', reject);
+    req.write(bodyStr);
+    req.end();
   });
 
-  const text = await resp.text();
   let data;
   try { data = JSON.parse(text); } catch(e) { throw new Error('SF respuesta no JSON: ' + text.slice(0, 200)); }
+  console.log(`[SF documentsIssued] status http, respuesta tipo=${Array.isArray(data)?'array':typeof data}, preview:`, JSON.stringify(data)?.slice(0, 300));
 
   // La respuesta puede ser un array directo o un PagedResponse { data: [...] }
   let items;
@@ -2129,6 +2146,7 @@ async function sfGetDteIssuedCount(sfConf, desdeISO, hastaISO) {
     return result;
   } else {
     // Respuesta inesperada — retornar con rawpreview para diagnóstico
+    console.warn('[SF documentsIssued] respuesta inesperada:', JSON.stringify(data)?.slice(0, 500));
     return { count: null, source: 'sf-api-error', raw: data, text: text.slice(0, 500) };
   }
 
@@ -2136,6 +2154,85 @@ async function sfGetDteIssuedCount(sfConf, desdeISO, hastaISO) {
   sfDteCountCache[cacheKey] = { result, expiresAt: Date.now() + 5 * 60 * 1000 };
   return result;
 }
+
+// GET /api/diagnostico/sf-documentsIssued?empresa_id=tg-inversiones  (raw, admin only)
+// Diagnóstico: muestra la respuesta cruda de SF para depurar el conteo de DTE
+app.get('/api/diagnostico/sf-documentsIssued', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
+  const empresaId = req.query.empresa_id || 'tg-inversiones';
+  const empresas  = getAppData('empresas');
+  const emp = empresas[empresaId];
+  const sfConf = emp?.simplefactura || {};
+  if (!sfConf.rut_emisor || (!sfConf.username && !sfConf.api_token))
+    return res.status(400).json({ error: 'Sin credenciales SF para ' + empresaId });
+
+  const nowStr  = nowCL();
+  const mesMM   = nowStr.slice(3, 5);
+  const anioYYYY = nowStr.slice(6, 10);
+  const mesNum  = parseInt(mesMM, 10);
+  const anioNum = parseInt(anioYYYY, 10);
+  const desde   = new Date(Date.UTC(anioNum, mesNum - 1, 1, 0, 0, 0)).toISOString();
+  const hasta   = new Date(Date.UTC(anioNum, mesNum,     0, 23, 59, 59)).toISOString();
+
+  try {
+    const email = sfConf.username || 'api-token';
+    // Invalidar caché para obtener respuesta fresca
+    delete sfTokenCache[email];
+    const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
+
+    const reqBody = {
+      credenciales: {
+        rutEmisor: rutParaSF(sfConf.rut_emisor || ''),
+        nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
+      },
+      ambiente: 0,
+      salida: 0,
+      desde,
+      hasta
+    };
+
+    const bodyStr = JSON.stringify(reqBody);
+    const { statusCode, rawText } = await new Promise((resolve, reject) => {
+      const https = require('https');
+      const url   = new URL(`${SF_API}/documentsIssued`);
+      const opts  = {
+        hostname: url.hostname,
+        path:     url.pathname + url.search,
+        method:   'GET',
+        headers:  {
+          'Authorization':  `Bearer ${token}`,
+          'Content-Type':   'application/json',
+          'Content-Length': Buffer.byteLength(bodyStr)
+        }
+      };
+      const req = https.request(opts, r => {
+        let buf = '';
+        r.on('data', c => buf += c);
+        r.on('end', () => resolve({ statusCode: r.statusCode, rawText: buf }));
+      });
+      req.on('error', reject);
+      req.write(bodyStr);
+      req.end();
+    });
+
+    let parsed;
+    try { parsed = JSON.parse(rawText); } catch(e) { parsed = null; }
+    res.json({
+      empresa: empresaId,
+      desde, hasta,
+      reqBody,
+      sfStatusCode: statusCode,
+      rawPreview: rawText.slice(0, 2000),
+      parsedType: Array.isArray(parsed) ? 'array' : typeof parsed,
+      itemCount: Array.isArray(parsed) ? parsed.length
+                 : Array.isArray(parsed?.data) ? parsed.data.length
+                 : 'n/a',
+      parsedPreview: parsed ? JSON.stringify(parsed).slice(0, 1000) : null
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // GET /api/dashboard/dte-sf-count?empresa_id=tg-inversiones  (o sin empresa_id = todas)
 // Llama a SF y retorna cuántos DTE fueron emitidos en el mes actual.

@@ -356,6 +356,11 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
         <!-- KPI Cards -->
         <div class="stats-grid" id="dashboard-stats"></div>
+        <!-- Diagnóstico DTE (solo admin, colapsable) -->
+        <div id="diag-dte-wrap" style="margin-bottom:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="toggleDiagDTE()" style="font-size:11px;opacity:.7;">🔍 Diagnóstico DTE mes actual</button>
+          <div id="diag-dte-result" style="display:none;margin-top:8px;"></div>
+        </div>
         <!-- Charts Row 1 -->
         <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;">
           <div class="card" style="margin-bottom:0;">
@@ -1393,6 +1398,81 @@ function tipoDteBadge(tipo) {
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
+async function toggleDiagDTE() {
+  const wrap = document.getElementById('diag-dte-result');
+  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  wrap.innerHTML = '<p style="font-size:12px;color:var(--txt2);">Consultando...</p>';
+  const empId = getEmpresaId();
+  const url = '/api/diagnostico/dte-mes-actual' + (empId ? `?empresa_id=${empId}` : '');
+  const data = await apiFetch(url);
+  if (!data) { wrap.innerHTML = '<p style="color:var(--red);font-size:12px;">Error al consultar</p>'; return; }
+
+  const emp = { 'tg-inversiones':'TG','mt-inversiones':'MT','ts-capital':'TS Cap','vanher-capital':'Vanher' };
+
+  // Tabla de lotes contados
+  const lotesRows = (data.lotes_contados_mes || []).map(l => `
+    <tr>
+      <td style="font-size:11px;padding:4px 8px;">${emp[l.empresa_id]||l.empresa_id}</td>
+      <td style="font-size:11px;padding:4px 8px;">${l.lote_id}</td>
+      <td style="font-size:11px;padding:4px 8px;">${l.estado}</td>
+      <td style="font-size:11px;padding:4px 8px;text-align:right;">${l.movs_facturados}</td>
+      <td style="font-size:11px;padding:4px 8px;color:var(--txt2);">${(l.updated_at||'').slice(0,16)}</td>
+    </tr>`).join('');
+
+  // Tabla de estados por mes
+  const estRows = (data.estadosLotes || []).map(e => `
+    <tr>
+      <td style="font-size:11px;padding:3px 8px;">${e.estado}</td>
+      <td style="font-size:11px;padding:3px 8px;text-align:center;">${e.mes_upd}-${e.anio_upd}</td>
+      <td style="font-size:11px;padding:3px 8px;text-align:right;">${e.lotes}</td>
+      <td style="font-size:11px;padding:3px 8px;text-align:right;">${e.cantidad_total}</td>
+    </tr>`).join('');
+
+  // Sample fecha_facturacion
+  const fechaSamples = (data.sample_fecha_facturacion || []).slice(0,8).map(f =>
+    `<code style="font-size:10px;background:var(--surface2);padding:1px 5px;border-radius:3px;display:block;margin-bottom:2px;">${f.empresa_id} | ff=${f.fecha_facturacion} | lote=${f.lote_estado}</code>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;">
+      <strong>Período: ${data.mesMM}-${data.anioYYYY} | nowCL()="${data.nowStr_ejemplo}"</strong>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+        <div>
+          <p style="font-weight:600;margin-bottom:4px;">Lotes emitidos API contados (${(data.lotes_contados_mes||[]).length}):</p>
+          <div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead><tr style="background:var(--card);">
+                <th style="font-size:10px;padding:3px 8px;text-align:left;">Emp</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:left;">Lote ID</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:left;">Estado</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:right;">DTE</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:left;">updated_at</th>
+              </tr></thead>
+              <tbody>${lotesRows || '<tr><td colspan="5" style="padding:8px;color:var(--txt2);">Sin lotes</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <p style="font-weight:600;margin-bottom:4px;">Estados de lotes por mes:</p>
+          <div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead><tr style="background:var(--card);">
+                <th style="font-size:10px;padding:3px 8px;text-align:left;">Estado</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:center;">MM-YYYY</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:right;">Lotes</th>
+                <th style="font-size:10px;padding:3px 8px;text-align:right;">Cant.</th>
+              </tr></thead>
+              <tbody>${estRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <p style="font-weight:600;margin:10px 0 4px;">Muestra fecha_facturacion real en BD:</p>
+      ${fechaSamples}
+    </div>`;
+}
+
 async function loadDashboard() {
   const empParam = getEmpresaId();
 

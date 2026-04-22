@@ -2176,34 +2176,33 @@ app.get('/api/diagnostico/sf-documentsIssued', requireAuth, async (req, res) => 
 
   try {
     const email = sfConf.username || 'api-token';
-    // Invalidar caché para obtener respuesta fresca
     delete sfTokenCache[email];
     const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
 
-    const reqBody = {
-      credenciales: {
-        rutEmisor: rutParaSF(sfConf.rut_emisor || ''),
-        nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
-      },
-      ambiente: 0,
-      salida: 0,
-      desde,
-      hasta
-    };
+    const rutSinPuntos  = rutParaSF(sfConf.rut_emisor || '');
+    const rutConPts     = rutConPuntos(sfConf.rut_emisor || '');
+    const sucursal      = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
+    // Fechas locales Chile sin Z (por si SF interpreta como hora local)
+    const desdeLocal    = `${anioNum}-${mesMM}-01T00:00:00`;
+    const hastaLocal    = `${anioNum}-${mesMM}-${new Date(anioNum, mesNum, 0).getDate().toString().padStart(2,'0')}T23:59:59`;
 
-    const bodyStr = JSON.stringify(reqBody);
-    const { statusCode, rawText } = await new Promise((resolve, reject) => {
-      const https = require('https');
-      const url   = new URL(`${SF_API}/documentsIssued`);
-      const opts  = {
-        hostname: url.hostname,
-        path:     url.pathname + url.search,
-        method:   'GET',
-        headers:  {
-          'Authorization':  `Bearer ${token}`,
-          'Content-Type':   'application/json',
-          'Content-Length': Buffer.byteLength(bodyStr)
-        }
+    // Probar 4 variantes del body para encontrar la que devuelve registros
+    const variantes = [
+      { label: 'A: sin cred, fechas UTC',    body: { ambiente:0, salida:0, desde, hasta } },
+      { label: 'B: sin cred, fechas local',  body: { ambiente:0, salida:0, desde: desdeLocal, hasta: hastaLocal } },
+      { label: 'C: cred sin puntos, UTC',    body: { credenciales: { rutEmisor: rutSinPuntos, nombreSucursal: sucursal }, ambiente:0, salida:0, desde, hasta } },
+      { label: 'D: cred con puntos, UTC',    body: { credenciales: { rutEmisor: rutConPts,    nombreSucursal: sucursal }, ambiente:0, salida:0, desde, hasta } },
+      { label: 'E: cred con puntos, local',  body: { credenciales: { rutEmisor: rutConPts,    nombreSucursal: sucursal }, ambiente:0, salida:0, desde: desdeLocal, hasta: hastaLocal } },
+      { label: 'F: rutEmisor top-level',     body: { rutEmisor: rutConPts, ambiente:0, salida:0, desde, hasta } },
+    ];
+
+    const https = require('https');
+    const tryVariant = (bodyObj) => new Promise((resolve, reject) => {
+      const bodyStr = JSON.stringify(bodyObj);
+      const url = new URL(`${SF_API}/documentsIssued`);
+      const opts = {
+        hostname: url.hostname, path: url.pathname + url.search, method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) }
       };
       const req = https.request(opts, r => {
         let buf = '';
@@ -2215,19 +2214,26 @@ app.get('/api/diagnostico/sf-documentsIssued', requireAuth, async (req, res) => 
       req.end();
     });
 
-    let parsed;
-    try { parsed = JSON.parse(rawText); } catch(e) { parsed = null; }
+    const resultados = [];
+    for (const v of variantes) {
+      const { statusCode, rawText } = await tryVariant(v.body);
+      let parsed; try { parsed = JSON.parse(rawText); } catch(e) { parsed = null; }
+      const count = Array.isArray(parsed) ? parsed.length
+                  : Array.isArray(parsed?.data) ? parsed.data.length
+                  : typeof parsed?.total === 'number' ? parsed.total : null;
+      resultados.push({
+        variante: v.label,
+        statusCode,
+        count,
+        message: parsed?.message || null,
+        preview: rawText.slice(0, 300)
+      });
+    }
+
     res.json({
-      empresa: empresaId,
-      desde, hasta,
-      reqBody,
-      sfStatusCode: statusCode,
-      rawPreview: rawText.slice(0, 2000),
-      parsedType: Array.isArray(parsed) ? 'array' : typeof parsed,
-      itemCount: Array.isArray(parsed) ? parsed.length
-                 : Array.isArray(parsed?.data) ? parsed.data.length
-                 : 'n/a',
-      parsedPreview: parsed ? JSON.stringify(parsed).slice(0, 1000) : null
+      empresa: empresaId, desde, hasta, desdeLocal, hastaLocal,
+      rutSinPuntos, rutConPts, sucursal,
+      resultados
     });
   } catch(e) {
     res.status(500).json({ error: e.message });

@@ -1990,6 +1990,12 @@ async function procesarCartolaAutoEmp(file) {
             <div style="font-size:11px;color:var(--txt2);">Clientes nuevos</div>
           </div>
         </div>
+        ${data.nuevos === 0 && data.duplicados > 0 && data.primera_carga_dup ? `
+        <div style="padding:10px 14px;border-top:1px solid var(--border);background:rgba(251,191,36,.07);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt2);">
+          ℹ️ Estos movimientos ya fueron cargados anteriormente —
+          primera carga: <strong style="color:var(--txt1);">${new Date(data.primera_carga_dup).toLocaleString('es-CL')}</strong>
+          · Lote: <code style="font-size:11px;">${data.primer_lote_dup || ''}</code>
+        </div>` : ''}
         <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="empNav('movimientos')">Ver movimientos →</button>
           <button class="btn btn-secondary btn-sm" onclick="document.getElementById('emp-cartola-result').style.display='none'">Subir otra</button>
@@ -2120,6 +2126,12 @@ async function procesarCartolaAuto(file) {
           </div>
         </div>
         ${data.errores > 0 ? `<div style="padding:8px 16px;background:rgba(239,68,68,.08);font-size:12px;color:var(--red);">⚠ ${data.errores} filas con error — revisa el archivo</div>` : ''}
+        ${data.nuevos === 0 && data.duplicados > 0 && data.primera_carga_dup ? `
+        <div style="padding:10px 16px;border-top:1px solid var(--border);background:rgba(251,191,36,.07);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt2);flex-wrap:wrap;">
+          ℹ️ Estos movimientos ya fueron cargados anteriormente —
+          primera carga: <strong style="color:var(--txt1);">${new Date(data.primera_carga_dup).toLocaleString('es-CL')}</strong>
+          · Lote: <code style="font-size:10px;">${data.primer_lote_dup || ''}</code>
+        </div>` : ''}
         <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);">
           <button class="btn btn-primary btn-sm" onclick="adminNav('movimientos')">Ver movimientos →</button>
           <button class="btn btn-secondary btn-sm" onclick="loadHistorialCartolas()">Actualizar historial</button>
@@ -2140,7 +2152,29 @@ function renderDetalleResultados(results) {
   if (!results || results.length === 0) return '';
   // Mostrar solo los primeros 30 movimientos nuevos o pendientes
   const interesantes = results.filter(r => r.status !== 'duplicado').slice(0, 30);
-  if (interesantes.length === 0) return '';
+  if (interesantes.length === 0) {
+    // Todos son duplicados: mostrar muestra diagnóstica
+    const dupSample = results.slice(0, 5);
+    const dupRows = dupSample.map(r => `<tr>
+      <td style="font-size:11px;padding:5px 8px;font-family:monospace;">${r.id_compuesto?.replace(/^[^_]+_/, '').replace(/_[^_]+$/, '') || r.id_compuesto || '—'}</td>
+      <td style="padding:5px 8px;"><span style="font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:4px;">${r.estado_previo || '—'}</span></td>
+      <td style="font-size:11px;padding:5px 8px;color:var(--txt2);">${r.primera_carga ? new Date(r.primera_carga).toLocaleDateString('es-CL') : '—'}</td>
+    </tr>`).join('');
+    return `
+    <div style="margin-top:12px;">
+      <p style="font-size:12px;color:var(--txt2);margin-bottom:6px;">Muestra de IDs duplicados (primeros ${dupSample.length}):</p>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:var(--surface2);font-size:11px;">
+            <th style="padding:5px 8px;text-align:left;">ID Transacción</th>
+            <th style="padding:5px 8px;text-align:left;">Estado actual</th>
+            <th style="padding:5px 8px;text-align:left;">Primera carga</th>
+          </tr></thead>
+          <tbody>${dupRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
 
   const rows = interesantes.map(r => {
     const fuenteBadge = {

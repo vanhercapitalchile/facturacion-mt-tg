@@ -3023,7 +3023,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     }
 
     // ── Procesar e insertar movimientos ───────────────────────────────────────
-    const checkDup    = db.prepare('SELECT id, estado FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
+    const checkDup    = db.prepare('SELECT id, estado, created_at, lote_carga_id FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
         (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado,
@@ -3044,6 +3044,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     const loteCargaId = `${empresaId}-${bancoCartola}-${Date.now()}`.toLowerCase().replace(/\s/g, '-');
     let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0;
     const resultDetails = [];
+    let primerDupFecha = null, primerDupLote = null;
 
     db.transaction(() => {
       for (const mov of movimientosRaw) {
@@ -3055,7 +3056,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           const existing = checkDup.get(idCompuesto, empresaId);
           if (existing) {
             duplicados++;
-            resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado });
+            if (!primerDupFecha) { primerDupFecha = existing.created_at; primerDupLote = existing.lote_carga_id; }
+            resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado, primera_carga: existing.created_at });
             continue;
           }
 
@@ -3176,6 +3178,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       simpleapi_consultados: simpleApiConsultados,
       lote_carga_id: loteCargaId,
       filename: req.file.originalname,
+      primera_carga_dup: primerDupFecha,   // fecha de primera carga de los duplicados
+      primer_lote_dup: primerDupLote,       // lote_carga_id del primer duplicado
       results: resultDetails.slice(0, 200)   // limitar payload
     });
   } catch(err) {

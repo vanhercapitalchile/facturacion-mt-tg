@@ -1399,6 +1399,36 @@ function tipoDteBadge(tipo) {
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
+
+// Carga el conteo real de DTE desde SF (endpoint asíncrono /api/dashboard/dte-sf-count)
+// y actualiza la KPI card #kpi-dte-sf en el dashboard.
+async function loadDteSfCount(mesLabel) {
+  const valEl = document.getElementById('kpi-dte-sf-value');
+  const subEl = document.getElementById('kpi-dte-sf-sub');
+  if (!valEl) return; // card no visible aún
+
+  try {
+    const data = await apiFetch('/api/dashboard/dte-sf-count');
+    if (!data) { valEl.textContent = '—'; subEl.textContent = 'No disponible'; return; }
+
+    const total = data.total ?? null;
+    if (total === null) { valEl.textContent = '—'; subEl.textContent = 'Sin datos SF'; return; }
+
+    valEl.textContent = total.toLocaleString('es-CL');
+
+    // Subtexto: breakdown por empresa
+    const empNames = { 'tg-inversiones':'TG','mt-inversiones':'MT','ts-capital':'TS Cap','vanher-capital':'Vanher' };
+    const lines = Object.entries(data.empresas || {})
+      .filter(([, v]) => typeof v.count === 'number' && v.count > 0)
+      .map(([eid, v]) => `${empNames[eid] || eid}: ${v.count.toLocaleString('es-CL')}`)
+      .join(' · ');
+    subEl.textContent = lines || mesLabel;
+    subEl.title = `Fuente: SimpleFactura API · ${mesLabel}`;
+  } catch(e) {
+    if (valEl) { valEl.textContent = '—'; subEl.textContent = 'Error SF'; }
+  }
+}
+
 function abrirDiagDTE() {
   const empId = getEmpresaId();
   const tok = TOKEN || localStorage.getItem('mttg_token') || '';
@@ -1568,13 +1598,13 @@ async function loadDashboard() {
       <div class="stat-value">${fmtShort(totalMonto)}</div>
       <div class="stat-sub">${fmtShort(totalMontoFact)} facturado</div>
     </div>
-    <div class="stat-card" style="border-top:3px solid var(--accent);">
+    <div class="stat-card" id="kpi-dte-sf" style="border-top:3px solid var(--accent);">
       <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
         DTE mes actual
-        <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:10px;font-weight:600;">API</span>
+        <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:10px;font-weight:600;">SF</span>
       </div>
-      <div class="stat-value" style="color:var(--accent);">${dteMes.toLocaleString('es-CL')}</div>
-      <div class="stat-sub" title="${mesLabel}">${dteMesSubLines || mesLabel}</div>
+      <div class="stat-value" id="kpi-dte-sf-value" style="color:var(--accent);">…</div>
+      <div class="stat-sub" id="kpi-dte-sf-sub">${mesLabel}</div>
     </div>
     <div class="stat-card" style="border-top:3px solid var(--accent);">
       <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
@@ -1594,6 +1624,9 @@ async function loadDashboard() {
       <div class="stat-value">${totalLotes.toLocaleString('es-CL')}</div>
     </div>
   `;
+
+  // ── Cargar conteo DTE real desde SF (asíncrono, no bloquea render) ──
+  loadDteSfCount(mesLabel);
 
   // ── Render charts if advanced data available ──
   if (!adv) return;

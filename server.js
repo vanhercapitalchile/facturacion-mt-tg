@@ -2080,6 +2080,106 @@ app.get('/api/facturacion/test-sf/:empresa_id', requireAuth, async (req, res) =>
   }
 });
 
+// ── Helper: consulta DTE emitidos directamente a SF ──────────────────────────
+// GET https://api.simplefactura.cl/documentsIssued
+// Retorna la lista de DTEs emitidos en el rango [desde, hasta] (ISO date strings).
+// Usa Bearer token + body JSON con credenciales (rutEmisor, nombreSucursal).
+// Cache en memoria: 5 minutos por empresa + rango.
+const sfDteCountCache = {};
+async function sfGetDteIssuedCount(sfConf, desdeISO, hastaISO) {
+  const cacheKey = `${sfConf.rut_emisor}|${desdeISO}|${hastaISO}`;
+  const cached = sfDteCountCache[cacheKey];
+  if (cached && Date.now() < cached.expiresAt) return cached.result;
+
+  const email = sfConf.username || 'api-token';
+  const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
+
+  const reqBody = {
+    credenciales: {
+      rutEmisor: rutParaSF(sfConf.rut_emisor || ''),
+      nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
+    },
+    ambiente: 0,          // 0 = Producción
+    salida: 0,            // 0 = JSON
+    desde: desdeISO,
+    hasta: hastaISO
+  };
+
+  const resp = await fetch(`${SF_API}/documentsIssued`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(reqBody)
+  });
+
+  const text = await resp.text();
+  let data;
+  try { data = JSON.parse(text); } catch(e) { throw new Error('SF respuesta no JSON: ' + text.slice(0, 200)); }
+
+  // La respuesta puede ser un array directo o un PagedResponse { data: [...] }
+  let items;
+  if (Array.isArray(data))            items = data;
+  else if (Array.isArray(data?.data)) items = data.data;
+  else if (typeof data?.total === 'number') {
+    // Solo devuelve total sin items — usar directo
+    const result = { count: data.total, source: 'sf-api', raw: data };
+    sfDteCountCache[cacheKey] = { result, expiresAt: Date.now() + 5 * 60 * 1000 };
+    return result;
+  } else {
+    // Respuesta inesperada — retornar con rawpreview para diagnóstico
+    return { count: null, source: 'sf-api-error', raw: data, text: text.slice(0, 500) };
+  }
+
+  const result = { count: items.length, source: 'sf-api', pageInfo: { total: data?.total, pageSize: data?.pageSize } };
+  sfDteCountCache[cacheKey] = { result, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return result;
+}
+
+// GET /api/dashboard/dte-sf-count?empresa_id=tg-inversiones  (o sin empresa_id = todas)
+// Llama a SF y retorna cuántos DTE fueron emitidos en el mes actual.
+// Admin-only, respuesta asíncrona (puede tardar 1-3 s).
+app.get('/api/dashboard/dte-sf-count', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
+  const empresaId = req.query.empresa_id || null;
+  const empresas  = getAppData('empresas');
+
+  // Calcular rango del mes actual en zona Chile
+  const nowStr   = nowCL();
+  const mesMM    = nowStr.slice(3, 5);   // "04"
+  const anioYYYY = nowStr.slice(6, 10);  // "2026"
+  const mesNum   = parseInt(mesMM, 10);
+  const anioNum  = parseInt(anioYYYY, 10);
+  const desde    = new Date(Date.UTC(anioNum, mesNum - 1, 1, 0, 0, 0)).toISOString();
+  const hasta    = new Date(Date.UTC(anioNum, mesNum,     0, 23, 59, 59)).toISOString();
+
+  const ids = empresaId
+    ? [empresaId]
+    : ['tg-inversiones', 'mt-inversiones', 'ts-capital', 'vanher-capital'];
+
+  const resultados = {};
+  let totalSF = 0;
+
+  for (const eid of ids) {
+    const emp = empresas[eid];
+    const sfConf = emp?.simplefactura || {};
+    if (!sfConf.rut_emisor || (!sfConf.username && !sfConf.api_token)) {
+      resultados[eid] = { count: null, error: 'Sin credenciales SF', source: 'no-config' };
+      continue;
+    }
+    try {
+      const r = await sfGetDteIssuedCount(sfConf, desde, hasta);
+      resultados[eid] = r;
+      if (typeof r.count === 'number') totalSF += r.count;
+    } catch(e) {
+      resultados[eid] = { count: null, error: e.message, source: 'sf-api-error' };
+    }
+  }
+
+  res.json({ mesMM, anioYYYY, desde, hasta, total: totalSF, empresas: resultados });
+});
+
 // Helper: obtiene la lista global de TipoPlantilla desde GET /api/Plantilla/list
 // Respuesta: PagedResponse { data: [TipoPlantillaEnt], pageNumber, pageSize, ... }
 async function sfGetTiposPlantilla(token) {

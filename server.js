@@ -2541,34 +2541,44 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     `).all(eid);
   }
 
+  // Estado breakdown
   // ── KPI Mes actual ──────────────────────────────────────────────────────────
-  // Usa fecha de Chile para determinar el mes en curso
-  const mesActualYM = nowCL().slice(0, 7);   // "2026-04"
+  // nowCL() usa locale es-CL → formato "DD-MM-YYYY HH:MM:SS" (o "DD/MM/YYYY, ...")
+  // Posiciones en ese string (1-indexado para SQLite):
+  //   pos 1-2 = día, pos 3 = separador, pos 4-5 = mes, pos 6 = sep, pos 7-10 = año
+  const nowStr    = nowCL();               // "22-04-2026 14:30:00"
+  const mesMM     = nowStr.slice(3, 5);    // "04"
+  const anioYYYY  = nowStr.slice(6, 10);   // "2026"
+  const mesActualYM = `${anioYYYY}-${mesMM}`;   // "2026-04" solo para display en frontend
 
-  // DTE emitidos vía API este mes: movimientos facturados dentro de un lote
-  // cuya fecha_facturacion corresponde al mes actual.
-  // (Para emisiones manuales fecha_facturacion = fecha de transferencia — excluidas)
-  const dteMesActualRows = db.prepare(`
+  // SQL: substr con índices 1-based de SQLite — robusto para separador `-` o `/`
+  // substr(fecha_facturacion, 4, 2) = mes (2 chars desde pos 4)
+  // substr(fecha_facturacion, 7, 4) = año (4 chars desde pos 7)
+  const DTE_MES_SQL = `
     SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
     FROM movimientos
     WHERE empresa_id IN (${empresaIds.map(() => '?').join(',')})
       AND estado = 'facturado'
       AND lote_id IS NOT NULL
-      AND substr(fecha_facturacion, 1, 7) = ?
-  `).get(...empresaIds, mesActualYM);
+      AND substr(fecha_facturacion, 4, 2) = ?
+      AND substr(fecha_facturacion, 7, 4) = ?
+  `;
+  const dteMesActualRows = db.prepare(DTE_MES_SQL).get(...empresaIds, mesMM, anioYYYY);
 
-  const dteMesActual    = dteMesActualRows?.cnt   || 0;
-  const montoMesActual  = dteMesActualRows?.monto || 0;
+  const dteMesActual   = dteMesActualRows?.cnt   || 0;
+  const montoMesActual = dteMesActualRows?.monto || 0;
 
-  // Breakdown por empresa para mostrar tooltip
+  // Breakdown por empresa
   const dteMesActualPorEmpresa = {};
   for (const eid of empresaIds) {
     const r = db.prepare(`
       SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
       FROM movimientos
       WHERE empresa_id = ? AND estado = 'facturado'
-        AND lote_id IS NOT NULL AND substr(fecha_facturacion, 1, 7) = ?
-    `).get(eid, mesActualYM);
+        AND lote_id IS NOT NULL
+        AND substr(fecha_facturacion, 4, 2) = ?
+        AND substr(fecha_facturacion, 7, 4) = ?
+    `).get(eid, mesMM, anioYYYY);
     dteMesActualPorEmpresa[eid] = { cnt: r?.cnt || 0, monto: r?.monto || 0 };
   }
 
@@ -2582,7 +2592,9 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     dteMesActual,
     montoMesActual,
     dteMesActualPorEmpresa,
-    mesActualYM
+    mesActualYM,    // "2026-04" para el frontend
+    mesMM,          // "04" — el frontend puede parsear sin new Date()
+    anioYYYY        // "2026"
   });
 });
 

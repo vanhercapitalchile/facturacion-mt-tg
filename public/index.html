@@ -1444,8 +1444,11 @@ async function loadDashboard() {
   // KPIs de mes actual desde advanced
   const dteMes   = adv?.dteMesActual   || 0;
   const montoMes = adv?.montoMesActual || 0;
-  const mesLabel = adv?.mesActualYM
-    ? new Date(adv.mesActualYM + '-15').toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+  // Construir label del mes sin new Date() para evitar Invalid Date en browsers
+  const MESES_ES = ['','enero','febrero','marzo','abril','mayo','junio',
+                    'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const mesLabel = (adv?.mesMM && adv?.anioYYYY)
+    ? `${MESES_ES[parseInt(adv.mesMM)] || adv.mesMM} ${adv.anioYYYY}`
     : 'mes actual';
 
   // Tooltip breakdown por empresa para DTE mes

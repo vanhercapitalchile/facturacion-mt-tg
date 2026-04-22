@@ -359,6 +359,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         <!-- Diagnóstico DTE (solo admin, colapsable) -->
         <div id="diag-dte-wrap" style="margin-bottom:12px;">
           <button class="btn btn-secondary btn-sm" onclick="toggleDiagDTE()" style="font-size:11px;opacity:.7;">🔍 Diagnóstico DTE mes actual</button>
+          <button class="btn btn-secondary btn-sm" onclick="abrirDiagDTE()" style="font-size:11px;opacity:.7;margin-left:6px;">↗ Ver JSON bruto</button>
           <div id="diag-dte-result" style="display:none;margin-top:8px;"></div>
         </div>
         <!-- Charts Row 1 -->
@@ -1398,6 +1399,13 @@ function tipoDteBadge(tipo) {
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
+function abrirDiagDTE() {
+  const empId = getEmpresaId();
+  const tok = TOKEN || localStorage.getItem('mttg_token') || '';
+  const url = '/api/diagnostico/dte-mes-actual' + (empId ? `?empresa_id=${empId}&token=${tok}` : `?token=${tok}`);
+  window.open(url, '_blank');
+}
+
 async function toggleDiagDTE() {
   const wrap = document.getElementById('diag-dte-result');
   if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }

@@ -1441,6 +1441,21 @@ async function loadDashboard() {
 
   const pctFact = totalMov > 0 ? ((totalFact / totalMov) * 100).toFixed(1) : '0.0';
 
+  // KPIs de mes actual desde advanced
+  const dteMes   = adv?.dteMesActual   || 0;
+  const montoMes = adv?.montoMesActual || 0;
+  const mesLabel = adv?.mesActualYM
+    ? new Date(adv.mesActualYM + '-15').toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+    : 'mes actual';
+
+  // Tooltip breakdown por empresa para DTE mes
+  const dteByEmp = adv?.dteMesActualPorEmpresa || {};
+  const empNames = { 'tg-inversiones': 'TG', 'mt-inversiones': 'MT', 'ts-capital': 'TS Cap', 'vanher-capital': 'Vanher' };
+  const dteMesSubLines = Object.entries(dteByEmp)
+    .filter(([, v]) => v.cnt > 0)
+    .map(([eid, v]) => `${empNames[eid] || eid}: ${v.cnt}`)
+    .join(' · ');
+
   el.innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Total movimientos</div>
@@ -1461,6 +1476,22 @@ async function loadDashboard() {
       <div class="stat-label">Monto total</div>
       <div class="stat-value">${fmtShort(totalMonto)}</div>
       <div class="stat-sub">${fmtShort(totalMontoFact)} facturado</div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid var(--accent);">
+      <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
+        DTE mes actual
+        <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:10px;font-weight:600;">API</span>
+      </div>
+      <div class="stat-value" style="color:var(--accent);">${dteMes.toLocaleString('es-CL')}</div>
+      <div class="stat-sub" title="${mesLabel}">${dteMesSubLines || mesLabel}</div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid var(--accent);">
+      <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
+        Monto emitido mes
+        <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:10px;font-weight:600;">API</span>
+      </div>
+      <div class="stat-value" style="color:var(--accent);">${fmtShort(montoMes)}</div>
+      <div class="stat-sub">${mesLabel}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Clientes</div>

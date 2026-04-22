@@ -2541,13 +2541,48 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     `).all(eid);
   }
 
+  // ── KPI Mes actual ──────────────────────────────────────────────────────────
+  // Usa fecha de Chile para determinar el mes en curso
+  const mesActualYM = nowCL().slice(0, 7);   // "2026-04"
+
+  // DTE emitidos vía API este mes: movimientos facturados dentro de un lote
+  // cuya fecha_facturacion corresponde al mes actual.
+  // (Para emisiones manuales fecha_facturacion = fecha de transferencia — excluidas)
+  const dteMesActualRows = db.prepare(`
+    SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
+    FROM movimientos
+    WHERE empresa_id IN (${empresaIds.map(() => '?').join(',')})
+      AND estado = 'facturado'
+      AND lote_id IS NOT NULL
+      AND substr(fecha_facturacion, 1, 7) = ?
+  `).get(...empresaIds, mesActualYM);
+
+  const dteMesActual    = dteMesActualRows?.cnt   || 0;
+  const montoMesActual  = dteMesActualRows?.monto || 0;
+
+  // Breakdown por empresa para mostrar tooltip
+  const dteMesActualPorEmpresa = {};
+  for (const eid of empresaIds) {
+    const r = db.prepare(`
+      SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
+      FROM movimientos
+      WHERE empresa_id = ? AND estado = 'facturado'
+        AND lote_id IS NOT NULL AND substr(fecha_facturacion, 1, 7) = ?
+    `).get(eid, mesActualYM);
+    dteMesActualPorEmpresa[eid] = { cnt: r?.cnt || 0, monto: r?.monto || 0 };
+  }
+
   res.json({
     monthlySeries,
     topClients,
     dteBreakdown,
     recentLotes,
     estadoBreakdown,
-    empresaIds
+    empresaIds,
+    dteMesActual,
+    montoMesActual,
+    dteMesActualPorEmpresa,
+    mesActualYM
   });
 });
 

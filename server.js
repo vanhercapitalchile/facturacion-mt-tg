@@ -2620,10 +2620,10 @@ app.get('/api/diagnostico/dte-mes-actual', requireAuth, (req, res) => {
   const mesMM    = nowStr.slice(3, 5);
   const anioYYYY = nowStr.slice(6, 10);
 
-  // Lotes emitidos del mes con sus cantidades
-  const lotes = db.prepare(`
+  // Lotes emitidos del mes con sus cantidades + response_api para ver cantidadDte real de SF
+  const lotesRaw = db.prepare(`
     SELECT l.lote_id, l.empresa_id, l.nombre, l.cantidad, l.monto_total,
-           l.estado, l.metodo, l.created_at, l.updated_at,
+           l.estado, l.metodo, l.created_at, l.updated_at, l.response_api,
            COUNT(m.id) as movs_facturados,
            COALESCE(SUM(m.monto),0) as monto_movs,
            substr(l.updated_at, 4, 2) as mes_lote,
@@ -2639,6 +2639,20 @@ app.get('/api/diagnostico/dte-mes-actual', requireAuth, (req, res) => {
     ORDER BY l.updated_at DESC
     LIMIT 100
   `).all(mesMM, anioYYYY, ...empresaIds);
+
+  // Parsear cantidadDte de la respuesta real de SF
+  let totalCantidadDteSF = 0;
+  const lotes = lotesRaw.map(l => {
+    let cantidadDteSF = null;
+    try {
+      const resp = JSON.parse(l.response_api || '{}');
+      // SF puede devolver cantidadDte en data.data.cantidadDte o data.cantidadDte
+      cantidadDteSF = resp?.data?.cantidadDte ?? resp?.cantidadDte ?? null;
+      if (cantidadDteSF != null) totalCantidadDteSF += parseInt(cantidadDteSF) || 0;
+    } catch(e) { /* ignore */ }
+    return { ...l, response_api: undefined, cantidadDteSF,
+             response_preview: (l.response_api || '').slice(0, 300) };
+  });
 
   // Totales por estado de lote (para ver si hay lotes 'emitido' fuera del mes también)
   const estadosLotes = db.prepare(`
@@ -2662,9 +2676,17 @@ app.get('/api/diagnostico/dte-mes-actual', requireAuth, (req, res) => {
     LIMIT 20
   `).all(...empresaIds);
 
+  const totalMovsFacturados = lotes.reduce((s, l) => s + (parseInt(l.movs_facturados) || 0), 0);
+
   res.json({
     mesMM, anioYYYY,
     nowStr_ejemplo: nowStr,
+    resumen: {
+      total_lotes_emitidos_mes: lotes.length,
+      total_movs_facturados_mes: totalMovsFacturados,
+      total_cantidadDte_SF: totalCantidadDteSF,
+      nota: 'total_cantidadDte_SF = suma de cantidadDte reportada por SF en response_api de cada lote'
+    },
     lotes_contados_mes: lotes.filter(l => l.movs_facturados > 0),
     lotes_emitidos_sin_movs_mes: lotes.filter(l => l.movs_facturados === 0),
     estadosLotes,

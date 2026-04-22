@@ -1598,13 +1598,13 @@ async function loadDashboard() {
       <div class="stat-value">${fmtShort(totalMonto)}</div>
       <div class="stat-sub">${fmtShort(totalMontoFact)} facturado</div>
     </div>
-    <div class="stat-card" id="kpi-dte-sf" style="border-top:3px solid var(--accent);">
+    <div class="stat-card" style="border-top:3px solid var(--accent);">
       <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
         DTE mes actual
         <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:10px;font-weight:600;">SF</span>
       </div>
-      <div class="stat-value" id="kpi-dte-sf-value" style="color:var(--accent);">…</div>
-      <div class="stat-sub" id="kpi-dte-sf-sub">${mesLabel}</div>
+      <div class="stat-value" style="color:var(--accent);">${dteMes.toLocaleString('es-CL')}</div>
+      <div class="stat-sub" title="${mesLabel}">${dteMesSubLines || mesLabel}</div>
     </div>
     <div class="stat-card" style="border-top:3px solid var(--accent);">
       <div class="stat-label" style="display:flex;align-items:center;gap:6px;">
@@ -1625,8 +1625,7 @@ async function loadDashboard() {
     </div>
   `;
 
-  // ── Cargar conteo DTE real desde SF (asíncrono, no bloquea render) ──
-  loadDteSfCount(mesLabel);
+  // KPI DTE ya renderizado sincrónicamente desde cantidadDte de response_api (ver server.js)
 
   // ── Render charts if advanced data available ──
   if (!adv) return;

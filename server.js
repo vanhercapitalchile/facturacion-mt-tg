@@ -2764,35 +2764,44 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   // NO usamos l.updated_at porque puede modificarse después (ej: quitar-movimiento)
   // m.fecha_facturacion para API-emitidos = nowCL() → es-CL "DD-MM-YYYY, ..."
   // Para manuales = m.fecha en YYYY-MM-DD → no coincide con substr(pos4,2)="04"
-  const DTE_MES_SQL = `
-    SELECT COUNT(m.id) as cnt, COALESCE(SUM(m.monto), 0) as monto
-    FROM movimientos m
-    JOIN lotes_facturacion l ON m.lote_id = l.lote_id
-    WHERE m.empresa_id IN (${empresaIds.map(() => '?').join(',')})
-      AND m.estado = 'facturado'
+  // KPI DTE mes actual: suma cantidadDte del response_api de cada lote emitido este mes.
+  // cantidadDte es lo que SF confirma haber procesado, no el conteo interno de movimientos.
+  // Fallback a COUNT(movimientos) para lotes sin cantidadDte (ej: Haulmer, manuales).
+  const lotesDelMes = db.prepare(`
+    SELECT l.lote_id, l.empresa_id, l.response_api, l.cantidad, l.metodo,
+           COUNT(m.id) as movs_facturados,
+           COALESCE(SUM(m.monto), 0) as monto_movs
+    FROM lotes_facturacion l
+    LEFT JOIN movimientos m ON m.lote_id = l.lote_id AND m.estado = 'facturado'
+    WHERE l.empresa_id IN (${empresaIds.map(() => '?').join(',')})
       AND l.estado IN ('emitido', 'parcial')
-      AND substr(m.fecha_facturacion, 4, 2) = ?
-      AND substr(m.fecha_facturacion, 7, 4) = ?
-  `;
-  const dteMesActualRows = db.prepare(DTE_MES_SQL).get(...empresaIds, mesMM, anioYYYY);
+      AND substr(l.updated_at, 4, 2) = ?
+      AND substr(l.updated_at, 7, 4) = ?
+    GROUP BY l.lote_id
+  `).all(...empresaIds, mesMM, anioYYYY);
 
-  const dteMesActual   = dteMesActualRows?.cnt   || 0;
-  const montoMesActual = dteMesActualRows?.monto || 0;
-
-  // Breakdown por empresa
+  let dteMesActual   = 0;
+  let montoMesActual = 0;
   const dteMesActualPorEmpresa = {};
-  for (const eid of empresaIds) {
-    const r = db.prepare(`
-      SELECT COUNT(m.id) as cnt, COALESCE(SUM(m.monto), 0) as monto
-      FROM movimientos m
-      JOIN lotes_facturacion l ON m.lote_id = l.lote_id
-      WHERE m.empresa_id = ?
-        AND m.estado = 'facturado'
-        AND l.estado IN ('emitido', 'parcial')
-        AND substr(m.fecha_facturacion, 4, 2) = ?
-        AND substr(m.fecha_facturacion, 7, 4) = ?
-    `).get(eid, mesMM, anioYYYY);
-    dteMesActualPorEmpresa[eid] = { cnt: r?.cnt || 0, monto: r?.monto || 0 };
+  for (const eid of empresaIds) dteMesActualPorEmpresa[eid] = { cnt: 0, monto: 0 };
+
+  for (const lote of lotesDelMes) {
+    let cantidadDte = null;
+    if (lote.response_api) {
+      try {
+        const resp = JSON.parse(lote.response_api);
+        const raw = resp?.data?.cantidadDte ?? resp?.cantidadDte ?? null;
+        if (raw != null) cantidadDte = parseInt(raw) || 0;
+      } catch(e) {}
+    }
+    // Usar cantidadDte de SF si existe; sino contar movimientos del lote
+    const count = cantidadDte != null ? cantidadDte : (lote.movs_facturados || 0);
+    dteMesActual += count;
+    montoMesActual += lote.monto_movs || 0;
+    if (dteMesActualPorEmpresa[lote.empresa_id]) {
+      dteMesActualPorEmpresa[lote.empresa_id].cnt   += count;
+      dteMesActualPorEmpresa[lote.empresa_id].monto += lote.monto_movs || 0;
+    }
   }
 
   res.json({

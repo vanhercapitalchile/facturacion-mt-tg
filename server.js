@@ -2542,26 +2542,30 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   }
 
   // Estado breakdown
-  // ── KPI Mes actual ──────────────────────────────────────────────────────────
-  // nowCL() usa locale es-CL → formato "DD-MM-YYYY HH:MM:SS" (o "DD/MM/YYYY, ...")
-  // Posiciones en ese string (1-indexado para SQLite):
-  //   pos 1-2 = día, pos 3 = separador, pos 4-5 = mes, pos 6 = sep, pos 7-10 = año
-  const nowStr    = nowCL();               // "22-04-2026 14:30:00"
-  const mesMM     = nowStr.slice(3, 5);    // "04"
-  const anioYYYY  = nowStr.slice(6, 10);   // "2026"
-  const mesActualYM = `${anioYYYY}-${mesMM}`;   // "2026-04" solo para display en frontend
+  // ── KPI Mes actual (DTE emitidos vía API) ────────────────────────────────────
+  // nowCL() → es-CL → "DD-MM-YYYY, HH:MM:SS a. m."
+  // pos 3-4 (0-idx) = mes MM  |  pos 6-9 (0-idx) = año YYYY
+  const nowStr   = nowCL();
+  const mesMM    = nowStr.slice(3, 5);   // "04"
+  const anioYYYY = nowStr.slice(6, 10);  // "2026"
+  const mesActualYM = `${anioYYYY}-${mesMM}`;
 
-  // SQL: substr con índices 1-based de SQLite — robusto para separador `-` o `/`
-  // substr(fecha_facturacion, 4, 2) = mes (2 chars desde pos 4)
-  // substr(fecha_facturacion, 7, 4) = año (4 chars desde pos 7)
+  // CRITERIO CORRECTO: solo lotes cuyo estado indica emisión API exitosa
+  //   'emitido'  → SimpleFactura o Haulmer (todos los docs del lote OK)
+  //   'parcial'  → Haulmer con algunos docs OK (los movimientos OK tienen estado='facturado')
+  // Excluye: 'facturado_manual', 'exportado_manual', 'error', 'pendiente'
+  //
+  // Fecha de referencia: l.updated_at del lote (cuándo se marcó como 'emitido')
+  // También en formato es-CL → mismo substr(pos 4,2) y substr(pos 7,4)
   const DTE_MES_SQL = `
-    SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
-    FROM movimientos
-    WHERE empresa_id IN (${empresaIds.map(() => '?').join(',')})
-      AND estado = 'facturado'
-      AND lote_id IS NOT NULL
-      AND substr(fecha_facturacion, 4, 2) = ?
-      AND substr(fecha_facturacion, 7, 4) = ?
+    SELECT COUNT(m.id) as cnt, COALESCE(SUM(m.monto), 0) as monto
+    FROM movimientos m
+    JOIN lotes_facturacion l ON m.lote_id = l.lote_id
+    WHERE m.empresa_id IN (${empresaIds.map(() => '?').join(',')})
+      AND m.estado = 'facturado'
+      AND l.estado IN ('emitido', 'parcial')
+      AND substr(l.updated_at, 4, 2) = ?
+      AND substr(l.updated_at, 7, 4) = ?
   `;
   const dteMesActualRows = db.prepare(DTE_MES_SQL).get(...empresaIds, mesMM, anioYYYY);
 
@@ -2572,12 +2576,14 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
   const dteMesActualPorEmpresa = {};
   for (const eid of empresaIds) {
     const r = db.prepare(`
-      SELECT COUNT(*) as cnt, COALESCE(SUM(monto), 0) as monto
-      FROM movimientos
-      WHERE empresa_id = ? AND estado = 'facturado'
-        AND lote_id IS NOT NULL
-        AND substr(fecha_facturacion, 4, 2) = ?
-        AND substr(fecha_facturacion, 7, 4) = ?
+      SELECT COUNT(m.id) as cnt, COALESCE(SUM(m.monto), 0) as monto
+      FROM movimientos m
+      JOIN lotes_facturacion l ON m.lote_id = l.lote_id
+      WHERE m.empresa_id = ?
+        AND m.estado = 'facturado'
+        AND l.estado IN ('emitido', 'parcial')
+        AND substr(l.updated_at, 4, 2) = ?
+        AND substr(l.updated_at, 7, 4) = ?
     `).get(eid, mesMM, anioYYYY);
     dteMesActualPorEmpresa[eid] = { cnt: r?.cnt || 0, monto: r?.monto || 0 };
   }
@@ -2592,9 +2598,9 @@ app.get('/api/dashboard/advanced', requireAuth, (req, res) => {
     dteMesActual,
     montoMesActual,
     dteMesActualPorEmpresa,
-    mesActualYM,    // "2026-04" para el frontend
-    mesMM,          // "04" — el frontend puede parsear sin new Date()
-    anioYYYY        // "2026"
+    mesActualYM,
+    mesMM,
+    anioYYYY
   });
 });
 

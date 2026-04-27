@@ -114,6 +114,14 @@ try { db.exec('ALTER TABLE movimientos ADD COLUMN lote_carga_id TEXT'); } catch(
 try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 
+// ── Soporte cartola provisoria Santander ──────────────────────────────────────
+// tipo_cartola: 'definitiva' (tradicional/Transferencias Recibidas) | 'provisoria' (Cartola provisoria)
+// dedup_key: clave canónica común a ambos formatos para deduplicar entre provisoria y tradicional.
+//   Formato: {YYYY-MM-DD}_{monto_int}_{glosa_normalizada}_{seq_dentro_de_bucket}
+try { db.exec("ALTER TABLE movimientos ADD COLUMN tipo_cartola TEXT DEFAULT 'definitiva'"); } catch(e){}
+try { db.exec('ALTER TABLE movimientos ADD COLUMN dedup_key TEXT'); } catch(e){}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_dedup ON movimientos(empresa_id, banco_cartola, dedup_key)'); } catch(e){}
+
 // ── Migration: limpiar CR/LF en campos de texto (emails con newline al final) ─
 // Causa de error SF: "Field at index N does not exist" cuando un email tiene \n
 try {
@@ -2931,6 +2939,33 @@ function getSimpleApiKey(empresaId) {
   } catch(e) { return SIMPLEAPI_KEYS_DEFAULT[empresaId] || null; }
 }
 
+// ── Dedup canónico Santander: clave común a cartola tradicional y provisoria ──
+// Permite detectar el mismo movimiento aunque se haya cargado primero por la
+// provisoria y luego venga en la tradicional (o viceversa).
+function normalizarGlosaSantander(glosa) {
+  return String(glosa || '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+function dedupKeySantander(fecha, monto, glosa, seq) {
+  const m = Math.round(Math.abs(parseFloat(monto) || 0));
+  const g = normalizarGlosaSantander(glosa).substring(0, 60).replace(/[^A-Z0-9 ]/g, '');
+  return `${fecha}_${m}_${g}_${seq}`;
+}
+
+// Detecta si un .xlsx Santander es "provisoria" (Cartola provisoria Cta. Cte.)
+// o "definitiva" (Transferencias Recibidas / cartola tradicional).
+function detectarTipoSantander(buffer) {
+  if (!XLSX_LIB) return 'definitiva';
+  try {
+    const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+    if (wb.SheetNames.some(n => /provisoria/i.test(n))) return 'provisoria';
+    const ws0 = wb.Sheets[wb.SheetNames[0]];
+    const a1 = String(ws0?.A1?.v || '').toLowerCase();
+    if (a1.includes('cartola provisoria')) return 'provisoria';
+    return 'definitiva';
+  } catch(e) { return 'definitiva'; }
+}
+
 // Limpiar nombre de glosa Santander: elimina RUT inicial y prefijos "Transf de", "Transf.", etc.
 function cleanSantanderName(glosa) {
   if (!glosa) return '';
@@ -3037,6 +3072,10 @@ function parseSantanderCartola(buffer) {
   }
   if (headerIdx === -1) headerIdx = 9;
 
+  // Contador por bucket (fecha+monto+glosa) para distinguir movimientos legítimamente
+  // duplicados (mismo pagador, mismo monto, mismo día). Permite la dedup canónica.
+  const bucketSeq = {};
+
   for (let i = headerIdx + 1; i < data.length; i++) {
     const row = data[i];
     if (!row || row.length < 3) continue;
@@ -3077,6 +3116,11 @@ function parseSantanderCartola(buffer) {
     // Santander reutiliza números secuenciales cada mes → prefijamos fecha para unicidad entre períodos
     const idConFecha = fecha ? `${fecha}_${useId}` : useId;
 
+    // Clave canónica para dedup cross-format (provisoria ↔ tradicional)
+    const bk = `${fecha}|${Math.round(monto)}|${normalizarGlosaSantander(glosa)}`;
+    bucketSeq[bk] = (bucketSeq[bk] || 0) + 1;
+    const dedupKey = dedupKeySantander(fecha, monto, glosa, bucketSeq[bk]);
+
     movimientos.push({
       id_transferencia: idConFecha,
       fecha, monto, glosa,
@@ -3084,7 +3128,106 @@ function parseSantanderCartola(buffer) {
       rut_digits: rutDigits,                  // solo dígitos para consulta API
       nombre_origen: nombre,
       banco_origen: 'No específica',
-      cuenta_origen: '999999'
+      cuenta_origen: '999999',
+      dedup_key: dedupKey
+    });
+  }
+  return movimientos;
+}
+
+// ── Parser Santander Provisoria (.xlsx) ──────────────────────────────────────
+// Formato distinto de la cartola tradicional "Transferencias Recibidas":
+//   Sheet:  CartolaProvisoria
+//   Header (fila ~13): MONTO | DESCRIPCIÓN MOVIMIENTO | (vacío) | FECHA | N° DOCUMENTO | SUCURSAL | (vacío) | CARGO/ABONO
+//   Filas finales: bloque "saldos diarios" (solo monto + fecha) — debe filtrarse.
+//   Mezcla cargos (C) y abonos (A) — solo abonos son facturables.
+// Genera dedup_key canónica para que cuando luego llegue la cartola tradicional
+// del mismo período, los movimientos coincidentes se promuevan a 'definitiva'
+// preservando estado de facturación, sin duplicar.
+function parseSantanderProvisoria(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+  // Preferir sheet con "provisoria" en el nombre; sino, el primero
+  const sheetName = wb.SheetNames.find(n => /provisoria/i.test(n)) || wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  // Buscar header: col 0 ~ "MONTO", col 1 ~ "DESCRIPCIÓN..."
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(20, data.length); i++) {
+    const c0 = String(data[i]?.[0] || '').toUpperCase();
+    const c1 = String(data[i]?.[1] || '').toUpperCase();
+    if (c0.includes('MONTO') && (c1.includes('DESCRIP') || c1.includes('MOVIMIENTO'))) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx === -1) headerIdx = 12;
+
+  const movimientos = [];
+  const bucketSeq = {};
+
+  for (let i = headerIdx + 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 4) continue;
+
+    let monto = row[0];
+    if (typeof monto === 'string') {
+      monto = parseFloat(monto.replace(/[$.\s]/g, '').replace(',', '.'));
+    }
+    if (monto === '' || monto === null || monto === undefined) continue;
+    monto = parseFloat(monto);
+    if (!monto || isNaN(monto)) continue;
+
+    const desc = String(row[1] || '').trim();
+    let fecha  = String(row[3] || '').trim();
+    const tipo = String(row[7] || '').trim().toUpperCase();
+
+    // Filtrar bloque "saldos diarios" del final (solo monto + fecha, sin descripción)
+    if (!desc) continue;
+
+    // Solo abonos (A o monto positivo). Cargos se descartan — no son facturables.
+    if (tipo === 'C' || monto < 0) continue;
+
+    // Fecha DD/MM/YYYY → YYYY-MM-DD (también acepta serial Excel por si acaso)
+    if (typeof row[3] === 'number') {
+      const d = XLSX_LIB.SSF.parse_date_code(row[3]);
+      if (d) fecha = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } else if (fecha.includes('/')) {
+      const [d, m, y] = fecha.split('/');
+      fecha = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+
+    monto = Math.abs(monto);
+
+    // Extraer RUT y nombre desde la descripción: patrón idéntico al tradicional
+    let rutDigits = '', nombre = '';
+    const m1 = desc.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+    if (m1) {
+      rutDigits = m1[1];
+      nombre    = m1[2]?.trim() || '';
+    } else {
+      const m2 = desc.match(/(\d{7,9}[0-9kK])/);
+      if (m2) rutDigits = m2[1];
+      nombre = cleanSantanderName(desc);
+    }
+
+    // Clave canónica + bucketSeq para distinguir duplicados legítimos
+    const bk = `${fecha}|${Math.round(monto)}|${normalizarGlosaSantander(desc)}`;
+    bucketSeq[bk] = (bucketSeq[bk] || 0) + 1;
+    const dedupKey = dedupKeySantander(fecha, monto, desc, bucketSeq[bk]);
+
+    movimientos.push({
+      // Prefijo PROV_ en el id_transferencia para distinguirlo en logs/exportes hasta que se promueva
+      id_transferencia: `PROV_${dedupKey}`,
+      fecha, monto,
+      glosa: desc,
+      rut: rutDigits ? formatRutDigits(rutDigits) : '',
+      rut_digits: rutDigits,
+      nombre_origen: nombre,
+      banco_origen: 'No específica',
+      cuenta_origen: '999999',
+      dedup_key: dedupKey
     });
   }
   return movimientos;
@@ -3313,10 +3456,23 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     if (['BANCOESTADO','BANCO_ESTADO','ESTADO'].includes(bancoCartola)) bancoCartola = 'BANCO ESTADO';
     if (['CHILE','BCHILE','BANCO_CHILE','BANCOCHILE'].includes(bancoCartola)) bancoCartola = 'BANCO CHILE';
 
+    // Para Santander: detectar si es cartola tradicional o provisoria
+    // Provisoria: header en fila 13 con MONTO+DESCRIPCIÓN, mezcla cargos/abonos, tiene "saldos diarios" al final
+    // Tradicional: header en fila 10 con "Número de Movimiento", solo abonos
+    let tipoCartolaSantander = 'definitiva';
+    if (bancoCartola === 'SANTANDER') {
+      tipoCartolaSantander = detectarTipoSantander(req.file.buffer);
+      console.log(`[CARTOLA] Santander tipo detectado: ${tipoCartolaSantander}`);
+    }
+
     // Parsear cartola
     let movimientosRaw = [];
     try {
-      if (bancoCartola === 'SANTANDER')         movimientosRaw = parseSantanderCartola(req.file.buffer);
+      if (bancoCartola === 'SANTANDER') {
+        movimientosRaw = tipoCartolaSantander === 'provisoria'
+          ? parseSantanderProvisoria(req.file.buffer)
+          : parseSantanderCartola(req.file.buffer);
+      }
       else if (bancoCartola === 'BANCO ESTADO') movimientosRaw = parseBancoEstadoCartola(req.file.buffer);
       else if (bancoCartola === 'BANCO CHILE')  movimientosRaw = parseBancoChileCartola(req.file.buffer);
       else                                      movimientosRaw = parseBCICartola(req.file.buffer);
@@ -3379,14 +3535,29 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
 
     // ── Procesar e insertar movimientos ───────────────────────────────────────
     const checkDup    = db.prepare('SELECT id, estado, created_at, lote_carga_id FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
+    // Para Santander: buscar coincidencia por dedup_key cross-format (provisoria ↔ tradicional)
+    const checkDedup  = db.prepare(`SELECT id, estado, tipo_cartola, lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte
+                                    FROM movimientos
+                                    WHERE empresa_id = ? AND banco_cartola = ? AND dedup_key = ?`);
+    // Promoción in-place provisoria → definitiva (preserva estado de facturación)
+    const promote     = db.prepare(`UPDATE movimientos
+                                    SET tipo_cartola = 'definitiva',
+                                        id_transferencia = ?,
+                                        id_compuesto = ?,
+                                        glosa = ?,
+                                        rut = COALESCE(NULLIF(?, ''), rut),
+                                        rut_normalizado = COALESCE(NULLIF(?, ''), rut_normalizado),
+                                        nombre_origen = COALESCE(NULLIF(?, ''), nombre_origen),
+                                        updated_at = ?
+                                    WHERE id = ?`);
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
         (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado,
          nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto,
          estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor,
          nombre_item, descripcion_item, precio, monto_exento, monto_total,
-         fecha_carga, created_at, updated_at, lote_carga_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         fecha_carga, created_at, updated_at, lote_carga_id, tipo_cartola, dedup_key)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertCliente = db.prepare(`
       INSERT OR IGNORE INTO clientes
@@ -3396,8 +3567,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
-    const loteCargaId = `${empresaId}-${bancoCartola}-${Date.now()}`.toLowerCase().replace(/\s/g, '-');
-    let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0;
+    const loteCargaId = `${empresaId}-${bancoCartola}-${tipoCartolaSantander === 'provisoria' ? 'prov-' : ''}${Date.now()}`.toLowerCase().replace(/\s/g, '-');
+    let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0, promovidos = 0;
     const resultDetails = [];
     let primerDupFecha = null, primerDupLote = null;
 
@@ -3406,6 +3577,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
         try {
           const idTransf    = String(mov.id_transferencia || '').trim();
           const idCompuesto = `${empresaId}_${idTransf}_${bancoCartola}`;
+          const dedupKey    = mov.dedup_key || null;
 
           // ── Verificar duplicado ──────────────────────────────────────────
           const existing = checkDup.get(idCompuesto, empresaId);
@@ -3414,6 +3586,40 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             if (!primerDupFecha) { primerDupFecha = existing.created_at; primerDupLote = existing.lote_carga_id; }
             resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado, primera_carga: existing.created_at });
             continue;
+          }
+
+          // ── Cross-format dedup Santander (provisoria ↔ tradicional) ──────
+          // Si subimos una tradicional y existe un movimiento provisorio con
+          // misma dedup_key → promoverlo in-place preservando facturación.
+          // Si subimos una provisoria y ya existe el movimiento (cualquier tipo) → omitir.
+          if (bancoCartola === 'SANTANDER' && dedupKey) {
+            const matchPrev = checkDedup.get(empresaId, bancoCartola, dedupKey);
+            if (matchPrev) {
+              if (tipoCartolaSantander === 'definitiva' && matchPrev.tipo_cartola === 'provisoria') {
+                // Promoción provisoria → definitiva (conserva estado/lote/folio)
+                const rutNormProm = normalizeRut(mov.rut || mov.rut_digits || '');
+                promote.run(
+                  idTransf, idCompuesto, mov.glosa || '',
+                  mov.rut || '', rutNormProm, mov.nombre_origen || '',
+                  now, matchPrev.id
+                );
+                promovidos++;
+                resultDetails.push({
+                  id_compuesto: idCompuesto, status: 'promovido',
+                  estado_conservado: matchPrev.estado,
+                  folio_dte_conservado: matchPrev.folio_dte || null,
+                  fecha_facturacion_conservada: matchPrev.fecha_facturacion || null,
+                  lote_id_conservado: matchPrev.lote_id || null
+                });
+                continue;
+              } else {
+                // Mismo tipo o provisoria sobre definitiva → duplicado
+                duplicados++;
+                if (!primerDupFecha) { primerDupFecha = matchPrev.created_at; primerDupLote = matchPrev.lote_carga_id; }
+                resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado_dedup', estado_previo: matchPrev.estado, tipo_previo: matchPrev.tipo_cartola, primera_carga: matchPrev.created_at });
+                continue;
+              }
+            }
           }
 
           // ── Determinar tipo de cliente y RUT ────────────────────────────
@@ -3504,7 +3710,9 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             comuna, ciudad, emailReceptor,
             nombreItem, descripcionItem,
             monto, monto, monto,   // precio, monto_exento, monto_total
-            now, now, now, loteCargaId
+            now, now, now, loteCargaId,
+            (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
+            dedupKey
           );
           nuevos++;
           resultDetails.push({
@@ -3527,15 +3735,16 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     res.json({
       ok: true,
       banco: bancoCartola,
+      tipo_cartola: (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
       total: movimientosRaw.length,
-      nuevos, duplicados, errores,
+      nuevos, duplicados, errores, promovidos,
       clientes_nuevos: clientesNuevos,
       simpleapi_consultados: simpleApiConsultados,
       lote_carga_id: loteCargaId,
       filename: req.file.originalname,
-      primera_carga_dup: primerDupFecha,   // fecha de primera carga de los duplicados
-      primer_lote_dup: primerDupLote,       // lote_carga_id del primer duplicado
-      results: resultDetails.slice(0, 200)   // limitar payload
+      primera_carga_dup: primerDupFecha,
+      primer_lote_dup: primerDupLote,
+      results: resultDetails.slice(0, 200)
     });
   } catch(err) {
     console.error('[CARGAR-Y-PROCESAR FATAL]', err);
@@ -3974,4 +4183,4 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   }
 });
 
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));

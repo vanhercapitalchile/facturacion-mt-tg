@@ -861,6 +861,142 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// ── Consulta avanzada de movimientos para auditoria (admin only) ─────────────
+// Devuelve movimientos con filtros granulares + busqueda libre. Sin paginacion
+// agresiva (limit configurable). Pensado para detectar problemas de parser, RUTs
+// faltantes, emails ausentes, etc.
+app.get('/api/movimientos/consulta', requireAuth, requireAdmin, (req, res) => {
+  const {
+    empresa_id, banco, estado, tipo_dte,
+    fecha_desde, fecha_hasta, monto_min, monto_max,
+    sin_rut, sin_email, search,
+    orden, dir, limit
+  } = req.query;
+
+  let sql = 'SELECT * FROM movimientos WHERE 1=1';
+  const params = [];
+
+  if (empresa_id) { sql += ' AND empresa_id = ?'; params.push(empresa_id); }
+  if (banco)      { sql += ' AND banco_cartola = ?'; params.push(banco); }
+  if (estado)     { sql += ' AND estado = ?'; params.push(estado); }
+  if (tipo_dte)   { sql += ' AND tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
+  if (fecha_desde){ sql += ' AND fecha >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta){ sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
+  if (monto_min)  { sql += ' AND monto >= ?'; params.push(parseFloat(monto_min)); }
+  if (monto_max)  { sql += ' AND monto <= ?'; params.push(parseFloat(monto_max)); }
+  if (sin_rut === '1')   { sql += ' AND (rut_normalizado IS NULL OR rut_normalizado = "")'; }
+  if (sin_email === '1') { sql += ' AND (email_receptor IS NULL OR email_receptor = "")'; }
+  // glosa_rut_puntos: aisla movimientos cuya glosa Santander viene en formato XX.XXX.XXX-X
+  // (antes del fix parser quedaban sin RUT extraido). Util para auditar el bug abr 2026.
+  if (req.query.glosa_rut_puntos === '1') {
+    sql += " AND glosa GLOB '[0-9]*.[0-9][0-9][0-9].[0-9][0-9][0-9]-[0-9Kk]*'";
+  }
+
+  if (search) {
+    const s = '%' + String(search).toLowerCase() + '%';
+    sql += ` AND (
+      LOWER(COALESCE(rut, '')) LIKE ?
+      OR LOWER(COALESCE(rut_normalizado, '')) LIKE ?
+      OR LOWER(COALESCE(razon_social, '')) LIKE ?
+      OR LOWER(COALESCE(nombre_origen, '')) LIKE ?
+      OR LOWER(COALESCE(glosa, '')) LIKE ?
+      OR LOWER(COALESCE(folio_dte, '')) LIKE ?
+      OR LOWER(COALESCE(id_transferencia, '')) LIKE ?
+    )`;
+    for (let i = 0; i < 7; i++) params.push(s);
+  }
+
+  // ORDER BY whitelist
+  const COLS_OK = { fecha:'fecha', monto:'monto', rut:'rut', razon_social:'razon_social',
+                    estado:'estado', banco_cartola:'banco_cartola', id:'id', empresa_id:'empresa_id' };
+  const sortCol = COLS_OK[orden] || 'fecha';
+  const sortDir = dir === 'asc' ? 'ASC' : 'DESC';
+  sql += ` ORDER BY ${sortCol} ${sortDir}, id ${sortDir}`;
+
+  const lim = Math.min(parseInt(limit) || 500, 5000);
+  sql += ' LIMIT ?'; params.push(lim);
+
+  const movs = db.prepare(sql).all(...params);
+
+  // Conteos resumidos para que el operador entienda el universo filtrado
+  const totalCountSql = sql.replace('SELECT *', 'SELECT COUNT(*) as n').replace(/\s+ORDER BY[\s\S]*$/, '');
+  const totalParams = params.slice(0, -1); // sin el limit
+  const total = db.prepare(totalCountSql).get(...totalParams)?.n || 0;
+
+  res.json({ movimientos: movs, total, devueltos: movs.length, limit: lim });
+});
+
+// ── Exportar resultado de consulta a CSV SimpleFactura (formato masivo) ──────
+// Reutiliza buildSfCsv del flujo SF. Aplica los mismos filtros que /consulta
+// + agrupa por empresa (cada empresa va con su config en el CSV).
+app.get('/api/movimientos/consulta/exportar-csv', requireAuth, requireAdmin, (req, res) => {
+  if (!XLSX_LIB) return res.status(500).json({ error: 'Modulo xlsx no disponible' });
+
+  const {
+    empresa_id, banco, estado, tipo_dte,
+    fecha_desde, fecha_hasta, monto_min, monto_max,
+    sin_rut, sin_email, search
+  } = req.query;
+
+  let sql = 'SELECT * FROM movimientos WHERE 1=1';
+  const params = [];
+
+  if (empresa_id) { sql += ' AND empresa_id = ?'; params.push(empresa_id); }
+  if (banco)      { sql += ' AND banco_cartola = ?'; params.push(banco); }
+  if (estado)     { sql += ' AND estado = ?'; params.push(estado); }
+  if (tipo_dte)   { sql += ' AND tipo_dte = ?'; params.push(parseInt(tipo_dte)); }
+  if (fecha_desde){ sql += ' AND fecha >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta){ sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
+  if (monto_min)  { sql += ' AND monto >= ?'; params.push(parseFloat(monto_min)); }
+  if (monto_max)  { sql += ' AND monto <= ?'; params.push(parseFloat(monto_max)); }
+  if (sin_rut === '1')   { sql += ' AND (rut_normalizado IS NULL OR rut_normalizado = "")'; }
+  if (sin_email === '1') { sql += ' AND (email_receptor IS NULL OR email_receptor = "")'; }
+  if (req.query.glosa_rut_puntos === '1') {
+    sql += " AND glosa GLOB '[0-9]*.[0-9][0-9][0-9].[0-9][0-9][0-9]-[0-9Kk]*'";
+  }
+  if (search) {
+    const s = '%' + String(search).toLowerCase() + '%';
+    sql += ` AND (LOWER(COALESCE(rut,'')) LIKE ? OR LOWER(COALESCE(rut_normalizado,'')) LIKE ?
+              OR LOWER(COALESCE(razon_social,'')) LIKE ? OR LOWER(COALESCE(nombre_origen,'')) LIKE ?
+              OR LOWER(COALESCE(glosa,'')) LIKE ? OR LOWER(COALESCE(folio_dte,'')) LIKE ?
+              OR LOWER(COALESCE(id_transferencia,'')) LIKE ?)`;
+    for (let i = 0; i < 7; i++) params.push(s);
+  }
+  sql += ' ORDER BY empresa_id ASC, fecha ASC, id ASC';
+
+  const movs = db.prepare(sql).all(...params);
+  if (!movs.length) {
+    return res.status(404).json({ error: 'Sin movimientos que cumplan los filtros' });
+  }
+
+  // Agrupar por empresa y armar un CSV SF por empresa, concatenados con un header de separacion
+  const empresas = getAppData('empresas') || {};
+  const grupos = {};
+  for (const m of movs) {
+    if (!grupos[m.empresa_id]) grupos[m.empresa_id] = [];
+    grupos[m.empresa_id].push(m);
+  }
+
+  // Si hay una sola empresa, devolver el CSV puro (sin separadores)
+  // Si hay multiples, concatenar con encabezado descriptivo en una linea de comentario
+  const partes = [];
+  for (const [empId, lista] of Object.entries(grupos)) {
+    const emp = empresas[empId] || { nombre: empId, simplefactura: {} };
+    if (Object.keys(grupos).length > 1) {
+      partes.push(`# === ${emp.nombre || empId} (${lista.length} movs) ===`);
+    }
+    partes.push(buildSfCsv(lista, emp));
+    partes.push(''); // linea en blanco entre grupos
+  }
+  const csvFinal = partes.join('\r\n');
+
+  const fname = `consulta-movimientos-${new Date().toISOString().substring(0,10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+  // BOM para Excel
+  res.send('\uFEFF' + csvFinal);
+});
+
 app.get('/api/movimientos/stats', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   let where = '1=1';

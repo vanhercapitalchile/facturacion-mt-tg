@@ -294,6 +294,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="nav-item active" onclick="adminNav('dashboard')">&#x1F4CA; Dashboard</div>
           <div class="nav-item" onclick="adminNav('cartolas')">&#x1F4C4; Cargar Cartola</div>
           <div class="nav-item" onclick="adminNav('movimientos')">&#x1F4CB; Movimientos</div>
+          <div class="nav-item" onclick="adminNav('consulta')">&#x1F50D; Consulta de Movimientos</div>
         </div>
         <div class="nav-section">
           <div class="nav-section-title">Facturación</div>
@@ -917,6 +918,112 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
       </div>
 
+      <!-- CONSULTA DE MOVIMIENTOS (auditoria) -->
+      <div class="view" id="view-consulta">
+        <div class="topbar">
+          <h1>&#x1F50D; Consulta de Movimientos</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadConsultaMovs()">&#x1F504; Buscar</button>
+            <button class="btn btn-primary btn-sm" onclick="exportarConsultaCSV()" title="Descarga la seleccion actual en formato CSV de SimpleFactura (subida masiva)">&#x1F4E5; CSV SimpleFactura</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetConsultaFiltros()">&#x2715; Limpiar</button>
+          </div>
+        </div>
+        <div class="card">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+            <div class="form-group" style="margin:0;"><label>Empresa</label>
+              <select id="cm-empresa" class="inline-input">
+                <option value="">Todas</option>
+                <option value="tg-inversiones">TG Inversiones</option>
+                <option value="mt-inversiones">MT Inversiones</option>
+                <option value="ts-capital">TS Capital</option>
+                <option value="vanher-capital">Vanher Capital</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;"><label>Banco</label>
+              <select id="cm-banco" class="inline-input">
+                <option value="">Todos</option>
+                <option value="SANTANDER">Santander</option>
+                <option value="BCI">BCI</option>
+                <option value="BANCO ESTADO">Banco Estado</option>
+                <option value="BANCO CHILE">Banco Chile</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;"><label>Estado</label>
+              <select id="cm-estado" class="inline-input">
+                <option value="">Todos</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="listo">Listo</option>
+                <option value="en_lote">En lote</option>
+                <option value="facturado">Facturado</option>
+                <option value="interno">Interno</option>
+                <option value="error">Error</option>
+                <option value="pendiente_manual">Pendiente manual</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;"><label>Tipo DTE</label>
+              <select id="cm-tipo" class="inline-input">
+                <option value="">Todos</option>
+                <option value="34">34 - Factura exenta</option>
+                <option value="41">41 - Boleta exenta</option>
+                <option value="33">33 - Factura afecta</option>
+                <option value="39">39 - Boleta afecta</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;"><label>Fecha desde</label>
+              <input type="date" id="cm-fdesde" class="inline-input">
+            </div>
+            <div class="form-group" style="margin:0;"><label>Fecha hasta</label>
+              <input type="date" id="cm-fhasta" class="inline-input">
+            </div>
+            <div class="form-group" style="margin:0;"><label>Monto min</label>
+              <input type="number" id="cm-mmin" class="inline-input" placeholder="0">
+            </div>
+            <div class="form-group" style="margin:0;"><label>Monto máx</label>
+              <input type="number" id="cm-mmax" class="inline-input" placeholder="999999999">
+            </div>
+            <div class="form-group" style="margin:0;grid-column:1/-1;"><label>Búsqueda libre (RUT, glosa, razón social, nombre, folio, id transf)</label>
+              <input type="text" id="cm-search" class="inline-input" placeholder="Ej: SERVICIOS AG  ó  78184782  ó  78.184.782-8  ó  Folio 1234" onkeydown="if(event.key==='Enter') loadConsultaMovs()">
+            </div>
+            <div class="form-group" style="margin:0;display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="cm-sinrut" style="width:18px;height:18px;">
+              <label style="margin:0;cursor:pointer;" onclick="document.getElementById('cm-sinrut').click()">Solo sin RUT (parser issues)</label>
+            </div>
+            <div class="form-group" style="margin:0;display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="cm-sinemail" style="width:18px;height:18px;">
+              <label style="margin:0;cursor:pointer;" onclick="document.getElementById('cm-sinemail').click()">Solo sin email</label>
+            </div>
+            <div class="form-group" style="margin:0;display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="cm-glosapuntos" style="width:18px;height:18px;">
+              <label style="margin:0;cursor:pointer;" onclick="document.getElementById('cm-glosapuntos').click()" title="Aisla movimientos con glosa formato 'XX.XXX.XXX-X Transf...' (bug parser abr 2026)">Glosa con RUT puntos (bug parser)</label>
+            </div>
+          </div>
+          <p id="cm-summary" style="font-size:12px;color:var(--txt2);margin:8px 0;">Aplicá filtros y presioná Buscar.</p>
+          <div class="table-wrapper" style="max-height:65vh;overflow:auto;">
+            <table style="font-size:12px;">
+              <thead style="position:sticky;top:0;background:var(--surface);z-index:1;">
+                <tr>
+                  <th style="text-align:right;">ID</th>
+                  <th>Fecha</th>
+                  <th>Empresa</th>
+                  <th>Banco</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th>Glosa</th>
+                  <th style="text-align:right;">Monto</th>
+                  <th>Estado</th>
+                  <th>DTE</th>
+                  <th>Folio</th>
+                  <th>Email</th>
+                  <th>Lote</th>
+                  <th>id_transferencia</th>
+                </tr>
+              </thead>
+              <tbody id="cm-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- CONFIG VIEW -->
       <div class="view" id="view-config">
         <div class="topbar"><h1>Configuración</h1></div>
@@ -1362,6 +1469,7 @@ function adminNav(view) {
   else if (view === 'historial') loadHistorial();
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
+  else if (view === 'consulta') initConsultaMovs();
   else if (view === 'config') renderConfig();
   else if (view === 'usuarios') renderUsuarios();
   else if (view === 'cartolas') loadHistorialCartolas();
@@ -4335,6 +4443,124 @@ async function saveNewCliente() {
     })
   });
   if (data?.ok) { closeModal(); showToast('Cliente creado', 'success'); loadClientes(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONSULTA DE MOVIMIENTOS (auditoria, admin only)
+// ══════════════════════════════════════════════════════════════════════════════
+function initConsultaMovs() {
+  // Solo carga el primer batch si no se ha hecho aún
+  const tbody = document.getElementById('cm-tbody');
+  if (tbody && !tbody.children.length) {
+    document.getElementById('cm-summary').textContent = 'Aplicá filtros y presioná Buscar para auditar movimientos.';
+  }
+}
+
+function resetConsultaFiltros() {
+  ['cm-empresa','cm-banco','cm-estado','cm-tipo','cm-fdesde','cm-fhasta','cm-mmin','cm-mmax','cm-search'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['cm-sinrut','cm-sinemail','cm-glosapuntos'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = false;
+  });
+  document.getElementById('cm-tbody').innerHTML = '';
+  document.getElementById('cm-summary').textContent = 'Filtros limpios.';
+}
+
+async function loadConsultaMovs() {
+  const params = new URLSearchParams();
+  const add = (k, id) => { const v = document.getElementById(id)?.value?.trim(); if (v) params.set(k, v); };
+  add('empresa_id','cm-empresa');
+  add('banco','cm-banco');
+  add('estado','cm-estado');
+  add('tipo_dte','cm-tipo');
+  add('fecha_desde','cm-fdesde');
+  add('fecha_hasta','cm-fhasta');
+  add('monto_min','cm-mmin');
+  add('monto_max','cm-mmax');
+  add('search','cm-search');
+  if (document.getElementById('cm-sinrut')?.checked) params.set('sin_rut','1');
+  if (document.getElementById('cm-sinemail')?.checked) params.set('sin_email','1');
+  if (document.getElementById('cm-glosapuntos')?.checked) params.set('glosa_rut_puntos','1');
+  params.set('limit','1000');
+
+  document.getElementById('cm-summary').textContent = 'Buscando...';
+  const data = await apiFetch('/api/movimientos/consulta?' + params.toString());
+  if (!data) {
+    document.getElementById('cm-summary').textContent = 'Error consultando.';
+    return;
+  }
+  const movs = data.movimientos || [];
+  document.getElementById('cm-summary').innerHTML =
+    `<strong>${data.devueltos}</strong> de ${data.total} movimientos (límite ${data.limit}). ` +
+    (data.total > data.devueltos ? '<span style="color:#e67e22;">Refiná los filtros para ver más resultados específicos.</span>' : '');
+
+  const tbody = document.getElementById('cm-tbody');
+  if (!movs.length) {
+    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--txt3);">Sin resultados con esos filtros.</td></tr>';
+    return;
+  }
+
+  const fmtFecha = (f) => {
+    if (!f) return '—';
+    const s = String(f).split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d] = s.split('-'); return `${d}-${m}-${y.substring(2)}`; }
+    return s;
+  };
+  const fmtMonto = (n) => '$' + (parseFloat(n)||0).toLocaleString('es-CL');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
+  tbody.innerHTML = movs.map(m => `
+    <tr style="${!m.rut_normalizado ? 'background:rgba(231,76,60,.06);' : ''}">
+      <td style="text-align:right;font-family:monospace;color:var(--txt3);">${m.id}</td>
+      <td>${fmtFecha(m.fecha)}</td>
+      <td><span class="badge badge-gray">${m.empresa_id || '—'}</span></td>
+      <td style="font-size:11px;">${esc(m.banco_cartola || '—')}</td>
+      <td style="font-family:monospace;font-size:11px;">${esc(m.rut || '—')}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(m.razon_social||'')}">${esc(m.razon_social || m.nombre_origen || '—')}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--txt2);" title="${esc(m.glosa||'')}">${esc(m.glosa || '—')}</td>
+      <td style="text-align:right;font-weight:500;">${fmtMonto(m.monto)}</td>
+      <td><span class="badge badge-${m.estado==='facturado'?'green':m.estado==='error'?'red':m.estado==='listo'?'blue':m.estado==='interno'?'gray':'gold'}">${esc(m.estado||'—')}</span></td>
+      <td style="text-align:center;">${m.tipo_dte || '—'}</td>
+      <td style="font-family:monospace;font-size:11px;">${esc(m.folio_dte || '—')}</td>
+      <td style="font-size:11px;color:${m.email_receptor?'var(--txt2)':'var(--red)'};">${esc(m.email_receptor || '(sin email)')}</td>
+      <td style="font-size:11px;">${esc(m.lote_id || '—')}</td>
+      <td style="font-family:monospace;font-size:10px;color:var(--txt3);">${esc(m.id_transferencia || '—')}</td>
+    </tr>
+  `).join('');
+}
+
+async function exportarConsultaCSV() {
+  // Toma los mismos filtros que loadConsultaMovs y descarga el CSV SF
+  const params = new URLSearchParams();
+  const add = (k, id) => { const v = document.getElementById(id)?.value?.trim(); if (v) params.set(k, v); };
+  add('empresa_id','cm-empresa'); add('banco','cm-banco'); add('estado','cm-estado'); add('tipo_dte','cm-tipo');
+  add('fecha_desde','cm-fdesde'); add('fecha_hasta','cm-fhasta'); add('monto_min','cm-mmin'); add('monto_max','cm-mmax');
+  add('search','cm-search');
+  if (document.getElementById('cm-sinrut')?.checked) params.set('sin_rut','1');
+  if (document.getElementById('cm-sinemail')?.checked) params.set('sin_email','1');
+  if (document.getElementById('cm-glosapuntos')?.checked) params.set('glosa_rut_puntos','1');
+
+  const url = '/api/movimientos/consulta/exportar-csv?' + params.toString();
+  // Descarga directa con auth header — usamos fetch + blob
+  try {
+    const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.error || resp.status), 'error');
+      return;
+    }
+    const blob = await resp.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    link.download = m ? m[1] : `consulta-movimientos-${new Date().toISOString().substring(0,10)}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    showToast('CSV descargado', 'success');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

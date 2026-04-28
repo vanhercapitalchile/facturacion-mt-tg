@@ -1902,6 +1902,11 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // Idempotency-Key para evitar duplicados (basada en mov ID + lote)
       const idempKey = `${loteId}-mov-${m.id}-${Date.now()}`;
 
+      // Log de payload completo para diagnostico
+      const sendEmailLog = payload.sendEmail ? `sendEmail.to=${payload.sendEmail.to}` : 'sendEmail=AUSENTE';
+      console.log(`[HAULMER REQ] mov ${m.id} DTE ${tipoDte} monto ${monto} email_receptor=${m.email_receptor || 'VACIO'} | ${sendEmailLog}`);
+      console.log(`[HAULMER REQ payload] ${JSON.stringify(payload)}`);
+
       try {
         const resp = await fetch(HAULMER_API_URL, {
           method: 'POST',
@@ -1916,23 +1921,36 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
-        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
+        console.log(`[HAULMER RESP] mov ${m.id} HTTP ${resp.status} | ${raw}`);
 
         if (resp.ok && !data?.error) {
           db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, updated_at=? WHERE id=?")
             .run(now, now, m.id);
           emitidos++;
-          resultados.push({ id: m.id, status: 'emitido', folio: data?.folio || data?.Folio, resp: raw.substring(0,200) });
+          resultados.push({
+            id: m.id, status: 'emitido',
+            folio: data?.folio || data?.Folio,
+            sendEmail_sent: payload.sendEmail || null,
+            email_receptor: m.email_receptor || null,
+            resp_data: data,
+            resp_raw_first1500: raw.substring(0, 1500)
+          });
         } else {
           db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
           erroresEmision++;
-          resultados.push({ id: m.id, status: 'error', httpStatus: resp.status, resp: raw.substring(0,200) });
+          resultados.push({
+            id: m.id, status: 'error', httpStatus: resp.status,
+            sendEmail_sent: payload.sendEmail || null,
+            email_receptor: m.email_receptor || null,
+            resp_data: data,
+            resp_raw_first1500: raw.substring(0, 1500)
+          });
         }
       } catch(dteErr) {
         console.error(`[HAULMER] Error mov ${m.id}:`, dteErr.message);
         db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
         erroresEmision++;
-        resultados.push({ id: m.id, status: 'error', error: dteErr.message });
+        resultados.push({ id: m.id, status: 'error', error: dteErr.message, sendEmail_sent: payload.sendEmail || null });
       }
     }
 
@@ -1948,6 +1966,24 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       .run(JSON.stringify({ error: err.message }), now, loteId);
     res.status(500).json({ error: 'Error al emitir con Open Factura: ' + err.message });
   }
+});
+
+// ── Debug Haulmer: ver ultimo payload + response del lote (admin only) ───────
+app.get('/api/debug/haulmer/:lote_id', requireAuth, requireAdmin, (req, res) => {
+  const loteId = req.params.lote_id;
+  const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  let parsed = null;
+  try { parsed = JSON.parse(lote.response_api || '{}'); } catch(e) { parsed = { raw: lote.response_api, parseError: e.message }; }
+  res.json({
+    lote_id: loteId,
+    empresa_id: lote.empresa_id,
+    estado: lote.estado,
+    metodo: lote.metodo,
+    cantidad: lote.cantidad,
+    monto_total: lote.monto_total,
+    response_api: parsed
+  });
 });
 
 // ── Test conexión Haulmer ─────────────────────────────────────────────────────

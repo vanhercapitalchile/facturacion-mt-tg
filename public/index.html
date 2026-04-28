@@ -766,7 +766,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
             <table>
               <thead>
-                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th></tr>
+                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th><th style="width:80px;text-align:center;">Acciones</th></tr>
               </thead>
               <tbody id="clientes-tbody"></tbody>
             </table>
@@ -1121,7 +1121,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="emp-view-clientes">
         <div class="topbar"><h1>Base de Clientes</h1></div>
         <div class="card"><div class="card-header"><h3 id="emp-clientes-count">Clientes</h3><div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar..." id="emp-clientes-search" oninput="filterClientes()"></div></div>
-        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
+        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th style="width:80px;text-align:center;">Acciones</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
       </div>
     </main>
   </div>
@@ -3743,7 +3743,7 @@ function renderClientes(search = '') {
 
   const tbody = document.getElementById(isAdmin() ? 'clientes-tbody' : 'emp-clientes-tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--txt3)">No hay clientes</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--txt3)">No hay clientes</td></tr>';
     return;
   }
 
@@ -3757,8 +3757,74 @@ function renderClientes(search = '') {
       <td style="font-size:11px;">${c.email || '—'}</td>
       <td><span class="badge badge-${c.tipo === 'empresa' ? 'blue' : 'purple'}">${c.tipo === 'empresa' ? 'Empresa' : 'Persona'}</span></td>
       ${isAdmin() ? `<td><span class="badge badge-gray">${c.empresa_id}</span></td>` : ''}
+      <td style="text-align:center;">
+        <button class="btn btn-sm" style="padding:4px 10px;font-size:12px;background:var(--surface2);color:var(--txt);border:1px solid var(--border);" onclick="editarCliente(${c.id})" title="Editar cliente">&#x270F;&#xFE0F; Editar</button>
+      </td>
     </tr>
   `).join('');
+}
+
+// ── Editar cliente: modal prellenado con datos del cliente seleccionado ──────
+function editarCliente(id) {
+  const c = (ALL_CLIENTES || []).find(x => x.id === id);
+  if (!c) { showToast('Cliente no encontrado', 'error'); return; }
+  const modal = document.getElementById('modal-content');
+  const esEmpresa = c.tipo === 'empresa';
+  modal.innerHTML = `
+    <h3>Editar cliente</h3>
+    <p style="font-size:11px;color:var(--txt3);margin:0 0 16px;">ID: ${c.id} · Empresa: <strong>${c.empresa_id || '—'}</strong></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>RUT</label><input type="text" id="ec-rut" class="inline-input" value="${(c.rut || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="ec-tipo" class="inline-input">
+          <option value="empresa" ${esEmpresa ? 'selected' : ''}>Empresa</option>
+          <option value="persona" ${!esEmpresa ? 'selected' : ''}>Persona</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Razón Social / Nombre</label><input type="text" id="ec-razon" class="inline-input" value="${(c.razon_social || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Giro</label><input type="text" id="ec-giro" class="inline-input" value="${(c.giro || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Dirección</label><input type="text" id="ec-dir" class="inline-input" value="${(c.direccion || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Comuna</label><input type="text" id="ec-comuna" class="inline-input" value="${(c.comuna || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Ciudad</label><input type="text" id="ec-ciudad" class="inline-input" value="${(c.ciudad || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="ec-email" class="inline-input" value="${(c.email || '').replace(/"/g,'&quot;')}" placeholder="cliente@dominio.cl"></div>
+      <div class="form-group"><label>Teléfono</label><input type="text" id="ec-tel" class="inline-input" value="${(c.telefono || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Nombre contacto</label><input type="text" id="ec-nombre" class="inline-input" value="${(c.nombre || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>Representante legal</label><input type="text" id="ec-replegal" class="inline-input" value="${(c.representante_legal || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group"><label>RUT representante</label><input type="text" id="ec-rutrep" class="inline-input" value="${(c.rut_representante || '').replace(/"/g,'&quot;')}"></div>
+    </div>
+    <div style="margin-top:12px;padding:10px 12px;background:rgba(52,152,219,.08);border-left:3px solid #3498db;border-radius:4px;font-size:12px;color:var(--txt2);">
+      &#x2139;&#xFE0F; Al guardar, el email se sincronizará automáticamente en los movimientos <strong>pendientes</strong> y <strong>listos</strong> del mismo RUT que aún no tengan correo.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEdicionCliente(${c.id})">Guardar cambios</button>
+    </div>`;
+  showModal();
+}
+
+async function guardarEdicionCliente(id) {
+  const payload = {
+    rut: document.getElementById('ec-rut').value.trim(),
+    tipo: document.getElementById('ec-tipo').value,
+    razon_social: document.getElementById('ec-razon').value.trim(),
+    giro: document.getElementById('ec-giro').value.trim(),
+    direccion: document.getElementById('ec-dir').value.trim(),
+    comuna: document.getElementById('ec-comuna').value.trim(),
+    ciudad: document.getElementById('ec-ciudad').value.trim(),
+    email: document.getElementById('ec-email').value.trim(),
+    telefono: document.getElementById('ec-tel').value.trim(),
+    nombre: document.getElementById('ec-nombre').value.trim(),
+    representante_legal: document.getElementById('ec-replegal').value.trim(),
+    rut_representante: document.getElementById('ec-rutrep').value.trim()
+  };
+  const data = await apiFetch(`/api/clientes/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  if (data?.ok) {
+    closeModal();
+    showToast('Cliente actualizado', 'success');
+    loadClientes();
+  } else {
+    showToast('Error: ' + (data?.error || 'no se pudo actualizar'), 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

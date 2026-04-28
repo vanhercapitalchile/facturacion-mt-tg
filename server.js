@@ -195,6 +195,44 @@ try {
   }
 } catch(e) { console.warn('[MIGRATION] Error prefijando id_compuesto con empresa:', e.message); }
 
+// ── Migration: re-procesar movimientos Santander con rut_normalizado vacío cuya glosa ─
+// venga en formato "XX.XXX.XXX-X Transf..." (bug del parser anterior).
+// Detectado abr 2026: ~12+ movimientos por cartola afectados, no se podían facturar
+// porque quedaban con rut/nombre vacíos.
+try {
+  const stale = db.prepare(`
+    SELECT id, glosa, fecha
+    FROM movimientos
+    WHERE banco_cartola = 'SANTANDER'
+      AND (rut_normalizado IS NULL OR rut_normalizado = '')
+      AND glosa IS NOT NULL AND glosa != ''
+  `).all();
+  if (stale.length > 0) {
+    const upd = db.prepare(`
+      UPDATE movimientos
+      SET rut = ?, rut_normalizado = ?, nombre_origen = ?,
+          razon_social = COALESCE(NULLIF(razon_social, ''), ?),
+          updated_at = ?
+      WHERE id = ?
+    `);
+    let fixed = 0;
+    const nowMig = new Date().toISOString();
+    db.transaction(() => {
+      for (const m of stale) {
+        const mm = (m.glosa || '').match(/^(\d{1,2}\.\d{3}\.\d{3}-[\dkK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+        if (mm) {
+          const rutFmt = mm[1];
+          const rutNorm = rutFmt.replace(/[.\-]/g, '').toUpperCase();
+          const nombre = (mm[2] || '').trim();
+          upd.run(rutFmt, rutNorm, nombre, nombre, nowMig, m.id);
+          fixed++;
+        }
+      }
+    })();
+    if (fixed > 0) console.log(`[MIGRATION] Re-procesados ${fixed} movimientos Santander con RUT en glosa formato puntos`);
+  }
+} catch(e) { console.warn('[MIGRATION] Error fix RUT con puntos:', e.message); }
+
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
 const RUTS_INTERNOS = [
   '778593769', '778856980', '775063432', '779766063', // TG / MT / TS Capital / Vanher Capital
@@ -3079,10 +3117,14 @@ function detectarTipoSantander(buffer) {
 }
 
 // Limpiar nombre de glosa Santander: elimina RUT inicial y prefijos "Transf de", "Transf.", etc.
+// Soporta dos formatos de RUT al inicio:
+//   - Formato 10 dígitos padded: "0789123456" (típico Santander vieja escuela)
+//   - Formato XX.XXX.XXX-X con puntos y guión (también aparece en Santander)
 function cleanSantanderName(glosa) {
   if (!glosa) return '';
   return glosa
-    .replace(/^0*\d{6,11}[kK]?\s+/i, '')         // RUT al inicio (ej: "026042825K ")
+    .replace(/^\d{1,2}\.\d{3}\.\d{3}-[\dkK]\s+/i, '') // RUT con puntos: "78.184.782-8 "
+    .replace(/^0*\d{6,11}[kK]?\s+/i, '')                  // RUT padded: "026042825K "
     .replace(/Transferencia\s+de\s+/gi, '')
     .replace(/Transf(?:erencia)?\.?\s+de\s+/gi, '')
     .replace(/Transf(?:erencia)?\.?\s+/gi, '')
@@ -3210,17 +3252,25 @@ function parseSantanderCartola(buffer) {
 
     const glosa = String(row[3] || '').trim();
 
-    // Extraer RUT desde glosa: patrón "0XXXXXXXXXX Transf de NOMBRE"
+    // Extraer RUT desde glosa. Santander usa DOS formatos distintos en el mismo período:
+    //   A) "78.184.782-8 Transf. NOMBRE" — RUT con puntos y guión
+    //   B) "0789123456 Transf de NOMBRE" — RUT padded a 10 dígitos
     let rutDigits = '';
     let nombre    = '';
-    const m1 = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
-    if (m1) {
-      rutDigits = m1[1];
-      nombre    = m1[2]?.trim() || '';
+    const m0 = glosa.match(/^(\d{1,2}\.\d{3}\.\d{3}-[\dkK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+    if (m0) {
+      rutDigits = m0[1].replace(/[.\-]/g, '').toUpperCase();
+      nombre    = m0[2]?.trim() || '';
     } else {
-      const m2 = glosa.match(/(\d{7,9}[0-9kK])/);
-      if (m2) rutDigits = m2[1];
-      nombre = cleanSantanderName(glosa);
+      const m1 = glosa.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+      if (m1) {
+        rutDigits = m1[1];
+        nombre    = m1[2]?.trim() || '';
+      } else {
+        const m2 = glosa.match(/(\d{7,9}[0-9kK])/);
+        if (m2) rutDigits = m2[1];
+        nombre = cleanSantanderName(glosa);
+      }
     }
 
     // ID único: si todos ceros usar "S{i}"
@@ -3312,16 +3362,24 @@ function parseSantanderProvisoria(buffer) {
 
     monto = Math.abs(monto);
 
-    // Extraer RUT y nombre desde la descripción: patrón idéntico al tradicional
+    // Extraer RUT y nombre desde la descripción. Soporta los DOS formatos Santander:
+    //   A) "78.184.782-8 Transf. NOMBRE" (con puntos y guión)
+    //   B) "0789123456 Transf de NOMBRE" (10 dígitos padded)
     let rutDigits = '', nombre = '';
-    const m1 = desc.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
-    if (m1) {
-      rutDigits = m1[1];
-      nombre    = m1[2]?.trim() || '';
+    const m0 = desc.match(/^(\d{1,2}\.\d{3}\.\d{3}-[\dkK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+    if (m0) {
+      rutDigits = m0[1].replace(/[.\-]/g, '').toUpperCase();
+      nombre    = m0[2]?.trim() || '';
     } else {
-      const m2 = desc.match(/(\d{7,9}[0-9kK])/);
-      if (m2) rutDigits = m2[1];
-      nombre = cleanSantanderName(desc);
+      const m1 = desc.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+      if (m1) {
+        rutDigits = m1[1];
+        nombre    = m1[2]?.trim() || '';
+      } else {
+        const m2 = desc.match(/(\d{7,9}[0-9kK])/);
+        if (m2) rutDigits = m2[1];
+        nombre = cleanSantanderName(desc);
+      }
     }
 
     // Clave canónica + bucketSeq para distinguir duplicados legítimos

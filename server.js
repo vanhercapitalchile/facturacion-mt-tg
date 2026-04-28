@@ -1710,6 +1710,32 @@ app.post('/api/facturacion/exportar-haulmer-seleccion', requireAuth, (req, res) 
 // Haulmer acepta JSON individual o CSV masivo. Usamos JSON masivo (array de DTEs).
 // Endpoint: POST https://api.haulmer.com/v2/dte/document
 // Auth header: apikey: <api_key>
+
+// ── Helper UF para Ley 21.713 (boletas > 135 UF requieren MedioPago + correo/tel) ──
+// Fuente: mindicador.cl (gratis, sin auth). Cache por dia en memoria.
+const _ufCache = {};
+async function getUFCLP(fechaYYYYMMDD) {
+  if (!fechaYYYYMMDD || fechaYYYYMMDD.length < 10) return 38500; // fallback abril 2026
+  const key = fechaYYYYMMDD.substring(0, 10);
+  if (_ufCache[key]) return _ufCache[key];
+  try {
+    const [y, m, d] = key.split('-');
+    const url = `https://mindicador.cl/api/uf/${d}-${m}-${y}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const json = await resp.json();
+    const valor = json?.serie?.[0]?.valor;
+    if (valor && valor > 1000) {
+      _ufCache[key] = valor;
+      return valor;
+    }
+  } catch(e) {
+    console.warn(`[UF] Error fetch ${fechaYYYYMMDD}: ${e.message} - usando fallback`);
+  }
+  return 38500; // fallback razonable abril 2026
+}
+
+const UMBRAL_LEY_21713_UF = 135; // Boletas con monto > 135 UF requieren campos extra
+
 app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, res) => {
   const loteId  = req.params.lote_id;
   const lote    = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
@@ -1755,9 +1781,42 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd → NO tiene FmaPago
       // Facturas (33/34): DTE_v10.xsd → tiene FmaPago
       const esBoleta = (tipoDte === 39 || tipoDte === 41);
+
+      // ── Ley 21.713: validacion previa para boletas > 135 UF ──────────────────
+      // Si supera el umbral y falta RUT real o email del cliente, NO se emite —
+      // se deja en estado 'pendiente_manual' para que el operador la haga desde
+      // el portal de Haulmer (decision de politica abr 2026).
+      let superaUmbral135UF = false;
+      if (esBoleta) {
+        const uf = await getUFCLP((m.fecha || '').substring(0, 10));
+        const umbralCLP = Math.round(UMBRAL_LEY_21713_UF * uf);
+        superaUmbral135UF = monto > umbralCLP;
+        if (superaUmbral135UF) {
+          const rutDigits = (m.rut || '').replace(/[.\-]/g, '');
+          const rutValido = rutDigits && !/^6+6[kK0-9]?$/.test(rutDigits);
+          const tieneEmail = m.email_receptor && m.email_receptor.trim();
+          if (!rutValido || !tieneEmail) {
+            const motivo = !rutValido
+              ? `Boleta > 135 UF (Ley 21.713) requiere RUT real del cliente. RUT actual: "${m.rut || 'vacio'}"`
+              : `Boleta > 135 UF (Ley 21.713) requiere correo del cliente para emision automatica`;
+            db.prepare("UPDATE movimientos SET estado='pendiente_manual', updated_at=? WHERE id=?").run(now, m.id);
+            console.log(`[HAULMER] mov ${m.id} → pendiente_manual: ${motivo}`);
+            resultados.push({
+              id: m.id, status: 'pendiente_manual', motivo,
+              monto, umbral_clp: umbralCLP, uf_dia: uf
+            });
+            continue; // saltar emision para este mov
+          }
+        }
+      }
+
       const idDoc = { TipoDTE: tipoDte, FchEmis: fecha };
       if (esBoleta) {
         idDoc.IndServicio = 3;   // 3 = Ventas y Servicios
+        // MedioPago siempre presente para boletas — TS Capital recibe via transferencia.
+        // Obligatorio cuando monto > 135 UF (Ley 21.713 / Resolucion Exenta SII N°44).
+        // Codigos SII: 1=efectivo 2=tarjeta credito 3=tarjeta debito 4=transferencia 5=cheque 6=otros
+        idDoc.MedioPago = 4;
       } else {
         idDoc.IndServicio = 3;
         idDoc.FmaPago = 1;       // 1 = Contado (solo facturas)
@@ -1784,11 +1843,13 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         CiudadOrigen: ciudadOrigen
       };
 
-      // Receptor Boleta: RUTRecep, RznSocRecep, DirRecep, CmnaRecep, CiudadRecep
+      // Receptor Boleta: RUTRecep, RznSocRecep, [CorreoRecep si > 135 UF], DirRecep, CmnaRecep, CiudadRecep
       // Receptor Factura: RUTRecep, RznSocRecep, GiroRecep, CorreoRecep, DirRecep, CmnaRecep, CiudadRecep
       const receptor = esBoleta ? {
         RUTRecep:    (m.rut || '').replace(/\./g, ''),
         RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
+        // CorreoRecep en posicion XSD correcta (entre RznSocRecep y DirRecep) cuando supera 135 UF
+        ...(superaUmbral135UF && m.email_receptor ? { CorreoRecep: m.email_receptor.trim() } : {}),
         DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
         CmnaRecep:   m.comuna || 'NO INFORMADA',
         CiudadRecep: m.ciudad || ciudadOrigen

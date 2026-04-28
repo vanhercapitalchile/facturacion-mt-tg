@@ -1016,6 +1016,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
                   <th>Email</th>
                   <th>Lote</th>
                   <th>id_transferencia</th>
+                  <th style="text-align:center;width:140px;">Acciones</th>
                 </tr>
               </thead>
               <tbody id="cm-tbody"></tbody>
@@ -4497,7 +4498,7 @@ async function loadConsultaMovs() {
 
   const tbody = document.getElementById('cm-tbody');
   if (!movs.length) {
-    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--txt3);">Sin resultados con esos filtros.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;padding:30px;color:var(--txt3);">Sin resultados con esos filtros.</td></tr>';
     return;
   }
 
@@ -4526,8 +4527,133 @@ async function loadConsultaMovs() {
       <td style="font-size:11px;color:${m.email_receptor?'var(--txt2)':'var(--red)'};">${esc(m.email_receptor || '(sin email)')}</td>
       <td style="font-size:11px;">${esc(m.lote_id || '—')}</td>
       <td style="font-family:monospace;font-size:10px;color:var(--txt3);">${esc(m.id_transferencia || '—')}</td>
+      <td style="text-align:center;white-space:nowrap;">
+        ${(m.tipo_dte === 34 && !m.cliente_en_bd && m.rut_normalizado && (m.estado === 'pendiente' || m.estado === 'listo')) ? `
+          <button class="btn btn-sm" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt);border:1px solid var(--border);" onclick="enriquecerSII('${m.rut_normalizado}', '${esc(m.empresa_id)}', '${esc(m.razon_social||m.nombre_origen||'')}')" title="Consultar SII via Haulmer e insertar en base">&#x1FA84; SII</button>
+          <button class="btn btn-sm" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt);border:1px solid var(--border);" onclick="editarClienteDesdeRUT('${m.rut_normalizado}', '${esc(m.rut)}', '${esc(m.empresa_id)}', '${esc(m.razon_social||m.nombre_origen||'')}')" title="Crear/editar cliente manualmente">&#x270F;&#xFE0F; Editar</button>
+        ` : (m.cliente_en_bd ? '<span style="font-size:10px;color:var(--txt3);">en BD</span>' : '<span style="font-size:10px;color:var(--txt3);">—</span>')}
+      </td>
     </tr>
   `).join('');
+}
+
+// ── Enriquecimiento SII via Haulmer (manual, solo personas juridicas no en BD) ──
+async function enriquecerSII(rutNorm, empresaId, nombreActual) {
+  // 1. Preview: pedir al backend los datos del SII
+  showToast('Consultando SII via Haulmer...', 'info');
+  const preview = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
+  if (!preview) return;
+  if (!preview.ok) {
+    if (preview.existe_en) {
+      showToast('Este RUT ya está en BD: ' + preview.existe_en.join(', ') + '. Use Editar.', 'error');
+    } else {
+      showToast('Error: ' + (preview.error || 'no se pudo consultar SII'), 'error');
+    }
+    return;
+  }
+
+  // 2. Modal de confirmación con datos del SII + campo email opcional
+  const d = preview.datos || {};
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>&#x1FA84; Datos desde SII (Haulmer)</h3>
+    <p style="font-size:12px;color:var(--txt3);margin:0 0 12px;">RUT <strong>${preview.rut_formato}</strong> · empresa destino: <strong>${empresaId}</strong></p>
+    <div style="background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.3);border-radius:6px;padding:12px;margin-bottom:14px;">
+      <p style="font-size:11px;color:var(--txt2);margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;">Datos obtenidos del SII</p>
+      <table style="width:100%;font-size:13px;">
+        <tr><td style="color:var(--txt2);padding:4px 0;width:130px;">Razón social</td><td style="font-weight:500;">${(d.razon_social||'—').replace(/</g,'&lt;')}</td></tr>
+        <tr><td style="color:var(--txt2);padding:4px 0;">Giro</td><td>${(d.giro||'—').replace(/</g,'&lt;')}</td></tr>
+        <tr><td style="color:var(--txt2);padding:4px 0;">Dirección</td><td>${(d.direccion||'—').replace(/</g,'&lt;')}</td></tr>
+        <tr><td style="color:var(--txt2);padding:4px 0;">Comuna / Ciudad</td><td>${(d.comuna||'—')} / ${(d.ciudad||'—')}</td></tr>
+        <tr><td style="color:var(--txt2);padding:4px 0;">Estado SII</td><td>${(d.estado_sii||'—')}</td></tr>
+      </table>
+    </div>
+    <div style="background:rgba(241,196,15,.07);border-left:3px solid #f1c40f;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--txt2);border-radius:4px;">
+      &#x26A0;&#xFE0F; El SII <strong>no expone el email</strong> del contribuyente. Si lo tenés a mano, completalo abajo (o cargalo después con Editar Cliente).
+    </div>
+    <div class="form-group" style="margin-bottom:8px;"><label>Email (opcional)</label>
+      <input type="email" id="sii-email" class="inline-input" placeholder="cliente@dominio.cl">
+    </div>
+    <div class="form-group" style="margin-bottom:14px;"><label>Teléfono (opcional)</label>
+      <input type="text" id="sii-tel" class="inline-input">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="aplicarEnriquecimientoSII('${rutNorm}', '${empresaId}')">Insertar cliente y sincronizar movimientos</button>
+    </div>
+  `;
+  showModal();
+}
+
+async function aplicarEnriquecimientoSII(rutNorm, empresaId) {
+  const datos_extra = {
+    email: document.getElementById('sii-email')?.value?.trim() || '',
+    telefono: document.getElementById('sii-tel')?.value?.trim() || ''
+  };
+  const data = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`, {
+    method: 'POST',
+    body: JSON.stringify({ empresa_id: empresaId, datos_extra })
+  });
+  if (data?.ok) {
+    closeModal();
+    showToast(`Cliente creado, ${data.movimientos_sincronizados} movimientos sincronizados`, 'success');
+    loadConsultaMovs();
+  } else {
+    showToast('Error: ' + (data?.error || 'no se pudo aplicar'), 'error');
+  }
+}
+
+// Editar cliente manual desde modulo Consulta: si el RUT no existe, abre modal
+// pre-llenado con razón social inferida; si existe, abre el modal estándar.
+async function editarClienteDesdeRUT(rutNorm, rutFmt, empresaId, razonInferida) {
+  const existing = (ALL_CLIENTES || []).find(c => c.rut_normalizado === rutNorm && c.empresa_id === empresaId);
+  if (existing) {
+    editarCliente(existing.id);
+    return;
+  }
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Crear cliente manualmente</h3>
+    <p style="font-size:11px;color:var(--txt3);margin:0 0 14px;">RUT <strong>${rutFmt || rutNorm}</strong> · empresa: <strong>${empresaId}</strong></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group" style="grid-column:1/-1;"><label>Razón Social *</label><input type="text" id="ec2-razon" class="inline-input" value="${(razonInferida||'').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Giro</label><input type="text" id="ec2-giro" class="inline-input"></div>
+      <div class="form-group" style="grid-column:1/-1;"><label>Dirección</label><input type="text" id="ec2-dir" class="inline-input"></div>
+      <div class="form-group"><label>Comuna</label><input type="text" id="ec2-comuna" class="inline-input"></div>
+      <div class="form-group"><label>Ciudad</label><input type="text" id="ec2-ciudad" class="inline-input"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="ec2-email" class="inline-input"></div>
+      <div class="form-group"><label>Teléfono</label><input type="text" id="ec2-tel" class="inline-input"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearClienteManualDesdeRUT('${rutNorm}', '${rutFmt||rutNorm}', '${empresaId}')">Guardar y sincronizar movimientos</button>
+    </div>
+  `;
+  showModal();
+}
+
+async function crearClienteManualDesdeRUT(rutNorm, rutFmt, empresaId) {
+  const payload = {
+    rut: rutFmt, rut_normalizado: rutNorm, empresa_id: empresaId,
+    tipo: 'empresa',
+    razon_social: document.getElementById('ec2-razon').value.trim(),
+    giro: document.getElementById('ec2-giro').value.trim(),
+    direccion: document.getElementById('ec2-dir').value.trim(),
+    comuna: document.getElementById('ec2-comuna').value.trim(),
+    ciudad: document.getElementById('ec2-ciudad').value.trim(),
+    email: document.getElementById('ec2-email').value.trim(),
+    telefono: document.getElementById('ec2-tel').value.trim(),
+    nombre: document.getElementById('ec2-razon').value.trim()
+  };
+  if (!payload.razon_social) { showToast('Razón social requerida', 'error'); return; }
+  const data = await apiFetch('/api/clientes', { method: 'POST', body: JSON.stringify(payload) });
+  if (data?.ok) {
+    closeModal();
+    showToast('Cliente creado. Refrescando consulta...', 'success');
+    loadConsultaMovs();
+  } else {
+    showToast('Error: ' + (data?.error || ''), 'error');
+  }
 }
 
 async function exportarConsultaCSV() {

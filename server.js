@@ -918,9 +918,22 @@ app.get('/api/movimientos/consulta', requireAuth, requireAdmin, (req, res) => {
 
   const movs = db.prepare(sql).all(...params);
 
-  // Conteos resumidos para que el operador entienda el universo filtrado
+  // Enriquecer cada movimiento con flag cliente_en_bd (cross-empresa).
+  // Util para que la UI sepa si mostrar o no el boton "Enriquecer SII".
+  if (movs.length) {
+    const ruts = [...new Set(movs.map(m => m.rut_normalizado).filter(r => r && r.trim()))];
+    if (ruts.length) {
+      const placeholders = ruts.map(() => '?').join(',');
+      const enBD = db.prepare(`SELECT DISTINCT rut_normalizado FROM clientes WHERE rut_normalizado IN (${placeholders})`).all(...ruts);
+      const setEnBD = new Set(enBD.map(r => r.rut_normalizado));
+      for (const m of movs) {
+        m.cliente_en_bd = m.rut_normalizado ? setEnBD.has(m.rut_normalizado) : false;
+      }
+    }
+  }
+
   const totalCountSql = sql.replace('SELECT *', 'SELECT COUNT(*) as n').replace(/\s+ORDER BY[\s\S]*$/, '');
-  const totalParams = params.slice(0, -1); // sin el limit
+  const totalParams = params.slice(0, -1);
   const total = db.prepare(totalCountSql).get(...totalParams)?.n || 0;
 
   res.json({ movimientos: movs, total, devueltos: movs.length, limit: lim });
@@ -995,6 +1008,169 @@ app.get('/api/movimientos/consulta/exportar-csv', requireAuth, requireAdmin, (re
   res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
   // BOM para Excel
   res.send('\uFEFF' + csvFinal);
+});
+
+// ── Consulta SII via Haulmer/Open Factura ────────────────────────────────────
+// Reutiliza la API key de TS Capital (Haulmer). Los datos del SII son publicos
+// — no importa quien pregunta, devuelve los mismos datos del contribuyente.
+// Probador de endpoints: la doc Haulmer no expone publicamente el path exacto,
+// asi que probamos varios candidatos hasta encontrar el correcto.
+async function consultarSiiHaulmer(rutNorm, apiKey) {
+  if (!apiKey || !rutNorm) return { ok: false, error: 'sin api_key o rut' };
+  const candidatos = [
+    `https://api.haulmer.com/v2/dte/taxpayer/${rutNorm}`,
+    `https://api.haulmer.com/v2/taxpayer/${rutNorm}`,
+    `https://api.haulmer.com/v2/sii/contribuyente/${rutNorm}`,
+    `https://api.haulmer.com/v2/dte/contribuyente/${rutNorm}`
+  ];
+  for (const url of candidatos) {
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: { 'apikey': apiKey, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      });
+      const text = await resp.text();
+      if (resp.status === 404) {
+        console.log(`[SII-HAULMER] 404 en ${url} (path no existe)`);
+        continue;
+      }
+      if (!resp.ok) {
+        console.warn(`[SII-HAULMER] ${url} HTTP ${resp.status}: ${text.substring(0,200)}`);
+        continue;
+      }
+      let data;
+      try { data = JSON.parse(text); } catch(e) { data = { raw: text }; }
+      console.log(`[SII-HAULMER] ${rutNorm} OK desde ${url}`);
+      return { ok: true, url_usado: url, data };
+    } catch(e) {
+      console.warn(`[SII-HAULMER] ${url} error: ${e.message}`);
+    }
+  }
+  return { ok: false, error: 'Ningun endpoint Haulmer respondio. Verificar plan SII.' };
+}
+
+// Normaliza la respuesta SII a campos internos (best-effort, ajustable segun
+// formato real cuando se tenga primera respuesta exitosa).
+function normalizarSiiHaulmer(data) {
+  if (!data || typeof data !== 'object') return null;
+  return {
+    razon_social: data.razonSocial || data.RznSoc || data.razon_social || data.nombre || data.name || '',
+    giro:         data.giro || data.Giro || data.actividadEconomica || data.glosaActividad || data.giroEmis || '',
+    direccion:    data.direccion || data.dirOrigen || data.DirOrigen || data.address || data.domicilio || '',
+    comuna:       data.comuna || data.cmnaOrigen || data.CmnaOrigen || '',
+    ciudad:       data.ciudad || data.ciudadOrigen || data.CiudadOrigen || '',
+    acteco:       data.acteco || data.codigoActividad || data.actecoCode || '',
+    estado_sii:   data.estado || data.estadoTributario || ''
+  };
+}
+
+// GET preview: consulta SII y devuelve datos sin insertar. Bloquea si el RUT
+// ya existe en alguna empresa de la base unificada (politica abr 2026).
+app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
+  const rutNorm = normalizeRut(req.params.rut);
+  if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
+
+  const enBD = db.prepare('SELECT empresa_id, razon_social, email FROM clientes WHERE rut_normalizado = ?').all(rutNorm);
+  if (enBD.length > 0) {
+    return res.status(409).json({
+      ok: false,
+      error: 'Cliente ya existe en la base unificada',
+      existe_en: enBD.map(c => c.empresa_id),
+      sugerencia: 'Use Editar Cliente para modificar datos existentes (preserva email cargado manualmente)'
+    });
+  }
+
+  const empresas = getAppData('empresas') || {};
+  const apiKey = empresas['ts-capital']?.haulmer?.api_key;
+  if (!apiKey) return res.status(400).json({ error: 'API Key Haulmer no configurada en TS Capital' });
+
+  const result = await consultarSiiHaulmer(rutNorm, apiKey);
+  if (!result.ok) return res.status(502).json({ ok: false, error: result.error });
+
+  const datos = normalizarSiiHaulmer(result.data);
+  if (!datos || !datos.razon_social) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Haulmer respondio pero sin razon_social. Verificar formato de respuesta.',
+      raw_response: result.data
+    });
+  }
+
+  res.json({
+    ok: true,
+    rut_normalizado: rutNorm,
+    rut_formato: formatRutDigits(rutNorm),
+    datos,
+    source_url: result.url_usado
+  });
+});
+
+// POST aplicar: inserta el cliente en la empresa indicada y sincroniza
+// movimientos pendientes/listos del mismo RUT con los datos SII.
+// Mergea datos_extra del operador (ej: email cargado a mano) sobre los del SII.
+app.post('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
+  const rutNorm = normalizeRut(req.params.rut);
+  const { empresa_id, datos_extra = {} } = req.body || {};
+  if (!rutNorm)    return res.status(400).json({ error: 'RUT invalido' });
+  if (!empresa_id) return res.status(400).json({ error: 'empresa_id requerido' });
+
+  const yaEnEsta = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresa_id);
+  if (yaEnEsta) return res.status(409).json({ error: 'Cliente ya existe en esta empresa' });
+
+  const empresas = getAppData('empresas') || {};
+  const apiKey = empresas['ts-capital']?.haulmer?.api_key;
+  if (!apiKey) return res.status(400).json({ error: 'API Key Haulmer no configurada' });
+
+  const result = await consultarSiiHaulmer(rutNorm, apiKey);
+  if (!result.ok) return res.status(502).json({ ok: false, error: result.error });
+
+  const sii = normalizarSiiHaulmer(result.data) || {};
+  const final = {
+    razon_social: datos_extra.razon_social || sii.razon_social || '',
+    giro:         datos_extra.giro         || sii.giro         || '',
+    direccion:    datos_extra.direccion    || sii.direccion    || '',
+    comuna:       datos_extra.comuna       || sii.comuna       || '',
+    ciudad:       datos_extra.ciudad       || sii.ciudad       || '',
+    email:        (datos_extra.email || '').trim(),
+    telefono:     (datos_extra.telefono || '').trim()
+  };
+  if (!final.razon_social) return res.status(422).json({ error: 'SII no devolvio razon_social' });
+
+  const now = nowCL();
+  const rutFmt = formatRutDigits(rutNorm) || rutNorm;
+  let movsSync = 0;
+
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO clientes (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion, comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(empresa_id, 'empresa', rutFmt, rutNorm,
+           final.razon_social, final.giro, final.direccion, final.comuna, final.ciudad,
+           final.razon_social, final.email, final.telefono, '', '', now, now);
+
+    const upd = db.prepare(`
+      UPDATE movimientos
+      SET razon_social   = COALESCE(NULLIF(razon_social, ''), ?),
+          giro           = COALESCE(NULLIF(giro, ''), ?),
+          direccion      = COALESCE(NULLIF(direccion, ''), ?),
+          comuna         = COALESCE(NULLIF(comuna, ''), ?),
+          ciudad         = COALESCE(NULLIF(ciudad, ''), ?),
+          email_receptor = COALESCE(NULLIF(email_receptor, ''), ?),
+          estado         = CASE
+                             WHEN estado = 'pendiente' AND ? != '' AND tipo_dte = 34 THEN 'listo'
+                             WHEN estado = 'pendiente' AND tipo_dte = 41 THEN 'listo'
+                             ELSE estado
+                           END,
+          updated_at     = ?
+      WHERE rut_normalizado = ? AND empresa_id = ? AND estado IN ('pendiente','listo')
+    `).run(final.razon_social, final.giro, final.direccion, final.comuna, final.ciudad,
+           final.email, final.email, now, rutNorm, empresa_id);
+    movsSync = upd.changes;
+  })();
+
+  console.log(`[SII-HAULMER] Cliente ${rutNorm} insertado en ${empresa_id}, ${movsSync} movs sincronizados`);
+  res.json({ ok: true, cliente_creado: true, movimientos_sincronizados: movsSync, datos: final });
 });
 
 app.get('/api/movimientos/stats', requireAuth, (req, res) => {

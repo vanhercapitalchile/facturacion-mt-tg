@@ -766,7 +766,28 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;">
             <table>
               <thead>
-                <tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th>Empresa</th><th style="width:80px;text-align:center;">Acciones</th></tr>
+                <tr>
+                  <th onclick="setClientesSort('rut')" style="cursor:pointer;user-select:none;">RUT <span id="sort-rut" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('razon_social')" style="cursor:pointer;user-select:none;">Razón Social <span id="sort-razon_social" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('giro')" style="cursor:pointer;user-select:none;">Giro <span id="sort-giro" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('direccion')" style="cursor:pointer;user-select:none;">Dirección <span id="sort-direccion" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('comuna')" style="cursor:pointer;user-select:none;">Comuna <span id="sort-comuna" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('email')" style="cursor:pointer;user-select:none;">Email <span id="sort-email" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('tipo')" style="cursor:pointer;user-select:none;">Tipo <span id="sort-tipo" style="opacity:.5;">⇅</span></th>
+                  <th onclick="setClientesSort('empresa_id')" style="cursor:pointer;user-select:none;">Empresa <span id="sort-empresa_id" style="opacity:.5;">⇅</span></th>
+                  <th style="width:80px;text-align:center;">Acciones</th>
+                </tr>
+                <tr style="background:var(--bg2);">
+                  <td></td>
+                  <td><input type="text" id="cf-razon" placeholder="Filtrar..." oninput="setClientesFilter('razon', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+                  <td><input type="text" id="cf-giro" placeholder="Filtrar..." oninput="setClientesFilter('giro', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+                  <td><input type="text" id="cf-dir" placeholder="Filtrar..." oninput="setClientesFilter('direccion', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+                  <td><input type="text" id="cf-comuna" placeholder="Filtrar..." oninput="setClientesFilter('comuna', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+                  <td><select id="cf-email" onchange="setClientesFilter('email', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"><option value="">Todos</option><option value="con">Con email</option><option value="sin">Sin email</option></select></td>
+                  <td><select id="cf-tipo" onchange="setClientesFilter('tipo', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"><option value="">Todos</option><option value="persona">Persona</option><option value="empresa">Empresa</option></select></td>
+                  <td></td>
+                  <td style="text-align:center;"><button onclick="clearClientesFilters()" title="Limpiar filtros y orden" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">✕ Limpiar</button></td>
+                </tr>
               </thead>
               <tbody id="clientes-tbody"></tbody>
             </table>
@@ -1121,7 +1142,28 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       <div class="view" id="emp-view-clientes">
         <div class="topbar"><h1>Base de Clientes</h1></div>
         <div class="card"><div class="card-header"><h3 id="emp-clientes-count">Clientes</h3><div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar..." id="emp-clientes-search" oninput="filterClientes()"></div></div>
-        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead><tr><th>RUT</th><th>Razón Social</th><th>Giro</th><th>Dirección</th><th>Comuna</th><th>Email</th><th>Tipo</th><th style="width:80px;text-align:center;">Acciones</th></tr></thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
+        <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead>
+            <tr>
+              <th onclick="setClientesSort('rut')" style="cursor:pointer;user-select:none;">RUT <span id="sort-rut-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('razon_social')" style="cursor:pointer;user-select:none;">Razón Social <span id="sort-razon_social-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('giro')" style="cursor:pointer;user-select:none;">Giro <span id="sort-giro-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('direccion')" style="cursor:pointer;user-select:none;">Dirección <span id="sort-direccion-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('comuna')" style="cursor:pointer;user-select:none;">Comuna <span id="sort-comuna-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('email')" style="cursor:pointer;user-select:none;">Email <span id="sort-email-op" style="opacity:.5;">⇅</span></th>
+              <th onclick="setClientesSort('tipo')" style="cursor:pointer;user-select:none;">Tipo <span id="sort-tipo-op" style="opacity:.5;">⇅</span></th>
+              <th style="width:80px;text-align:center;">Acciones</th>
+            </tr>
+            <tr style="background:var(--bg2);">
+              <td></td>
+              <td><input type="text" id="cf-razon-op" placeholder="Filtrar..." oninput="setClientesFilter('razon', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+              <td><input type="text" id="cf-giro-op" placeholder="Filtrar..." oninput="setClientesFilter('giro', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+              <td><input type="text" id="cf-dir-op" placeholder="Filtrar..." oninput="setClientesFilter('direccion', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+              <td><input type="text" id="cf-comuna-op" placeholder="Filtrar..." oninput="setClientesFilter('comuna', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"></td>
+              <td><select id="cf-email-op" onchange="setClientesFilter('email', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"><option value="">Todos</option><option value="con">Con email</option><option value="sin">Sin email</option></select></td>
+              <td><select id="cf-tipo-op" onchange="setClientesFilter('tipo', this.value)" style="width:100%;padding:4px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;"><option value="">Todos</option><option value="persona">Persona</option><option value="empresa">Empresa</option></select></td>
+              <td style="text-align:center;"><button onclick="clearClientesFilters()" title="Limpiar filtros y orden" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt2);border:1px solid var(--border);border-radius:4px;cursor:pointer;">✕</button></td>
+            </tr>
+          </thead><tbody id="emp-clientes-tbody"></tbody></table></div></div>
       </div>
     </main>
   </div>
@@ -3728,15 +3770,80 @@ function filterClientes() {
   renderClientes(search);
 }
 
+// Estado de filtros y sort en Base de Clientes
+let CLIENTES_SORT = { col: null, dir: 'asc' };
+let CLIENTES_FILTERS = { razon: '', giro: '', direccion: '', comuna: '', email: '', tipo: '' };
+
+function setClientesSort(col) {
+  if (CLIENTES_SORT.col === col) {
+    CLIENTES_SORT.dir = CLIENTES_SORT.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    CLIENTES_SORT.col = col;
+    CLIENTES_SORT.dir = 'asc';
+  }
+  renderClientes();
+}
+
+function setClientesFilter(field, value) {
+  CLIENTES_FILTERS[field] = (value || '').toLowerCase();
+  renderClientes();
+}
+
+function clearClientesFilters() {
+  CLIENTES_FILTERS = { razon: '', giro: '', direccion: '', comuna: '', email: '', tipo: '' };
+  CLIENTES_SORT = { col: null, dir: 'asc' };
+  ['cf-razon','cf-giro','cf-dir','cf-comuna','cf-email','cf-tipo','cf-razon-op','cf-giro-op','cf-dir-op','cf-comuna-op','cf-email-op','cf-tipo-op'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  renderClientes();
+}
+
 function renderClientes(search = '') {
   let filtered = ALL_CLIENTES;
-  if (search) {
+  // Búsqueda libre (top bar)
+  const searchVal = (typeof search === 'string' && search) ? search : (document.getElementById(isAdmin() ? 'clientes-search' : 'emp-clientes-search')?.value || '').toLowerCase();
+  if (searchVal) {
     filtered = filtered.filter(c =>
-      (c.rut || '').toLowerCase().includes(search) ||
-      (c.razon_social || '').toLowerCase().includes(search) ||
-      (c.nombre || '').toLowerCase().includes(search)
+      (c.rut || '').toLowerCase().includes(searchVal) ||
+      (c.razon_social || '').toLowerCase().includes(searchVal) ||
+      (c.nombre || '').toLowerCase().includes(searchVal)
     );
   }
+
+  // Filtros por columna
+  const F = CLIENTES_FILTERS;
+  if (F.razon) filtered = filtered.filter(c => (c.razon_social || '').toLowerCase().includes(F.razon));
+  if (F.giro) filtered = filtered.filter(c => (c.giro || '').toLowerCase().includes(F.giro));
+  if (F.direccion) filtered = filtered.filter(c => (c.direccion || '').toLowerCase().includes(F.direccion));
+  if (F.comuna) filtered = filtered.filter(c => (c.comuna || '').toLowerCase().includes(F.comuna));
+  if (F.email === 'con') filtered = filtered.filter(c => c.email && String(c.email).trim());
+  else if (F.email === 'sin') filtered = filtered.filter(c => !c.email || !String(c.email).trim());
+  if (F.tipo === 'persona' || F.tipo === 'empresa') filtered = filtered.filter(c => c.tipo === F.tipo);
+
+  // Sort
+  if (CLIENTES_SORT.col) {
+    const col = CLIENTES_SORT.col;
+    const dir = CLIENTES_SORT.dir === 'asc' ? 1 : -1;
+    filtered = filtered.slice().sort((a, b) => {
+      const va = (a[col] == null ? '' : String(a[col])).toLowerCase();
+      const vb = (b[col] == null ? '' : String(b[col])).toLowerCase();
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+  }
+
+  // Actualizar indicadores de sort
+  const cols = ['rut','razon_social','giro','direccion','comuna','email','tipo','empresa_id'];
+  cols.forEach(c => {
+    const arrow = CLIENTES_SORT.col === c ? (CLIENTES_SORT.dir === 'asc' ? '↑' : '↓') : '⇅';
+    const opacity = CLIENTES_SORT.col === c ? '1' : '.5';
+    [`sort-${c}`, `sort-${c}-op`].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = arrow; el.style.opacity = opacity; }
+    });
+  });
 
   const countEl = document.getElementById(isAdmin() ? 'clientes-count' : 'emp-clientes-count');
   if (countEl) countEl.textContent = `${filtered.length} clientes`;

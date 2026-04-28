@@ -3542,6 +3542,44 @@ function normalizarRespuestaSimpleAPI(data) {
   };
 }
 
+// ── Lookup cross-empresa para enriquecimiento de datos de cliente ────────────
+// La base de clientes es semánticamente compartida entre TG/MT/TS/Vanher: si un
+// cliente existe en otra empresa con datos más completos, los traemos a la
+// empresa actual. Política (decision Hernán abr 2026):
+//   Score = email presente (×10000) + nro de campos no-vacíos (×100) + recencia
+function findBestClienteAcrossEmpresas(rutNorm) {
+  if (!rutNorm) return null;
+  const all = db.prepare('SELECT * FROM clientes WHERE rut_normalizado = ?').all(rutNorm);
+  if (!all.length) return null;
+  if (all.length === 1) return all[0];
+  const score = (c) => {
+    let s = 0;
+    if (c.email && String(c.email).trim()) s += 10000;
+    s += [c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.telefono, c.representante_legal]
+      .filter(x => x && String(x).trim()).length * 100;
+    return s;
+  };
+  return all.slice().sort((a, b) => {
+    const sa = score(a), sb = score(b);
+    if (sa !== sb) return sb - sa;
+    return (b.updated_at || '').localeCompare(a.updated_at || '');
+  })[0];
+}
+
+// Devuelve un objeto con campos a actualizar en target tomados de source,
+// SOLO para campos vacíos en target (no sobrescribe datos existentes).
+function mergeClientesEnriching(target, source) {
+  const updates = {};
+  const fields = ['email', 'razon_social', 'giro', 'direccion', 'comuna', 'ciudad',
+                  'telefono', 'representante_legal', 'rut_representante', 'nombre'];
+  for (const f of fields) {
+    const tv = target?.[f];
+    const sv = source?.[f];
+    if ((!tv || !String(tv).trim()) && sv && String(sv).trim()) updates[f] = sv;
+  }
+  return updates;
+}
+
 // ── Endpoint principal: procesar cartola server-side con SimpleAPI ─────────────
 app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {
   try {
@@ -3745,10 +3783,61 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             estado = 'interno';
           } else if (rutNorm) {
             tipoDte = getTipoDte(rutNorm, empConf);
-            const clienteExistente = clienteMap.get(rutNorm);
+            let clienteExistente = clienteMap.get(rutNorm);
+
+            // ── Cross-empresa enrichment ────────────────────────────────────
+            // Si el cliente existe en otra empresa con datos más completos,
+            // copiamos/mergeamos a la empresa actual. Conserva ownership por
+            // empresa pero comparte la "knowledge base" tributaria.
+            try {
+              const bestCross = findBestClienteAcrossEmpresas(rutNorm);
+              if (bestCross && bestCross.empresa_id !== empresaId) {
+                if (clienteExistente) {
+                  // Existe en empresa actual: llenar solo campos vacíos
+                  const updates = mergeClientesEnriching(clienteExistente, bestCross);
+                  if (Object.keys(updates).length) {
+                    const cols = Object.keys(updates).map(k => `${k}=?`).join(', ');
+                    db.prepare(`UPDATE clientes SET ${cols}, updated_at=? WHERE id=?`)
+                      .run(...Object.values(updates), now, clienteExistente.id);
+                    clienteExistente = { ...clienteExistente, ...updates };
+                    clienteMap.set(rutNorm, clienteExistente);
+                    fuenteRazonSocial = 'cross_empresa_merge';
+                  }
+                } else {
+                  // No existe en empresa actual: copiar desde la otra empresa
+                  const tipo = bestCross.tipo || ((tipoDte === 34) ? 'empresa' : 'persona');
+                  insertCliente.run(
+                    empresaId, tipo,
+                    bestCross.rut || formatRutDigits(rutNorm) || '',
+                    rutNorm,
+                    bestCross.razon_social || '', bestCross.giro || '',
+                    bestCross.direccion || '', bestCross.comuna || '',
+                    bestCross.ciudad || '',
+                    bestCross.nombre || bestCross.razon_social || '',
+                    bestCross.email || '', bestCross.telefono || '',
+                    bestCross.representante_legal || '', bestCross.rut_representante || '',
+                    now, now
+                  );
+                  // Reconstruir el record con empresa_id de la actual
+                  clienteExistente = {
+                    rut_normalizado: rutNorm,
+                    rut: bestCross.rut || formatRutDigits(rutNorm) || '',
+                    razon_social: bestCross.razon_social || '',
+                    giro: bestCross.giro || '', direccion: bestCross.direccion || '',
+                    comuna: bestCross.comuna || '', ciudad: bestCross.ciudad || '',
+                    email: bestCross.email || '', tipo
+                  };
+                  clienteMap.set(rutNorm, clienteExistente);
+                  clientesNuevos++;
+                  fuenteRazonSocial = 'cross_empresa_copy';
+                }
+              }
+            } catch(crossErr) {
+              console.warn(`[CROSS-EMPRESA] Error enriqueciendo RUT ${rutNorm}: ${crossErr.message}`);
+            }
 
             if (clienteExistente) {
-              // ✅ Cliente conocido en BD
+              // ✅ Cliente conocido en BD (puede haber sido enriquecido cross-empresa)
               estado       = 'listo';
               razonSocial  = clienteExistente.razon_social || '';
               giro         = clienteExistente.giro         || '';
@@ -3756,7 +3845,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               comuna       = clienteExistente.comuna        || '';
               ciudad       = clienteExistente.ciudad        || '';
               emailReceptor= clienteExistente.email         || '';
-              fuenteRazonSocial = 'bd';
+              if (fuenteRazonSocial === 'cartola') fuenteRazonSocial = 'bd';
             } else {
               // 🆕 Cliente nuevo — determinar fuente del nombre
               clienteEsNuevo = true;

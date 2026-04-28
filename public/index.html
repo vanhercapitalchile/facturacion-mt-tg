@@ -2988,7 +2988,9 @@ async function loadLotes() {
         <span><strong>${l.cantidad}</strong> documentos</span>
         <span><strong>${fmt(l.monto_total)}</strong> total</span>
         <span>Empresa: <strong>${l.empresa_id}</strong></span>
-        <span>Método: <strong>${l.metodo}</strong></span>
+        <span>Creación: <strong>${({manual:"Manual",api:"API",importacion_historica:"Importación histórica"})[l.metodo]||l.metodo}</strong></span>
+        ${(esEmitido || esParcial) ? `<span>Emisión: <strong>vía ${esHaulmer ? "Haulmer" : "SimpleFactura"}</strong></span>` : ""}
+        ${l.estado === "facturado_manual" ? `<span>Emisión: <strong>vía Manual</strong></span>` : ""}
         <span>Creado: ${l.created_at}</span>
         <button class="btn btn-sm" style="margin-left:auto;padding:2px 10px;font-size:12px;background:var(--surface2);color:var(--txt2);border:1px solid var(--border);"
           onclick="toggleLoteDetalle('${l.lote_id}', this)">&#x25BC; Ver detalle</button>

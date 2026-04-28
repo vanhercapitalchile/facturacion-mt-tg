@@ -1889,11 +1889,14 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       };
 
       // Activar envio automatico de email al receptor cuando tenga correo propio.
-      // Haulmer agrego este flag en su API el 31/01/2025 (changelog Open Factura).
+      // IMPORTANTE: sendEmail es OBJETO con campos {to, CC, BCC} segun doc oficial
+      // (https://docsapi-openfactura.haulmer.com/ -> "Indicacion de email").
+      // El correo es ADICIONAL al envio al "correo de intercambio" del SII; receptores
+      // sin contrato de intercambio (ej: personas naturales) solo reciben con sendEmail.
       // Aplica para boletas (39/41) y facturas (33/34).
       if (m.email_receptor && m.email_receptor.trim()) {
-        payload.sendEmail = true;
-        console.log(`[HAULMER] sendEmail=true para mov ${m.id} -> ${m.email_receptor}`);
+        payload.sendEmail = { to: m.email_receptor.trim() };
+        console.log(`[HAULMER] sendEmail.to=${m.email_receptor} para mov ${m.id}`);
       }
 
       // Idempotency-Key para evitar duplicados (basada en mov ID + lote)

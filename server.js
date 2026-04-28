@@ -383,6 +383,12 @@ try {
       if (!sf.rut_emisor_sf && sfSeed.rut_emisor_sf) { sf.rut_emisor_sf = sfSeed.rut_emisor_sf; changed = true; }
       if (!sf.nombre_sucursal) { sf.nombre_sucursal = sfSeed.nombre_sucursal || 'Casa Matriz'; changed = true; }
 
+      // Asegurar proveedor_dte = 'simplefactura' (Vanher usa SF, no Haulmer)
+      if (vh.proveedor_dte !== 'simplefactura' && (seedVH.proveedor_dte === 'simplefactura' || !seedVH.proveedor_dte)) {
+        vh.proveedor_dte = 'simplefactura';
+        changed = true;
+      }
+
       if (changed) {
         vh.simplefactura = sf;
         empresas['vanher-capital'] = vh;
@@ -1494,8 +1500,10 @@ function escaparCsvSF(val) {
 function buildSfCsvRows(movs, empresa) {
   return movs.map((m, i) => {
     const fecha = fechaParaSF(m.fecha);
-    const correoRecep = m.email_receptor || empresa.email_facturacion || '';
-    // campo Correo (col 38): solo si el receptor tiene email propio
+    // Solo enviar email cuando el cliente tenga correo propio en BD.
+    // Sin fallback al email_facturacion del emisor para evitar que SF te mande
+    // el DTE a TI en lugar de al cliente real.
+    const correoRecep = m.email_receptor || '';
     const correoExtra = m.email_receptor || '';
     // Campos del receptor — basados en el formato oficial de los CSVs de ejemplo
     // GiroRecep, CiudadRecep pueden ir vacíos (SF los acepta); sólo RazonSocial y DirRecep requieren valor
@@ -1788,7 +1796,9 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         RUTRecep:    (m.rut || '').replace(/\./g, ''),
         RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
         GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
-        CorreoRecep: m.email_receptor || emailFact,
+        // Solo poblar CorreoRecep si el cliente tiene correo propio.
+        // Sin fallback al emisor para evitar que el DTE le llegue a TS en lugar del cliente.
+        CorreoRecep: m.email_receptor || '',
         DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
         CmnaRecep:   m.comuna || 'NO INFORMADA',
         CiudadRecep: m.ciudad || ciudadOrigen
@@ -1812,10 +1822,18 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
             QtyItem:   1,
             PrcItem:   monto,
             MontoItem: monto,
-            IndExe:    1   // exento
+            IndExe:    1
           }]
         }
       };
+
+      // Activar envio automatico de email al receptor cuando tenga correo propio.
+      // Haulmer agrego este flag en su API el 31/01/2025 (changelog Open Factura).
+      // Aplica para boletas (39/41) y facturas (33/34).
+      if (m.email_receptor && m.email_receptor.trim()) {
+        payload.sendEmail = true;
+        console.log(`[HAULMER] sendEmail=true para mov ${m.id} -> ${m.email_receptor}`);
+      }
 
       // Idempotency-Key para evitar duplicados (basada en mov ID + lote)
       const idempKey = `${loteId}-mov-${m.id}-${Date.now()}`;

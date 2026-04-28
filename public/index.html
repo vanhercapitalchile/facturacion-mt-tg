@@ -4407,7 +4407,14 @@ function showAddCliente() {
   modal.innerHTML = `
     <h3>Nuevo cliente</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="form-group"><label>RUT</label><input type="text" id="nc-rut" class="inline-input"></div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label>RUT</label>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <input type="text" id="nc-rut" class="inline-input" style="flex:1;" placeholder="76.123.456-7" onkeydown="if(event.key==='Enter') buscarRUTenSII()">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;">&#x1FA84; Buscar en SII</button>
+        </div>
+        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Buscar en SII&quot; para auto-completar (solo personas jurídicas).</p>
+      </div>
       <div class="form-group"><label>Razón Social</label><input type="text" id="nc-razon" class="inline-input"></div>
       <div class="form-group"><label>Giro</label><input type="text" id="nc-giro" class="inline-input"></div>
       <div class="form-group"><label>Dirección</label><input type="text" id="nc-dir" class="inline-input"></div>
@@ -4418,7 +4425,12 @@ function showAddCliente() {
         <select id="nc-tipo" class="inline-input"><option value="empresa">Empresa</option><option value="persona">Persona</option></select>
       </div>
       <div class="form-group"><label>Empresa</label>
-        <select id="nc-empresa" class="inline-input"><option value="tg-inversiones">TG Inversiones</option><option value="mt-inversiones">MT Inversiones</option></select>
+        <select id="nc-empresa" class="inline-input">
+          <option value="tg-inversiones">TG Inversiones</option>
+          <option value="mt-inversiones">MT Inversiones</option>
+          <option value="ts-capital">TS Capital</option>
+          <option value="vanher-capital">Vanher Capital</option>
+        </select>
       </div>
     </div>
     <div class="modal-actions">
@@ -4426,6 +4438,51 @@ function showAddCliente() {
       <button class="btn btn-primary" onclick="saveNewCliente()">Crear</button>
     </div>`;
   showModal();
+}
+
+async function buscarRUTenSII() {
+  const rutRaw = document.getElementById('nc-rut')?.value?.trim();
+  const status = document.getElementById('nc-sii-status');
+  if (!rutRaw) { status.textContent = '⚠️ Ingresá un RUT primero.'; status.style.color = 'var(--red)'; return; }
+  const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
+  if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
+
+  status.innerHTML = '⏳ Consultando SII vía Haulmer...';
+  status.style.color = 'var(--txt2)';
+
+  try {
+    const data = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
+    if (!data) {
+      status.textContent = '❌ Error de conexión.';
+      status.style.color = 'var(--red)';
+      return;
+    }
+    if (!data.ok) {
+      if (data.existe_en) {
+        status.innerHTML = `⚠️ Este RUT ya está en BD: <strong>${data.existe_en.join(', ')}</strong>. Usá Editar en su empresa.`;
+      } else {
+        status.innerHTML = '❌ ' + (data.error || 'No se pudo consultar SII');
+      }
+      status.style.color = 'var(--red)';
+      return;
+    }
+    // Pre-llenar form con datos del SII
+    const d = data.datos || {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    set('nc-rut', data.rut_formato || rutRaw);
+    set('nc-razon', d.razon_social);
+    set('nc-giro', d.giro);
+    set('nc-dir', d.direccion);
+    set('nc-comuna', d.comuna);
+    set('nc-ciudad', d.ciudad);
+    document.getElementById('nc-tipo').value = 'empresa';
+
+    status.innerHTML = `✅ Datos SII cargados (${d.razon_social}). El SII no expone email — completalo a mano si lo tenés.`;
+    status.style.color = '#2ecc71';
+  } catch(e) {
+    status.textContent = '❌ Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
 }
 
 async function saveNewCliente() {

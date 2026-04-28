@@ -1902,11 +1902,6 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // Idempotency-Key para evitar duplicados (basada en mov ID + lote)
       const idempKey = `${loteId}-mov-${m.id}-${Date.now()}`;
 
-      // Log de payload completo para diagnostico
-      const sendEmailLog = payload.sendEmail ? `sendEmail.to=${payload.sendEmail.to}` : 'sendEmail=AUSENTE';
-      console.log(`[HAULMER REQ] mov ${m.id} DTE ${tipoDte} monto ${monto} email_receptor=${m.email_receptor || 'VACIO'} | ${sendEmailLog}`);
-      console.log(`[HAULMER REQ payload] ${JSON.stringify(payload)}`);
-
       try {
         const resp = await fetch(HAULMER_API_URL, {
           method: 'POST',
@@ -1921,19 +1916,19 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
-        console.log(`[HAULMER RESP] mov ${m.id} HTTP ${resp.status} | ${raw}`);
+        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
           db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, updated_at=? WHERE id=?")
             .run(now, now, m.id);
           emitidos++;
+          // Metadata compacta para el endpoint /api/debug/haulmer (sin guardar el raw completo).
           resultados.push({
             id: m.id, status: 'emitido',
             folio: data?.folio || data?.Folio,
             sendEmail_sent: payload.sendEmail || null,
             email_receptor: m.email_receptor || null,
-            resp_data: data,
-            resp_raw_first1500: raw.substring(0, 1500)
+            resp: raw.substring(0,200)
           });
         } else {
           db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
@@ -1942,8 +1937,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
             id: m.id, status: 'error', httpStatus: resp.status,
             sendEmail_sent: payload.sendEmail || null,
             email_receptor: m.email_receptor || null,
-            resp_data: data,
-            resp_raw_first1500: raw.substring(0, 1500)
+            resp: raw.substring(0,200)
           });
         }
       } catch(dteErr) {

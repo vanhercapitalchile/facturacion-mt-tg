@@ -4413,7 +4413,7 @@ function showAddCliente() {
           <input type="text" id="nc-rut" class="inline-input" style="flex:1;" placeholder="76.123.456-7" onkeydown="if(event.key==='Enter') buscarRUTenSII()">
           <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;">&#x1FA84; Buscar en SII</button>
         </div>
-        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Buscar en SII&quot; para auto-completar (solo personas jurídicas).</p>
+        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Buscar en SII&quot; para auto-completar (vía SimpleAPI). Solo personas jurídicas con actividad económica.</p>
       </div>
       <div class="form-group"><label>Razón Social</label><input type="text" id="nc-razon" class="inline-input"></div>
       <div class="form-group"><label>Giro</label><input type="text" id="nc-giro" class="inline-input"></div>
@@ -4447,7 +4447,7 @@ async function buscarRUTenSII() {
   const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
   if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
 
-  status.innerHTML = '⏳ Consultando SII vía Haulmer...';
+  status.innerHTML = '⏳ Consultando SII...';
   status.style.color = 'var(--txt2)';
 
   try {
@@ -4597,7 +4597,7 @@ async function loadConsultaMovs() {
 // ── Enriquecimiento SII via Haulmer (manual, solo personas juridicas no en BD) ──
 async function enriquecerSII(rutNorm, empresaId, nombreActual) {
   // 1. Preview: pedir al backend los datos del SII
-  showToast('Consultando SII via Haulmer...', 'info');
+  showToast('Consultando SII...', 'info');
   const preview = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
   if (!preview) return;
   if (!preview.ok) {
@@ -4613,7 +4613,7 @@ async function enriquecerSII(rutNorm, empresaId, nombreActual) {
   const d = preview.datos || {};
   const modal = document.getElementById('modal-content');
   modal.innerHTML = `
-    <h3>&#x1FA84; Datos desde SII (Haulmer)</h3>
+    <h3>&#x1FA84; Datos desde SII</h3>
     <p style="font-size:12px;color:var(--txt3);margin:0 0 12px;">RUT <strong>${preview.rut_formato}</strong> · empresa destino: <strong>${empresaId}</strong></p>
     <div style="background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.3);border-radius:6px;padding:12px;margin-bottom:14px;">
       <p style="font-size:11px;color:var(--txt2);margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;">Datos obtenidos del SII</p>

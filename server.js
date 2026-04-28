@@ -1010,63 +1010,19 @@ app.get('/api/movimientos/consulta/exportar-csv', requireAuth, requireAdmin, (re
   res.send('\uFEFF' + csvFinal);
 });
 
-// ── Consulta SII via Haulmer/Open Factura ────────────────────────────────────
-// Reutiliza la API key de TS Capital (Haulmer). Los datos del SII son publicos
-// — no importa quien pregunta, devuelve los mismos datos del contribuyente.
-// Probador de endpoints: la doc Haulmer no expone publicamente el path exacto,
-// asi que probamos varios candidatos hasta encontrar el correcto.
-async function consultarSiiHaulmer(rutNorm, apiKey) {
-  if (!apiKey || !rutNorm) return { ok: false, error: 'sin api_key o rut' };
-  const candidatos = [
-    `https://api.haulmer.com/v2/dte/taxpayer/${rutNorm}`,
-    `https://api.haulmer.com/v2/taxpayer/${rutNorm}`,
-    `https://api.haulmer.com/v2/sii/contribuyente/${rutNorm}`,
-    `https://api.haulmer.com/v2/dte/contribuyente/${rutNorm}`
-  ];
-  for (const url of candidatos) {
-    try {
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: { 'apikey': apiKey, 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(10000)
-      });
-      const text = await resp.text();
-      if (resp.status === 404) {
-        console.log(`[SII-HAULMER] 404 en ${url} (path no existe)`);
-        continue;
-      }
-      if (!resp.ok) {
-        console.warn(`[SII-HAULMER] ${url} HTTP ${resp.status}: ${text.substring(0,200)}`);
-        continue;
-      }
-      let data;
-      try { data = JSON.parse(text); } catch(e) { data = { raw: text }; }
-      console.log(`[SII-HAULMER] ${rutNorm} OK desde ${url}`);
-      return { ok: true, url_usado: url, data };
-    } catch(e) {
-      console.warn(`[SII-HAULMER] ${url} error: ${e.message}`);
-    }
-  }
-  return { ok: false, error: 'Ningun endpoint Haulmer respondio. Verificar plan SII.' };
+// ── Consulta SII via SimpleAPI ───────────────────────────────────────────────
+// Reutiliza la integracion SimpleAPI ya existente (consultarRUTSimpleAPI +
+// normalizarRespuestaSimpleAPI). Datos del SII son publicos: la API key
+// solo identifica al cliente que consulta, no afecta el resultado.
+// Para enriquecer clientes de cualquier empresa usamos la key de MT como
+// fallback si la empresa actual no tiene SimpleAPI configurado.
+function getSimpleApiKeyAnyEmpresa() {
+  // Probar en orden: TG, MT (las que tienen SimpleAPI configurado).
+  return getSimpleApiKey('tg-inversiones') || getSimpleApiKey('mt-inversiones') || null;
 }
 
-// Normaliza la respuesta SII a campos internos (best-effort, ajustable segun
-// formato real cuando se tenga primera respuesta exitosa).
-function normalizarSiiHaulmer(data) {
-  if (!data || typeof data !== 'object') return null;
-  return {
-    razon_social: data.razonSocial || data.RznSoc || data.razon_social || data.nombre || data.name || '',
-    giro:         data.giro || data.Giro || data.actividadEconomica || data.glosaActividad || data.giroEmis || '',
-    direccion:    data.direccion || data.dirOrigen || data.DirOrigen || data.address || data.domicilio || '',
-    comuna:       data.comuna || data.cmnaOrigen || data.CmnaOrigen || '',
-    ciudad:       data.ciudad || data.ciudadOrigen || data.CiudadOrigen || '',
-    acteco:       data.acteco || data.codigoActividad || data.actecoCode || '',
-    estado_sii:   data.estado || data.estadoTributario || ''
-  };
-}
-
-// GET preview: consulta SII y devuelve datos sin insertar. Bloquea si el RUT
-// ya existe en alguna empresa de la base unificada (politica abr 2026).
+// GET preview: consulta SII via SimpleAPI y devuelve datos sin insertar.
+// Bloquea si el RUT ya existe en alguna empresa de la base unificada.
 app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);
   if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
@@ -1081,19 +1037,23 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
     });
   }
 
-  const empresas = getAppData('empresas') || {};
-  const apiKey = empresas['ts-capital']?.haulmer?.api_key;
-  if (!apiKey) return res.status(400).json({ error: 'API Key Haulmer no configurada en TS Capital' });
+  const apiKey = getSimpleApiKeyAnyEmpresa();
+  if (!apiKey) return res.status(400).json({ error: 'No hay API Key SimpleAPI configurada en MT ni TG' });
 
-  const result = await consultarSiiHaulmer(rutNorm, apiKey);
-  if (!result.ok) return res.status(502).json({ ok: false, error: result.error });
+  const rawData = await consultarRUTSimpleAPI(rutNorm, apiKey);
+  if (!rawData) {
+    return res.status(404).json({
+      ok: false,
+      error: 'RUT no encontrado en SimpleAPI / SII (puede ser persona natural sin actividad o RUT no registrado)'
+    });
+  }
 
-  const datos = normalizarSiiHaulmer(result.data);
+  const datos = normalizarRespuestaSimpleAPI(rawData);
   if (!datos || !datos.razon_social) {
     return res.status(404).json({
       ok: false,
-      error: 'Haulmer respondio pero sin razon_social. Verificar formato de respuesta.',
-      raw_response: result.data
+      error: 'SimpleAPI respondio sin razon_social',
+      raw_response: rawData
     });
   }
 
@@ -1101,8 +1061,8 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
     ok: true,
     rut_normalizado: rutNorm,
     rut_formato: formatRutDigits(rutNorm),
-    datos,
-    source_url: result.url_usado
+    datos: { ...datos, estado_sii: '' },
+    source: 'simpleapi'
   });
 });
 
@@ -1118,14 +1078,13 @@ app.post('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (
   const yaEnEsta = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresa_id);
   if (yaEnEsta) return res.status(409).json({ error: 'Cliente ya existe en esta empresa' });
 
-  const empresas = getAppData('empresas') || {};
-  const apiKey = empresas['ts-capital']?.haulmer?.api_key;
-  if (!apiKey) return res.status(400).json({ error: 'API Key Haulmer no configurada' });
+  const apiKey = getSimpleApiKeyAnyEmpresa();
+  if (!apiKey) return res.status(400).json({ error: 'No hay API Key SimpleAPI configurada' });
 
-  const result = await consultarSiiHaulmer(rutNorm, apiKey);
-  if (!result.ok) return res.status(502).json({ ok: false, error: result.error });
+  const rawData = await consultarRUTSimpleAPI(rutNorm, apiKey);
+  if (!rawData) return res.status(404).json({ ok: false, error: 'RUT no encontrado en SII' });
 
-  const sii = normalizarSiiHaulmer(result.data) || {};
+  const sii = normalizarRespuestaSimpleAPI(rawData) || {};
   const final = {
     razon_social: datos_extra.razon_social || sii.razon_social || '',
     giro:         datos_extra.giro         || sii.giro         || '',

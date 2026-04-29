@@ -4411,9 +4411,9 @@ function showAddCliente() {
         <label>RUT</label>
         <div style="display:flex;gap:8px;align-items:stretch;">
           <input type="text" id="nc-rut" class="inline-input" style="flex:1;" placeholder="76.123.456-7" onkeydown="if(event.key==='Enter') buscarRUTenSII()">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;">&#x1FA84; Buscar en SII</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;" title="Abre el portal del SII con los datos del RUT en una pestaña nueva">&#x1F517; Abrir en SII</button>
         </div>
-        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Buscar en SII&quot; para auto-completar (vía SimpleAPI). Solo personas jurídicas con actividad económica.</p>
+        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Abrir en SII&quot; → se abre el portal oficial del SII en una pestaña nueva con los datos del contribuyente. Copiá razón social, giro, dirección y pegalos abajo.</p>
       </div>
       <div class="form-group"><label>Razón Social</label><input type="text" id="nc-razon" class="inline-input"></div>
       <div class="form-group"><label>Giro</label><input type="text" id="nc-giro" class="inline-input"></div>
@@ -4440,49 +4440,32 @@ function showAddCliente() {
   showModal();
 }
 
-async function buscarRUTenSII() {
+function buscarRUTenSII() {
+  // Consulta automatica al SII por API publica no disponible (SimpleAPI/Haulmer Open
+  // Factura no exponen este endpoint; APIGateway requiere contrato pago aparte).
+  // Solucion practica: abrir portal SII oficial en pestana nueva con el RUT cargado.
+  // Operador copia razon social/giro/direccion del portal y los pega en el modal.
   const rutRaw = document.getElementById('nc-rut')?.value?.trim();
   const status = document.getElementById('nc-sii-status');
   if (!rutRaw) { status.textContent = '⚠️ Ingresá un RUT primero.'; status.style.color = 'var(--red)'; return; }
   const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
   if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
 
-  status.innerHTML = '⏳ Consultando SII...';
-  status.style.color = 'var(--txt2)';
-
-  try {
-    const data = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
-    if (!data) {
-      status.textContent = '❌ Error de conexión.';
+  // Verificar primero si el RUT ya está en la BD unificada (cualquier empresa)
+  apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`).then(data => {
+    if (data && !data.ok && data.existe_en) {
+      status.innerHTML = `⚠️ Este RUT ya está en BD: <strong>${data.existe_en.join(', ')}</strong>. Usá Editar en su empresa.`;
       status.style.color = 'var(--red)';
       return;
     }
-    if (!data.ok) {
-      if (data.existe_en) {
-        status.innerHTML = `⚠️ Este RUT ya está en BD: <strong>${data.existe_en.join(', ')}</strong>. Usá Editar en su empresa.`;
-      } else {
-        status.innerHTML = '❌ ' + (data.error || 'No se pudo consultar SII');
-      }
-      status.style.color = 'var(--red)';
-      return;
-    }
-    // Pre-llenar form con datos del SII
-    const d = data.datos || {};
-    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-    set('nc-rut', data.rut_formato || rutRaw);
-    set('nc-razon', d.razon_social);
-    set('nc-giro', d.giro);
-    set('nc-dir', d.direccion);
-    set('nc-comuna', d.comuna);
-    set('nc-ciudad', d.ciudad);
-    document.getElementById('nc-tipo').value = 'empresa';
-
-    status.innerHTML = `✅ Datos SII cargados (${d.razon_social}). El SII no expone email — completalo a mano si lo tenés.`;
-    status.style.color = '#2ecc71';
-  } catch(e) {
-    status.textContent = '❌ Error: ' + e.message;
-    status.style.color = 'var(--red)';
-  }
+    // Separar cuerpo y dígito verificador para el portal SII
+    const cuerpo = rutNorm.slice(0, -1);
+    const dv = rutNorm.slice(-1);
+    const url = `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${cuerpo}&DV=${dv}&PRG=STC&OPC=NOR`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    status.innerHTML = `🔗 Portal SII abierto en pestaña nueva. Copiá razón social, giro, dirección y comuna desde ahí.`;
+    status.style.color = 'var(--txt)';
+  });
 }
 
 async function saveNewCliente() {
@@ -4586,7 +4569,7 @@ async function loadConsultaMovs() {
       <td style="font-family:monospace;font-size:10px;color:var(--txt3);">${esc(m.id_transferencia || '—')}</td>
       <td style="text-align:center;white-space:nowrap;">
         ${(m.tipo_dte === 34 && !m.cliente_en_bd && m.rut_normalizado && (m.estado === 'pendiente' || m.estado === 'listo')) ? `
-          <button class="btn btn-sm" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt);border:1px solid var(--border);" onclick="enriquecerSII('${m.rut_normalizado}', '${esc(m.empresa_id)}', '${esc(m.razon_social||m.nombre_origen||'')}')" title="Consultar SII via Haulmer e insertar en base">&#x1FA84; SII</button>
+          <button class="btn btn-sm" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt);border:1px solid var(--border);" onclick="abrirPortalSII('${m.rut_normalizado}')" title="Abrir portal SII en pestaña nueva (copiar datos manualmente)">&#x1F517; SII</button>
           <button class="btn btn-sm" style="padding:3px 8px;font-size:10px;background:var(--surface);color:var(--txt);border:1px solid var(--border);" onclick="editarClienteDesdeRUT('${m.rut_normalizado}', '${esc(m.rut)}', '${esc(m.empresa_id)}', '${esc(m.razon_social||m.nombre_origen||'')}')" title="Crear/editar cliente manualmente">&#x270F;&#xFE0F; Editar</button>
         ` : (m.cliente_en_bd ? '<span style="font-size:10px;color:var(--txt3);">en BD</span>' : '<span style="font-size:10px;color:var(--txt3);">—</span>')}
       </td>
@@ -4711,6 +4694,15 @@ async function crearClienteManualDesdeRUT(rutNorm, rutFmt, empresaId) {
   } else {
     showToast('Error: ' + (data?.error || ''), 'error');
   }
+}
+
+function abrirPortalSII(rutNorm) {
+  if (!rutNorm) { showToast('RUT no disponible', 'error'); return; }
+  const cuerpo = rutNorm.slice(0, -1);
+  const dv = rutNorm.slice(-1);
+  const url = `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${cuerpo}&DV=${dv}&PRG=STC&OPC=NOR`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+  showToast('Portal SII abierto. Usá "Editar" para pegar los datos.', 'info');
 }
 
 async function exportarConsultaCSV() {

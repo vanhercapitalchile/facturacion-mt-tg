@@ -4002,7 +4002,7 @@ function editarCliente(id) {
           <input type="text" id="ec-rut" class="inline-input" style="flex:1;" value="${(c.rut || '').replace(/"/g,'&quot;')}">
           <button type="button" class="btn btn-secondary btn-sm" onclick="autoCompletarEditarSII(${c.id})" style="white-space:nowrap;padding:8px 14px;font-size:12px;" title="Trae datos faltantes desde SII vía Haulmer (no sobrescribe campos ya cargados)">&#x1FA84; Auto-completar SII</button>
         </div>
-        <p id="ec-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: solo llena campos vacíos. No sobrescribe email/razón social ni datos cargados manualmente.</p>
+        <p id="ec-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: completa campos vacíos y reemplaza valores parciales (ej: "ROSA" → "ROSA PAULINA GONZALEZ BERNAL"). Email y teléfono solo si están vacíos.</p>
       </div>
       <div class="form-group"><label>Tipo</label>
         <select id="ec-tipo" class="inline-input">
@@ -4050,29 +4050,52 @@ async function autoCompletarEditarSII(clienteId) {
   }
 
   const d = data.datos || {};
-  // Política: solo llenar campos vacíos. No sobrescribir lo cargado manualmente.
-  const fillIfEmpty = (id, val) => {
+  // Política inteligente:
+  //   - Campo vacío → completar siempre
+  //   - Campo con valor parcial (subcadena del SII y más corto) → REEMPLAZAR
+  //     (ej: 'ROSA' → 'ROSA PAULINA GONZALEZ BERNAL')
+  //   - Campo con valor distinto/no-subcadena → respetar al operador
+  //   - Email/teléfono → solo llenar si está vacío (operador manda)
+  const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+  const smartFill = (id, val, mode) => {
     const el = document.getElementById(id);
-    if (!el) return false;
+    if (!el || !val) return false;
     const actual = String(el.value || '').trim();
-    if (!actual && val) { el.value = val; return true; }
-    return false;
+    if (!actual) { el.value = val; return true; }                    // vacío → llenar
+    if (mode === 'preserve') return false;                            // email/tel → nunca sobrescribir
+    // Smart replace: si SII contiene el valor actual (subcadena) y es más completo, reemplazar
+    const a = norm(actual);
+    const v = norm(val);
+    if (a === v) return false;                                        // iguales → no hacer nada
+    if (v.includes(a) && v.length > a.length) { el.value = val; return true; }  // SII más completo → reemplazar
+    return false;                                                     // distintos → respetar operador
   };
 
-  let llenados = 0;
-  if (fillIfEmpty('ec-razon', d.razon_social)) llenados++;
-  if (fillIfEmpty('ec-giro', d.giro)) llenados++;
-  if (fillIfEmpty('ec-dir', d.direccion)) llenados++;
-  if (fillIfEmpty('ec-comuna', d.comuna)) llenados++;
-  if (fillIfEmpty('ec-ciudad', d.ciudad)) llenados++;
-  if (fillIfEmpty('ec-email', d.email)) llenados++;
-  if (fillIfEmpty('ec-tel', d.telefono)) llenados++;
+  let llenados = 0, reemplazados = 0;
+  const before = id => String(document.getElementById(id)?.value || '').trim();
+  const track = (id, val, mode) => {
+    const prev = before(id);
+    if (smartFill(id, val, mode)) {
+      if (prev) reemplazados++; else llenados++;
+    }
+  };
+  track('ec-razon', d.razon_social, 'smart_replace');
+  track('ec-giro', d.giro, 'smart_replace');
+  track('ec-dir', d.direccion, 'smart_replace');
+  track('ec-comuna', d.comuna, 'smart_replace');
+  track('ec-ciudad', d.ciudad, 'smart_replace');
+  track('ec-email', d.email, 'preserve');
+  track('ec-tel', d.telefono, 'preserve');
+  const totalCambios = llenados + reemplazados;
 
-  if (llenados > 0) {
-    status.innerHTML = `✅ ${llenados} campo${llenados>1?'s':''} completado${llenados>1?'s':''} desde SII (${d.razon_social}). Revisá y guardá.`;
+  if (totalCambios > 0) {
+    const partes = [];
+    if (llenados > 0) partes.push(`${llenados} completado${llenados>1?'s':''}`);
+    if (reemplazados > 0) partes.push(`${reemplazados} reemplazado${reemplazados>1?'s':''} (datos parciales → completos del SII)`);
+    status.innerHTML = `✅ ${partes.join(' · ')} para <strong>${d.razon_social || 'cliente'}</strong>. Revisá y guardá.`;
     status.style.color = '#2ecc71';
   } else {
-    status.innerHTML = `ℹ️ SII responde con datos pero todos los campos del formulario ya estaban llenos. No se sobrescribió nada (el operador tiene prioridad).`;
+    status.innerHTML = `ℹ️ Datos SII consultados (${d.razon_social || ''}) pero coinciden con lo cargado o son distintos. Operador tiene prioridad — no se sobrescribió nada.`;
     status.style.color = 'var(--txt2)';
   }
 }

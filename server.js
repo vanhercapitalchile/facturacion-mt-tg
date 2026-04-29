@@ -1308,6 +1308,173 @@ app.get('/api/sii/taxpayer/:rut', requireAuth, async (req, res) => {
   });
 });
 
+// ── Diagnóstico DTE Haulmer: emitidos TS con flag de email enviado al cliente ─
+// Lee lotes_facturacion + response_api parseado para auditar si sendEmail.to
+// se envió a cada cliente. Útil para detectar movimientos sin email_receptor
+// que terminaron emitidos solo al correo de intercambio del SII (facturas@*).
+app.get('/api/diagnostico/dte-haulmer', requireAuth, requireAdmin, (req, res) => {
+  const dias = Math.min(parseInt(req.query.dias) || 30, 365);
+  const limit = Math.min(parseInt(req.query.limit) || 500, 2000);
+  const empresaFiltro = req.query.empresa_id || 'ts-capital';
+
+  const cutoff = new Date(Date.now() - dias * 24 * 3600 * 1000).toISOString();
+  const lotes = db.prepare(`
+    SELECT lote_id, empresa_id, nombre, cantidad, monto_total, estado, metodo,
+           response_api, created_at, updated_at
+    FROM lotes_facturacion
+    WHERE empresa_id = ? AND created_at >= ?
+      AND estado IN ('emitido', 'parcial', 'facturado_manual')
+    ORDER BY created_at DESC LIMIT ?
+  `).all(empresaFiltro, cutoff, limit);
+
+  const detalle = [];
+  let conEmail = 0, sinEmail = 0, totalMovs = 0;
+
+  for (const lote of lotes) {
+    let resp;
+    try { resp = JSON.parse(lote.response_api || '{}'); } catch(e) { resp = {}; }
+    const resultados = Array.isArray(resp.resultados) ? resp.resultados : [];
+
+    for (const r of resultados) {
+      // Buscar el movimiento en BD para datos completos
+      const mov = db.prepare(`
+        SELECT id, fecha, rut, rut_normalizado, razon_social, nombre_origen,
+               monto, tipo_dte, banco_cartola, folio_dte, email_receptor, estado
+        FROM movimientos WHERE id = ?
+      `).get(r.id);
+      if (!mov) continue;
+
+      const sendEmailTo = r.sendEmail_sent?.to || null;
+      const tieneEmailEnviado = !!sendEmailTo;
+      if (tieneEmailEnviado) conEmail++; else sinEmail++;
+      totalMovs++;
+
+      detalle.push({
+        mov_id: mov.id,
+        lote_id: lote.lote_id,
+        fecha: mov.fecha,
+        folio: r.folio || mov.folio_dte || null,
+        tipo_dte: mov.tipo_dte,
+        rut: mov.rut,
+        rut_normalizado: mov.rut_normalizado,
+        razon_social: mov.razon_social || mov.nombre_origen,
+        monto: mov.monto,
+        banco: mov.banco_cartola,
+        email_receptor: mov.email_receptor || null,
+        sendEmail_to: sendEmailTo,
+        email_enviado_cliente: tieneEmailEnviado,
+        status_emision: r.status || null,
+        http_status: r.httpStatus || null
+      });
+    }
+  }
+
+  res.json({
+    empresa: empresaFiltro,
+    dias,
+    cutoff_iso: cutoff,
+    lotes_consultados: lotes.length,
+    total_dte: totalMovs,
+    con_email_cliente: conEmail,
+    sin_email_cliente: sinEmail,
+    detalle
+  });
+});
+
+// Sugerencias de clientes con nombre similar (LIKE) en una empresa
+app.get('/api/clientes/similar', requireAuth, (req, res) => {
+  const nombre = String(req.query.nombre || '').trim();
+  const empresaQuery = String(req.query.empresa_id || '').trim();
+  // Operador solo puede buscar en su empresa; admin puede en cualquiera
+  const empresa = req.user.role === 'admin' ? empresaQuery : req.user.empresa;
+  if (!nombre || nombre.length < 2) return res.json({ clientes: [] });
+
+  // Tokens del nombre buscado: dividir por espacios y buscar todos como LIKE
+  const tokens = nombre.split(/\s+/).filter(t => t.length >= 2).slice(0, 4);
+  if (!tokens.length) return res.json({ clientes: [] });
+
+  const conds = tokens.map(() => `(LOWER(razon_social) LIKE ? OR LOWER(nombre) LIKE ?)`).join(' AND ');
+  const params = [];
+  for (const t of tokens) {
+    const like = '%' + t.toLowerCase() + '%';
+    params.push(like, like);
+  }
+  let sql = `SELECT id, empresa_id, rut, rut_normalizado, razon_social, giro, email, telefono, tipo
+             FROM clientes WHERE ${conds}`;
+  if (empresa) { sql += ' AND empresa_id = ?'; params.push(empresa); }
+  sql += ' ORDER BY length(razon_social) ASC LIMIT 10';
+
+  const clientes = db.prepare(sql).all(...params);
+  res.json({ clientes });
+});
+
+// Asociar un movimiento a un cliente existente: actualiza rut, rut_normalizado,
+// razon_social, giro, dirección, comuna, ciudad, email_receptor del movimiento
+// con los datos del cliente. Útil cuando la glosa trajo datos erróneos.
+app.patch('/api/movimientos/:id/asociar-cliente', requireAuth, (req, res) => {
+  const movId = req.params.id;
+  const { cliente_id, aplicar_a_mismo_rut } = req.body || {};
+  if (!cliente_id) return res.status(400).json({ error: 'cliente_id requerido' });
+
+  const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente_id);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const mov = db.prepare('SELECT * FROM movimientos WHERE id = ?').get(movId);
+  if (!mov) return res.status(404).json({ error: 'Movimiento no encontrado' });
+
+  // Validación de empresa para operadores
+  if (req.user.role !== 'admin' && (mov.empresa_id !== req.user.empresa || cliente.empresa_id !== req.user.empresa)) {
+    return res.status(403).json({ error: 'Sin permiso para asociar este movimiento' });
+  }
+
+  const now = nowCL();
+
+  // Aplicar a mov individual o a todos los movs del mismo rut original
+  let movsAfectados = 1;
+  db.transaction(() => {
+    const upd = db.prepare(`
+      UPDATE movimientos
+      SET rut = ?, rut_normalizado = ?, razon_social = ?, giro = ?,
+          direccion = ?, comuna = ?, ciudad = ?, email_receptor = ?,
+          tipo_dte = COALESCE(?, tipo_dte),
+          estado = CASE WHEN estado = 'pendiente' THEN 'listo' ELSE estado END,
+          updated_at = ?
+      WHERE id = ?
+    `);
+    upd.run(
+      cliente.rut, cliente.rut_normalizado, cliente.razon_social,
+      cliente.giro || '', cliente.direccion || '', cliente.comuna || '',
+      cliente.ciudad || '', cliente.email || '',
+      cliente.tipo === 'empresa' ? 34 : 41,
+      now, movId
+    );
+
+    if (aplicar_a_mismo_rut && mov.rut_normalizado) {
+      // Aplicar a TODOS los movs con el RUT erróneo en la misma empresa
+      const upd2 = db.prepare(`
+        UPDATE movimientos
+        SET rut = ?, rut_normalizado = ?, razon_social = ?, giro = ?,
+            direccion = ?, comuna = ?, ciudad = ?, email_receptor = ?,
+            tipo_dte = COALESCE(?, tipo_dte),
+            estado = CASE WHEN estado = 'pendiente' THEN 'listo' ELSE estado END,
+            updated_at = ?
+        WHERE rut_normalizado = ? AND empresa_id = ? AND estado IN ('pendiente','listo','en_lote') AND id != ?
+      `);
+      const r = upd2.run(
+        cliente.rut, cliente.rut_normalizado, cliente.razon_social,
+        cliente.giro || '', cliente.direccion || '', cliente.comuna || '',
+        cliente.ciudad || '', cliente.email || '',
+        cliente.tipo === 'empresa' ? 34 : 41,
+        now, mov.rut_normalizado, mov.empresa_id, movId
+      );
+      movsAfectados += r.changes;
+    }
+  })();
+
+  console.log(`[ASOCIAR] mov ${movId} → cliente ${cliente_id} (${cliente.razon_social}) | ${movsAfectados} movs afectados`);
+  res.json({ ok: true, movimientos_afectados: movsAfectados, cliente: { id: cliente.id, rut: cliente.rut, razon_social: cliente.razon_social } });
+});
+
 // Endpoint: lista de RUTs en movimientos pendientes/listos que NO existen en
 // la base unificada de clientes (cross-empresa). Útil para que el operador vea
 // qué clientes nuevos requieren registro antes de facturar.

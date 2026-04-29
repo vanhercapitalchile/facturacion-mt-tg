@@ -311,6 +311,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
         <div class="nav-section">
           <div class="nav-section-title">Sistema</div>
+          <div class="nav-item" onclick="adminNav('diagnostico')">&#x1F50E; Diagnóstico DTE</div>
           <div class="nav-item" onclick="adminNav('config')">&#x2699; Configuración</div>
           <div class="nav-item" onclick="adminNav('usuarios')">&#x1F464; Usuarios</div>
         </div>
@@ -1036,6 +1037,46 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
         </div>
       </div>
 
+      <!-- DIAGNÓSTICO DTE VIEW -->
+      <div class="view" id="view-diagnostico">
+        <div class="topbar">
+          <h1>🔎 Diagnóstico DTE Haulmer</h1>
+          <div class="topbar-actions" style="display:flex;gap:8px;align-items:center;">
+            <label style="font-size:12px;color:var(--txt2);">Últimos:</label>
+            <select id="diag-dias" class="inline-input" style="width:120px;font-size:12px;">
+              <option value="7">7 días</option>
+              <option value="15">15 días</option>
+              <option value="30" selected>30 días</option>
+              <option value="60">60 días</option>
+              <option value="90">90 días</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadDiagnosticoDTE()">🔄 Actualizar</button>
+          </div>
+        </div>
+        <div id="diag-resumen" style="margin-bottom:14px;"></div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrapper" style="max-height:65vh;overflow:auto;">
+            <table style="font-size:12px;">
+              <thead style="position:sticky;top:0;background:var(--surface);z-index:1;">
+                <tr>
+                  <th style="text-align:right;">Mov ID</th>
+                  <th>Fecha</th>
+                  <th>Folio</th>
+                  <th>Tipo DTE</th>
+                  <th>RUT</th>
+                  <th>Razón Social</th>
+                  <th style="text-align:right;">Monto</th>
+                  <th>email_receptor (BD)</th>
+                  <th>sendEmail.to (enviado)</th>
+                  <th style="text-align:center;">¿Llegó al cliente?</th>
+                </tr>
+              </thead>
+              <tbody id="diag-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- CONFIG VIEW -->
       <div class="view" id="view-config">
         <div class="topbar"><h1>Configuración</h1></div>
@@ -1485,6 +1526,7 @@ function adminNav(view) {
   else if (view === 'exportar') loadExportar();
   else if (view === 'clientes') loadClientes();
   else if (view === 'consulta') initConsultaMovs();
+  else if (view === 'diagnostico') loadDiagnosticoDTE();
   else if (view === 'config') renderConfig();
   else if (view === 'usuarios') renderUsuarios();
   else if (view === 'cartolas') loadHistorialCartolas();
@@ -2957,7 +2999,7 @@ function renderFacturacionTable() {
       <td>${m.fecha || '—'}</td>
       <td style="font-weight:600">${fmt(m.monto)}</td>
       <td style="font-size:12px">${m.rut || '—'}</td>
-      <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}')" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}</td>
+      <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}',${m.id})" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}</td>
       <td>${tipoDteBadge(m.tipo_dte)}</td>
       <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
       <td style="text-align:center;">
@@ -2970,16 +3012,135 @@ function renderFacturacionTable() {
   renderFactPaginacion(totalPages);
 }
 
+// Modal cuando el cliente del movimiento NO está en la base unificada.
+// Ofrece 3 opciones: (1) crear con SII, (2) asociar a cliente existente, (3) cancelar.
+async function abrirModalClienteNoEncontrado(rutNorm, empresaId, movId) {
+  // Buscar movimiento para obtener datos
+  const movs = window.ALL_FACT_MOVS || [];
+  const mov = movs.find(m => m.id === movId) || {};
+  const nombreMov = mov.razon_social || mov.nombre_origen || '';
+
+  // Buscar sugerencias por nombre similar
+  const sugerenciasUrl = `/api/clientes/similar?nombre=${encodeURIComponent(nombreMov)}` + (empresaId ? `&empresa_id=${encodeURIComponent(empresaId)}` : '');
+  const sugRes = await apiFetch(sugerenciasUrl);
+  const sugerencias = (sugRes?.clientes) || [];
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
+  const fmtRut = (r) => esc(r || '—');
+  const fmtMonto = (n) => '$' + (parseFloat(n)||0).toLocaleString('es-CL');
+
+  const sugerenciasHTML = sugerencias.length > 0
+    ? sugerencias.map(s => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.razon_social)}</div>
+            <div style="font-size:11px;color:var(--txt2);font-family:monospace;">${esc(s.rut)} · <span class="badge badge-gray" style="font-size:10px;">${esc(s.empresa_id)}</span> ${s.email ? '· '+esc(s.email) : ''}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="padding:4px 10px;font-size:11px;white-space:nowrap;" onclick="asociarMovACliente(${movId}, ${s.id}, false)" title="Asocia SOLO este movimiento al cliente seleccionado">Asociar</button>
+          <button class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11px;white-space:nowrap;" onclick="asociarMovACliente(${movId}, ${s.id}, true)" title="Asocia este y todos los demás movs con el mismo RUT erróneo (${fmtRut(rutNorm)})">+todos</button>
+        </div>
+      `).join('')
+    : `<p style="color:var(--txt3);font-size:12px;font-style:italic;">No se encontraron clientes con nombre similar a "${esc(nombreMov)}".</p>`;
+
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Cliente no está en la base</h3>
+    <p style="font-size:11px;color:var(--txt3);margin:0 0 14px;">
+      El movimiento de <strong>${fmtMonto(mov.monto)}</strong> tiene RUT <span style="font-family:monospace">${fmtRut(rutNorm)}</span>
+      y razón social <strong>${esc(nombreMov)}</strong>, pero ese RUT no existe en la base de ${esc(empresaId || '—')}.
+    </p>
+
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <strong style="font-size:13px;">Opción 1 · Crear cliente nuevo con este RUT</strong>
+        <p style="font-size:11px;color:var(--txt2);margin:4px 0 8px;">Trae datos del SII vía Haulmer y crea el cliente en ${esc(empresaId)}.</p>
+        <button class="btn btn-primary btn-sm" onclick="closeModal(); crearClienteDesdeNoEncontrado('${rutNorm}', '${esc(empresaId)}', '${esc(nombreMov)}')">🪄 Crear con auto-completar SII</button>
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:6px;padding:12px;">
+        <strong style="font-size:13px;">Opción 2 · Asociar este movimiento a un cliente existente</strong>
+        <p style="font-size:11px;color:var(--txt2);margin:4px 0 8px;">Útil si el RUT vino mal en la cartola o si la persona transfiere a nombre de su empresa.</p>
+        ${sugerenciasHTML}
+        <input type="text" id="busq-cliente-asociar" placeholder="Buscar otro cliente por nombre o RUT..."
+               class="inline-input" style="margin-top:8px;font-size:12px;"
+               oninput="buscarMasSugerencias('${empresaId}', ${movId})">
+        <div id="busq-cliente-results" style="margin-top:6px;"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+    </div>
+  `;
+  showModal();
+}
+
+let busqClienteTimeout;
+function buscarMasSugerencias(empresaId, movId) {
+  clearTimeout(busqClienteTimeout);
+  busqClienteTimeout = setTimeout(async () => {
+    const q = document.getElementById('busq-cliente-asociar')?.value?.trim();
+    const cont = document.getElementById('busq-cliente-results');
+    if (!q || q.length < 2) { cont.innerHTML = ''; return; }
+    const url = `/api/clientes/similar?nombre=${encodeURIComponent(q)}` + (empresaId ? `&empresa_id=${encodeURIComponent(empresaId)}` : '');
+    const r = await apiFetch(url);
+    const lista = r?.clientes || [];
+    const esc = (s) => String(s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
+    cont.innerHTML = lista.length === 0
+      ? '<p style="font-size:11px;color:var(--txt3);font-style:italic;">Sin resultados</p>'
+      : lista.map(s => `
+          <div style="display:flex;align-items:center;gap:8px;padding:6px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.razon_social)}</div>
+              <div style="font-size:10px;color:var(--txt2);font-family:monospace;">${esc(s.rut)} · ${esc(s.empresa_id)}</div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="padding:3px 8px;font-size:10px;" onclick="asociarMovACliente(${movId}, ${s.id}, false)">Asociar</button>
+            <button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:10px;" onclick="asociarMovACliente(${movId}, ${s.id}, true)" title="Aplicar a todos los movs con el mismo RUT erróneo">+todos</button>
+          </div>
+        `).join('');
+  }, 250);
+}
+
+async function asociarMovACliente(movId, clienteId, aplicarATodos) {
+  if (!confirm(aplicarATodos
+    ? '¿Asociar este movimiento Y todos los demás con el mismo RUT al cliente seleccionado?'
+    : '¿Asociar este movimiento al cliente seleccionado?')) return;
+  const data = await apiFetch(`/api/movimientos/${movId}/asociar-cliente`, {
+    method: 'PATCH',
+    body: JSON.stringify({ cliente_id: clienteId, aplicar_a_mismo_rut: aplicarATodos })
+  });
+  if (data?.ok) {
+    closeModal();
+    showToast(`✓ ${data.movimientos_afectados} movimiento${data.movimientos_afectados>1?'s':''} asociado${data.movimientos_afectados>1?'s':''} a ${data.cliente.razon_social}`, 'success');
+    if (typeof loadFacturacion === 'function') loadFacturacion(FACT_PAGE || 0);
+  } else {
+    showToast('Error: ' + (data?.error || 'no se pudo asociar'), 'error');
+  }
+}
+
+function crearClienteDesdeNoEncontrado(rutNorm, empresaId, nombreInferido) {
+  // Abrir el modal de Nuevo Cliente con RUT pre-llenado y disparar auto-completar SII
+  showAddCliente();
+  setTimeout(() => {
+    const rutInput = document.getElementById('nc-rut');
+    const empSel = document.getElementById('nc-empresa');
+    if (rutInput) rutInput.value = rutNorm.slice(0,-1) + '-' + rutNorm.slice(-1);
+    if (empSel && empresaId) empSel.value = empresaId;
+    // Disparar auto-completar
+    if (typeof buscarRUTenSII === 'function') buscarRUTenSII();
+  }, 150);
+}
+
 // Edición rápida de cliente desde tabla Facturar — solo email, teléfono, giro.
 // Backend hace PATCH y sincroniza email en movimientos pendientes/listos del mismo RUT.
-async function abrirEdicionRapidaCliente(rutNorm, empresaId) {
+async function abrirEdicionRapidaCliente(rutNorm, empresaId, movId) {
   if (!rutNorm) { showToast('Movimiento sin RUT registrado', 'info'); return; }
 
   const url = `/api/clientes/buscar/${rutNorm}` + (empresaId && isAdmin() ? `?empresa_id=${empresaId}` : '');
   const c = await apiFetch(url);
   if (!c || !c.id) {
-    showToast('Cliente no está en la base. Crealo desde Base de Clientes con Auto-completar SII.', 'info');
-    return;
+    // Cliente no existe → modal con opciones (crear / asociar / editar nombre)
+    return abrirModalClienteNoEncontrado(rutNorm, empresaId, movId);
   }
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
@@ -4822,6 +4983,62 @@ async function saveNewCliente() {
     })
   });
   if (data?.ok) { closeModal(); showToast('Cliente creado', 'success'); loadClientes(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DIAGNÓSTICO DTE HAULMER (admin only) — auditar emails enviados a clientes
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadDiagnosticoDTE() {
+  const dias = document.getElementById('diag-dias')?.value || '30';
+  const resumen = document.getElementById('diag-resumen');
+  const tbody = document.getElementById('diag-tbody');
+  if (!resumen || !tbody) return;
+  resumen.innerHTML = '<div class="card" style="padding:14px;text-align:center;color:var(--txt2);">⏳ Cargando diagnóstico...</div>';
+  tbody.innerHTML = '';
+
+  const data = await apiFetch(`/api/diagnostico/dte-haulmer?dias=${dias}`);
+  if (!data) {
+    resumen.innerHTML = '<div class="card" style="padding:14px;color:var(--red);">Error consultando.</div>';
+    return;
+  }
+
+  const total = data.total_dte || 0;
+  const conE = data.con_email_cliente || 0;
+  const sinE = data.sin_email_cliente || 0;
+  const pctCon = total ? Math.round(conE * 100 / total) : 0;
+
+  resumen.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      <div class="stat-card"><div class="stat-label">DTEs analizados</div><div class="stat-value">${total}</div><div class="stat-sub">${data.lotes_consultados || 0} lotes · ${data.empresa}</div></div>
+      <div class="stat-card"><div class="stat-label">Con email al cliente</div><div class="stat-value green">${conE}</div><div class="stat-sub">${pctCon}% del total</div></div>
+      <div class="stat-card"><div class="stat-label">Sin email al cliente</div><div class="stat-value ${sinE>0?'red':''}">${sinE}</div><div class="stat-sub">solo llegó al emisor</div></div>
+      <div class="stat-card"><div class="stat-label">Período</div><div class="stat-value" style="font-size:18px;">${data.dias} días</div><div class="stat-sub">desde ${(data.cutoff_iso||'').split('T')[0]}</div></div>
+    </div>
+  `;
+
+  if (!data.detalle?.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--txt3);">Sin DTEs en el período.</td></tr>';
+    return;
+  }
+
+  const fmtFecha = f => { if (!f) return '—'; const s = String(f).split('T')[0]; if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d]=s.split('-'); return `${d}-${m}-${y.substring(2)}`; } return s; };
+  const fmt = n => '$' + (parseFloat(n)||0).toLocaleString('es-CL');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
+
+  tbody.innerHTML = data.detalle.map(d => `
+    <tr style="${d.email_enviado_cliente ? '' : 'background:rgba(231,76,60,.04);'}">
+      <td style="text-align:right;font-family:monospace;color:var(--txt3);font-size:11px;">${d.mov_id}</td>
+      <td>${fmtFecha(d.fecha)}</td>
+      <td style="font-family:monospace;font-size:11px;">${esc(d.folio || '—')}</td>
+      <td style="text-align:center;">${d.tipo_dte === 34 ? '<span class="badge badge-blue">34</span>' : d.tipo_dte === 41 ? '<span class="badge badge-purple">41</span>' : esc(d.tipo_dte || '—')}</td>
+      <td style="font-family:monospace;font-size:11px;">${esc(d.rut || '—')}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(d.razon_social||'')}">${esc(d.razon_social || '—')}</td>
+      <td style="text-align:right;">${fmt(d.monto)}</td>
+      <td style="font-size:11px;color:${d.email_receptor ? 'var(--txt2)' : 'var(--red)'};">${esc(d.email_receptor || '(sin email)')}</td>
+      <td style="font-size:11px;color:${d.sendEmail_to ? 'var(--green,#2ecc71)' : 'var(--txt3)'};">${esc(d.sendEmail_to || '—')}</td>
+      <td style="text-align:center;">${d.email_enviado_cliente ? '<span style="color:#2ecc71;">✓ Sí</span>' : '<span style="color:#e74c3c;">✗ No</span>'}</td>
+    </tr>
+  `).join('');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

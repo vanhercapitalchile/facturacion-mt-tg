@@ -4061,15 +4061,24 @@ async function autoCompletarEditarSII(clienteId) {
     const el = document.getElementById(id);
     if (!el || !val) return false;
     const actual = String(el.value || '').trim();
-    if (!actual) { el.value = val; return true; }                    // vacío → llenar
+    if (!actual) { el.value = val; return true; }                    // vacío → llenar siempre
     if (mode === 'preserve') return false;                            // email/tel → nunca sobrescribir
-    // Smart replace: si SII contiene el valor actual (subcadena) y es más completo, reemplazar
+    if (mode === 'force_replace') {                                   // persona/razon → SII es autoritativo
+      if (norm(actual) === norm(val)) return false;                   // iguales → no hacer nada
+      el.value = val; return true;                                    // distintos → reemplazar siempre
+    }
+    // smart_replace: solo si SII es más completo (subcadena de SII y más corto)
     const a = norm(actual);
     const v = norm(val);
     if (a === v) return false;                                        // iguales → no hacer nada
-    if (v.includes(a) && v.length > a.length) { el.value = val; return true; }  // SII más completo → reemplazar
+    if (v.includes(a) && v.length > a.length) { el.value = val; return true; }
     return false;                                                     // distintos → respetar operador
   };
+
+  // Para personas, razón social desde SII es autoritativa (nombre legal).
+  // Para empresas, smart_replace (operador puede tener nombre comercial preferido).
+  const tipoActual = document.getElementById('ec-tipo')?.value || 'empresa';
+  const razonMode = tipoActual === 'persona' ? 'force_replace' : 'smart_replace';
 
   let llenados = 0, reemplazados = 0;
   const before = id => String(document.getElementById(id)?.value || '').trim();
@@ -4079,7 +4088,7 @@ async function autoCompletarEditarSII(clienteId) {
       if (prev) reemplazados++; else llenados++;
     }
   };
-  track('ec-razon', d.razon_social, 'smart_replace');
+  track('ec-razon', d.razon_social, razonMode);
   track('ec-giro', d.giro, 'smart_replace');
   track('ec-dir', d.direccion, 'smart_replace');
   track('ec-comuna', d.comuna, 'smart_replace');
@@ -4559,7 +4568,10 @@ async function buscarRUTenSII() {
     set('nc-comuna', d.comuna);
     set('nc-ciudad', d.ciudad);
     if (d.email) set('nc-email', d.email);
-    document.getElementById('nc-tipo').value = 'empresa';
+    // Detectar tipo automáticamente desde el cuerpo del RUT (>=50M = empresa)
+    const cuerpo = parseInt(rutNorm.slice(0, -1), 10) || 0;
+    const tipoDetectado = cuerpo >= 50000000 ? 'empresa' : 'persona';
+    document.getElementById('nc-tipo').value = tipoDetectado;
 
     const tieneEmail = d.email ? '' : ' (email no disponible — completalo a mano si lo tenés)';
     status.innerHTML = `✅ Datos cargados desde SII vía Haulmer.${tieneEmail}`;

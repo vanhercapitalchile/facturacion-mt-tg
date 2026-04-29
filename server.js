@@ -799,6 +799,116 @@ app.post('/api/clientes/import', requireAuth, (req, res) => {
   res.json({ ok: true, imported, skipped });
 });
 
+// Importar emails masivos desde Excel con propagación a RUT asociado.
+// Política: el email del Excel SIEMPRE prima sobre lo que esté en BD
+// (especialmente sobre correos genéricos como facturas@*).
+// Si el cliente principal o el asociado no existen, los crea con datos básicos.
+// Sincroniza email_receptor en movimientos pendientes/listos del mismo RUT.
+app.post('/api/clientes/import-emails', requireAuth, requireAdmin, (req, res) => {
+  const filas = req.body?.filas || [];
+  if (!Array.isArray(filas) || filas.length === 0) {
+    return res.status(400).json({ error: 'filas requerido (array no vacío)' });
+  }
+
+  const now = nowCL();
+  const stats = {
+    total: filas.length,
+    principal_actualizado: 0,
+    principal_creado: 0,
+    principal_sin_cambio: 0,
+    asociado_actualizado: 0,
+    asociado_creado: 0,
+    asociado_sin_cambio: 0,
+    movs_sincronizados: 0,
+    errores: []
+  };
+
+  const findCliente = db.prepare('SELECT id, email FROM clientes WHERE empresa_id=? AND rut_normalizado=?');
+  const updateEmail = db.prepare('UPDATE clientes SET email=?, updated_at=? WHERE id=?');
+  const insertCliente = db.prepare(`
+    INSERT INTO clientes (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion, comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  const syncMovs = db.prepare(`
+    UPDATE movimientos
+    SET email_receptor = ?, updated_at = ?
+    WHERE empresa_id = ? AND rut_normalizado = ? AND estado IN ('pendiente','listo','en_lote')
+  `);
+
+  // Helper: aplicar email a un (empresa, rut) — UPDATE si existe, INSERT si no
+  const aplicar = (empresaId, rutFmt, nombreFallback, email, tipo, fila) => {
+    const rutNorm = normalizeRut(rutFmt);
+    if (!rutNorm || !email || !empresaId) return null;
+
+    const existing = findCliente.get(empresaId, rutNorm);
+    if (existing) {
+      const emailActual = (existing.email || '').trim();
+      const emailNuevo = email.trim();
+      if (emailActual.toLowerCase() === emailNuevo.toLowerCase()) {
+        return 'sin_cambio';
+      }
+      updateEmail.run(emailNuevo, now, existing.id);
+      // Sincronizar también en movimientos
+      const sync = syncMovs.run(emailNuevo, now, empresaId, rutNorm);
+      stats.movs_sincronizados += sync.changes;
+      return 'actualizado';
+    } else {
+      // No existe: crear cliente nuevo con datos básicos del Excel
+      const tipoFinal = tipo || (parseInt(rutNorm.slice(0,-1)) >= 50000000 ? 'empresa' : 'persona');
+      insertCliente.run(
+        empresaId, tipoFinal,
+        rutFmt, rutNorm,
+        nombreFallback || '', '', '', '', '',
+        nombreFallback || '', email.trim(), '', '', '',
+        now, now
+      );
+      // Sincronizar también en movimientos
+      const sync = syncMovs.run(email.trim(), now, empresaId, rutNorm);
+      stats.movs_sincronizados += sync.changes;
+      return 'creado';
+    }
+  };
+
+  db.transaction(() => {
+    for (let i = 0; i < filas.length; i++) {
+      const f = filas[i] || {};
+      try {
+        const empresaId = String(f.empresa_id || '').trim();
+        const rut = String(f.rut || '').trim();
+        const nombre = String(f.nombre || '').trim();
+        const email = String(f.email || '').trim();
+        const asociadoRut = String(f.asociado_rut || '').trim();
+        const asociadoNom = String(f.asociado_nombre || '').trim();
+        const tipo = String(f.tipo || '').trim() || null;
+
+        if (!empresaId || !rut || !email) {
+          stats.errores.push({ fila: i + 2, error: 'empresa_id/rut/email vacío' });
+          continue;
+        }
+
+        // 1. Cliente principal
+        const r1 = aplicar(empresaId, rut, nombre, email, tipo, f);
+        if (r1 === 'actualizado')   stats.principal_actualizado++;
+        else if (r1 === 'creado')   stats.principal_creado++;
+        else if (r1 === 'sin_cambio') stats.principal_sin_cambio++;
+
+        // 2. Cliente asociado (mismo email)
+        if (asociadoRut) {
+          const r2 = aplicar(empresaId, asociadoRut, asociadoNom, email, null, f);
+          if (r2 === 'actualizado')   stats.asociado_actualizado++;
+          else if (r2 === 'creado')   stats.asociado_creado++;
+          else if (r2 === 'sin_cambio') stats.asociado_sin_cambio++;
+        }
+      } catch(e) {
+        stats.errores.push({ fila: i + 2, error: e.message });
+      }
+    }
+  })();
+
+  console.log(`[IMPORT-EMAILS] ${JSON.stringify(stats)}`);
+  res.json({ ok: true, stats });
+});
+
 // Search client by RUT
 app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);

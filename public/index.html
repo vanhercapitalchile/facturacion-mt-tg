@@ -804,7 +804,12 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
 
       <!-- IMPORTAR CLIENTES VIEW -->
       <div class="view" id="view-importar">
-        <div class="topbar"><h1>Importar Base de Clientes</h1></div>
+        <div class="topbar">
+          <h1>Importar Clientes</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="showImportEmailsModal()" title="Actualizar emails masivamente desde Excel — el archivo prima sobre la BD">📧 Importar emails (Excel)</button>
+          </div>
+        </div>
         <div class="card">
           <div class="card-header"><h3>Importar desde Excel (Base de Datos)</h3></div>
           <p style="color:var(--txt2);font-size:13px;margin-bottom:16px;">Sube el archivo Excel con las hojas DME RECIBIDAS (empresas) y DMP RECIBIDAS (personas) para poblar la base de clientes tributarios.</p>
@@ -4214,6 +4219,147 @@ async function handleImportFile(input) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IMPORTAR EMAILS DESDE EXCEL (admin only)
+// ══════════════════════════════════════════════════════════════════════════════
+function showImportEmailsModal() {
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>📧 Importar emails masivos desde Excel</h3>
+    <p style="font-size:12px;color:var(--txt2);margin:0 0 14px;">
+      El email del archivo <strong>siempre prima</strong> sobre la BD (incluso si actualmente hay un correo genérico tipo facturas@*).
+      Si el cliente no existe se crea. Si tiene RUT asociado (col G + H), también se le asigna el mismo email.
+    </p>
+
+    <div class="form-group">
+      <label>Archivo Excel (.xlsx)</label>
+      <input type="file" id="iemail-file" accept=".xlsx,.xls" onchange="parseImportEmailsFile(this)">
+      <p style="font-size:11px;color:var(--txt3);margin:4px 0 0;">
+        Columnas esperadas (por nombre): empresa_id, rut, nombre_completo, email, tipo, empresa_asociada_rut, empresa_asociada_nombre.
+      </p>
+    </div>
+
+    <div id="iemail-preview" style="display:none;margin-top:12px;"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button id="iemail-apply" class="btn btn-primary" onclick="applyImportEmails()" disabled>Aplicar import</button>
+    </div>
+  `;
+  showModal();
+  window.IEMAIL_FILAS = null;
+}
+
+function parseImportEmailsFile(input) {
+  const preview = document.getElementById('iemail-preview');
+  const apply = document.getElementById('iemail-apply');
+  const file = input.files?.[0];
+  if (!file) return;
+  preview.style.display = 'block';
+  preview.innerHTML = '<p style="color:var(--txt2);">Leyendo archivo...</p>';
+  apply.disabled = true;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      // Normalizar nombres de columnas (acepta variantes con/sin tildes)
+      const norm = s => String(s||'').toLowerCase().trim();
+      const filas = rows.map(r => {
+        const get = (...keys) => {
+          for (const k of keys) {
+            for (const rk of Object.keys(r)) {
+              if (norm(rk) === norm(k)) return String(r[rk] || '').trim();
+            }
+          }
+          return '';
+        };
+        return {
+          empresa_id:        get('empresa_id', 'empresa'),
+          rut:               get('rut'),
+          nombre:            get('nombre_completo', 'nombre', 'razon_social', 'razón social'),
+          email:             get('email', 'correo'),
+          tipo:              get('tipo'),
+          asociado_rut:      get('empresa_asociada_rut', 'asociado_rut', 'rut_asociado'),
+          asociado_nombre:   get('empresa_asociada_nombre', 'asociado_nombre', 'nombre_asociado')
+        };
+      }).filter(f => f.empresa_id && f.rut && f.email);
+
+      window.IEMAIL_FILAS = filas;
+
+      // Resumen previo
+      const porEmp = {};
+      let conAsoc = 0;
+      for (const f of filas) {
+        porEmp[f.empresa_id] = (porEmp[f.empresa_id] || 0) + 1;
+        if (f.asociado_rut) conAsoc++;
+      }
+      const empresasHTML = Object.entries(porEmp)
+        .map(([k,v]) => `<span class="badge badge-blue">${k}: ${v}</span>`).join(' ');
+
+      preview.innerHTML = `
+        <div style="background:rgba(46,204,113,.05);border-left:3px solid #2ecc71;padding:12px;border-radius:4px;">
+          <strong>${filas.length} filas válidas detectadas</strong><br>
+          <div style="margin-top:6px;font-size:12px;">${empresasHTML}</div>
+          <div style="margin-top:6px;font-size:12px;color:var(--txt2);">${conAsoc} filas con RUT asociado (propagación de email a 2do RUT)</div>
+        </div>
+      `;
+      apply.disabled = filas.length === 0;
+    } catch(err) {
+      preview.innerHTML = `<p style="color:var(--red);">Error leyendo archivo: ${err.message}</p>`;
+      apply.disabled = true;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function applyImportEmails() {
+  const filas = window.IEMAIL_FILAS;
+  if (!filas?.length) return;
+  const btn = document.getElementById('iemail-apply');
+  btn.disabled = true;
+  btn.textContent = 'Aplicando...';
+  const preview = document.getElementById('iemail-preview');
+
+  const data = await apiFetch('/api/clientes/import-emails', {
+    method: 'POST',
+    body: JSON.stringify({ filas })
+  });
+
+  if (!data?.ok) {
+    preview.innerHTML = `<p style="color:var(--red);">Error: ${data?.error || 'desconocido'}</p>`;
+    btn.disabled = false;
+    btn.textContent = 'Aplicar import';
+    return;
+  }
+
+  const s = data.stats || {};
+  preview.innerHTML = `
+    <div style="background:rgba(46,204,113,.07);border-left:3px solid #2ecc71;padding:14px;border-radius:4px;">
+      <strong>✅ Import completado</strong>
+      <table style="margin-top:10px;font-size:12px;width:100%;">
+        <tr><td>Total filas procesadas</td><td><strong>${s.total}</strong></td></tr>
+        <tr><td>Cliente principal — actualizado</td><td><strong>${s.principal_actualizado}</strong></td></tr>
+        <tr><td>Cliente principal — creado</td><td><strong>${s.principal_creado}</strong></td></tr>
+        <tr><td>Cliente principal — sin cambio (email idéntico)</td><td>${s.principal_sin_cambio}</td></tr>
+        <tr><td>Cliente asociado — actualizado</td><td><strong>${s.asociado_actualizado}</strong></td></tr>
+        <tr><td>Cliente asociado — creado</td><td><strong>${s.asociado_creado}</strong></td></tr>
+        <tr><td>Cliente asociado — sin cambio</td><td>${s.asociado_sin_cambio}</td></tr>
+        <tr style="border-top:1px solid var(--border);"><td>Movimientos pendientes/listos sincronizados</td><td><strong>${s.movs_sincronizados}</strong></td></tr>
+        ${s.errores?.length ? `<tr style="color:var(--red);"><td>Errores</td><td>${s.errores.length}</td></tr>` : ''}
+      </table>
+      ${s.errores?.length ? `<details style="margin-top:8px;font-size:11px;"><summary style="cursor:pointer;color:var(--red);">Ver errores (${s.errores.length})</summary><pre style="background:var(--surface2);padding:8px;border-radius:4px;font-size:10px;overflow:auto;max-height:200px;">${JSON.stringify(s.errores, null, 2)}</pre></details>` : ''}
+    </div>
+  `;
+  btn.textContent = 'Cerrar';
+  btn.disabled = false;
+  btn.onclick = () => { closeModal(); loadClientes(); };
+
+  showToast(`Import OK: ${s.principal_actualizado + s.asociado_actualizado} actualizados, ${s.principal_creado + s.asociado_creado} creados, ${s.movs_sincronizados} movs sincronizados`, 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

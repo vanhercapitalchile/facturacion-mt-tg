@@ -1021,40 +1021,52 @@ function getSimpleApiKeyAnyEmpresa() {
   return getSimpleApiKey('tg-inversiones') || getSimpleApiKey('mt-inversiones') || null;
 }
 
-// Consulta receptor en Haulmer: POST /v2/dte/document/issued filtrando por RUTRecep
-// devuelve razon social desde DTE previamente emitidos a ese RUT (replicado del
-// comportamiento del complemento Google Sheets de OpenFactura).
-async function consultarReceptorHaulmer(rutNorm, apiKey) {
+// Consulta SII via Haulmer: GET /v2/dte/taxpayer/{rut-con-DV}
+// Devuelve datos COMPLETOS desde SII: razon social, giro, dirección, comuna,
+// email, actividades económicas, sucursales. Funciona para CUALQUIER RUT
+// registrado en SII (no requiere historial previo). Es lo que usa el complemento
+// Google Sheets de OpenFactura para auto-completar.
+async function consultarTaxpayerHaulmer(rutNorm, apiKey) {
   if (!apiKey || !rutNorm || rutNorm.length < 2) return null;
-  // Haulmer espera el cuerpo del RUT como entero (sin DV, sin puntos, sin guion)
-  const rutCuerpo = parseInt(rutNorm.slice(0, -1), 10);
-  if (!rutCuerpo || isNaN(rutCuerpo)) return null;
+  // Endpoint requiere RUT con guión: ej "77859376-9"
+  const rutWithDv = rutNorm.slice(0, -1) + '-' + rutNorm.slice(-1);
   try {
-    const resp = await fetch('https://api.haulmer.com/v2/dte/document/issued', {
-      method: 'POST',
-      headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ RUTRecep: { eq: rutCuerpo } }),
+    const resp = await fetch(`https://api.haulmer.com/v2/dte/taxpayer/${rutWithDv}`, {
+      method: 'GET',
+      headers: { 'apikey': apiKey, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(10000)
     });
     if (!resp.ok) {
-      console.warn(`[HAULMER ISSUED] HTTP ${resp.status} para RUT ${rutNorm}`);
+      console.warn(`[HAULMER TAXPAYER] HTTP ${resp.status} RUT ${rutNorm}`);
       return null;
     }
     const data = await resp.json();
-    if (!data?.data?.length) {
-      console.log(`[HAULMER ISSUED] Sin DTE previos para RUT ${rutNorm}`);
+    if (!data?.razonSocial) {
+      console.log(`[HAULMER TAXPAYER] Sin razonSocial para ${rutNorm}`);
       return null;
     }
-    // Tomar el más reciente (primero del array)
-    const primero = data.data[0];
+    // Tomar actividad principal o la primera disponible
+    const acts = Array.isArray(data.actividades) ? data.actividades : [];
+    const actPrincipal = acts.find(a => a.actividadPrincipal) || acts[0] || {};
+    const sucs = Array.isArray(data.sucursales) ? data.sucursales : [];
+    const sucPrincipal = sucs[0] || {};
     return {
-      razon_social: primero.RznSocRecep || '',
-      total_dte_previos: data.data.length,
-      ultimo_folio: primero.Folio,
-      ultima_fecha: primero.FchEmis
+      razon_social: data.razonSocial || '',
+      giro:        actPrincipal.actividadEconomica || actPrincipal.giro || '',
+      acteco:      actPrincipal.codigoActividadEconomica || '',
+      direccion:   data.direccion || sucPrincipal.direccion || '',
+      comuna:      data.comuna || sucPrincipal.comuna || '',
+      ciudad:      sucPrincipal.ciudad || '',
+      email:       data.email || '',
+      telefono:    data.telefono || sucPrincipal.telefono || '',
+      actividades: acts.map(a => ({
+        giro: a.actividadEconomica || a.giro,
+        codigo: a.codigoActividadEconomica,
+        principal: !!a.actividadPrincipal
+      }))
     };
   } catch(e) {
-    console.warn(`[HAULMER ISSUED] Error RUT ${rutNorm}: ${e.message}`);
+    console.warn(`[HAULMER TAXPAYER] Error RUT ${rutNorm}: ${e.message}`);
     return null;
   }
 }
@@ -1083,11 +1095,19 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
   let extra = {};
 
   if (haulmerKey) {
-    const haulmer = await consultarReceptorHaulmer(rutNorm, haulmerKey);
-    if (haulmer && haulmer.razon_social) {
-      datos.razon_social = haulmer.razon_social;
-      source = 'haulmer_issued';
-      extra = { total_dte_previos: haulmer.total_dte_previos, ultimo_folio: haulmer.ultimo_folio, ultima_fecha: haulmer.ultima_fecha };
+    const tp = await consultarTaxpayerHaulmer(rutNorm, haulmerKey);
+    if (tp) {
+      datos = {
+        razon_social: tp.razon_social,
+        giro:         tp.giro,
+        direccion:    tp.direccion,
+        comuna:       tp.comuna,
+        ciudad:       tp.ciudad,
+        email:        tp.email,
+        telefono:     tp.telefono
+      };
+      source = 'haulmer_taxpayer';
+      extra = { acteco: tp.acteco, actividades: tp.actividades };
     }
   }
 
@@ -1099,10 +1119,75 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
     source,
     extra,
     sii_portal_url: `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${rutNorm.slice(0,-1)}&DV=${rutNorm.slice(-1)}&PRG=STC&OPC=NOR`,
-    nota: source === 'haulmer_issued'
-      ? `Razón social desde historial Haulmer (${extra.total_dte_previos || 0} DTE previos). Para giro/dirección/comuna abrí el portal SII.`
-      : 'Sin DTE previos a este RUT en TS Capital. Abrí el portal SII para todos los datos.'
+    nota: source === 'haulmer_taxpayer'
+      ? `Datos completos desde SII vía Haulmer.${tp.email ? '' : ' Email no disponible — completalo a mano si lo tenés.'}`
+      : 'RUT no encontrado en SII (puede ser DV inválido o RUT no registrado). Abrí el portal SII para verificar.'
   });
+});
+
+// Endpoint: lista de RUTs en movimientos pendientes/listos que NO existen en
+// la base unificada de clientes (cross-empresa). Útil para que el operador vea
+// qué clientes nuevos requieren registro antes de facturar.
+app.get('/api/movimientos/clientes-nuevos', requireAuth, requireAdmin, (req, res) => {
+  const empresaFiltro = req.query.empresa_id;
+  const tipoDteFiltro = req.query.tipo_dte;
+
+  // Movimientos facturables (pendiente/listo) con RUT poblado
+  let sql = `
+    SELECT m.rut, m.rut_normalizado, m.razon_social, m.nombre_origen, m.glosa,
+           m.empresa_id, m.banco_cartola, m.tipo_dte, m.estado,
+           m.fecha, m.monto, m.id, m.email_receptor
+    FROM movimientos m
+    WHERE m.estado IN ('pendiente','listo')
+      AND m.rut_normalizado IS NOT NULL AND m.rut_normalizado != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM clientes c WHERE c.rut_normalizado = m.rut_normalizado
+      )
+  `;
+  const params = [];
+  if (empresaFiltro) { sql += ' AND m.empresa_id = ?'; params.push(empresaFiltro); }
+  if (tipoDteFiltro) { sql += ' AND m.tipo_dte = ?'; params.push(parseInt(tipoDteFiltro)); }
+  sql += ' ORDER BY m.fecha DESC, m.id DESC LIMIT 5000';
+
+  const movs = db.prepare(sql).all(...params);
+
+  // Agrupar por RUT
+  const grupos = {};
+  for (const m of movs) {
+    const k = m.rut_normalizado;
+    if (!grupos[k]) {
+      grupos[k] = {
+        rut: m.rut,
+        rut_normalizado: k,
+        razon_social_inferida: m.razon_social || m.nombre_origen || '',
+        glosa_ejemplo: m.glosa || '',
+        tipo_dte: m.tipo_dte,
+        empresas: new Set(),
+        bancos: new Set(),
+        cantidad: 0,
+        monto_total: 0,
+        primera_fecha: m.fecha,
+        ultima_fecha: m.fecha,
+        movimientos: []
+      };
+    }
+    const g = grupos[k];
+    g.empresas.add(m.empresa_id);
+    g.bancos.add(m.banco_cartola);
+    g.cantidad++;
+    g.monto_total += parseFloat(m.monto) || 0;
+    if (m.fecha < g.primera_fecha) g.primera_fecha = m.fecha;
+    if (m.fecha > g.ultima_fecha)  g.ultima_fecha = m.fecha;
+    if (g.movimientos.length < 5) g.movimientos.push({ id: m.id, fecha: m.fecha, monto: m.monto, banco: m.banco_cartola, empresa: m.empresa_id, glosa: m.glosa });
+  }
+
+  const lista = Object.values(grupos).map(g => ({
+    ...g,
+    empresas: [...g.empresas],
+    bancos: [...g.bancos]
+  })).sort((a, b) => b.monto_total - a.monto_total);
+
+  res.json({ total: lista.length, clientes: lista });
 });
 
 // POST aplicar: inserta el cliente en la empresa indicada y sincroniza

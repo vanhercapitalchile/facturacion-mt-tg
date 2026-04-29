@@ -599,7 +599,13 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
 
       <!-- FACTURACION VIEW -->
       <div class="view" id="view-facturacion">
-        <div class="topbar"><h1>Facturar</h1></div>
+        <div class="topbar">
+          <h1>Facturar</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="loadClientesNuevos()" title="Detecta RUTs de movimientos pendientes que no están en ninguna base">&#x1F50D; Detectar clientes nuevos</button>
+          </div>
+        </div>
+        <div id="clientes-nuevos-panel" style="display:none;margin-bottom:16px;"></div>
         <div class="card">
           <div class="card-header">
             <h3>Movimientos listos para facturar</h3>
@@ -4441,16 +4447,16 @@ function showAddCliente() {
 }
 
 async function buscarRUTenSII() {
-  // Auto-completar: 1) Consulta Haulmer issued (razon social desde DTE previos),
-  // 2) Abre portal SII para el resto (giro, direccion, comuna). Lo mejor de
-  // ambos mundos sin contratar API Gateway.
+  // Auto-completar real: GET /v2/dte/taxpayer/{rut} en Haulmer trae TODO desde SII
+  // (razón social, giro, dirección, comuna, email, sucursales). Funciona para
+  // cualquier RUT registrado en SII, sin importar si fue facturado antes.
   const rutRaw = document.getElementById('nc-rut')?.value?.trim();
   const status = document.getElementById('nc-sii-status');
   if (!rutRaw) { status.textContent = '⚠️ Ingresá un RUT primero.'; status.style.color = 'var(--red)'; return; }
   const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
   if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
 
-  status.innerHTML = '⏳ Consultando historial Haulmer...';
+  status.innerHTML = '⏳ Consultando SII vía Haulmer...';
   status.style.color = 'var(--txt2)';
 
   const data = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
@@ -4465,28 +4471,28 @@ async function buscarRUTenSII() {
     return;
   }
 
-  // Pre-llenar lo que vino de Haulmer (típicamente solo razón social)
   const d = data.datos || {};
-  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-  set('nc-rut', data.rut_formato || rutRaw);
-  if (d.razon_social) set('nc-razon', d.razon_social);
-  if (d.giro)         set('nc-giro', d.giro);
-  if (d.direccion)    set('nc-dir', d.direccion);
-  if (d.comuna)       set('nc-comuna', d.comuna);
-  if (d.ciudad)       set('nc-ciudad', d.ciudad);
-  document.getElementById('nc-tipo').value = 'empresa';
+  const set = (id, val) => { const el = document.getElementById(id); if (el != null) el.value = val || ''; };
 
-  // Abrir portal SII en pestaña nueva (siempre, para que pueda completar lo que falta)
-  if (data.sii_portal_url) {
-    window.open(data.sii_portal_url, '_blank', 'noopener,noreferrer');
-  }
+  if (data.source === 'haulmer_taxpayer' && d.razon_social) {
+    // Pre-llenar TODOS los campos con datos del SII
+    set('nc-rut', data.rut_formato || rutRaw);
+    set('nc-razon', d.razon_social);
+    set('nc-giro', d.giro);
+    set('nc-dir', d.direccion);
+    set('nc-comuna', d.comuna);
+    set('nc-ciudad', d.ciudad);
+    if (d.email) set('nc-email', d.email);
+    document.getElementById('nc-tipo').value = 'empresa';
 
-  if (data.source === 'haulmer_issued') {
-    status.innerHTML = `✅ Razón social cargada desde Haulmer (<strong>${data.extra?.total_dte_previos || 0}</strong> DTE previos). Portal SII abierto — copiá <strong>giro, dirección, comuna</strong> desde ahí.`;
+    const tieneEmail = d.email ? '' : ' (email no disponible — completalo a mano si lo tenés)';
+    status.innerHTML = `✅ Datos cargados desde SII vía Haulmer.${tieneEmail}`;
     status.style.color = '#2ecc71';
   } else {
-    status.innerHTML = `🔗 Sin historial Haulmer para este RUT. Portal SII abierto — copiá <strong>razón social, giro, dirección, comuna</strong> manualmente.`;
-    status.style.color = 'var(--txt)';
+    // RUT no encontrado en taxpayer → abrir portal SII como fallback
+    if (data.sii_portal_url) window.open(data.sii_portal_url, '_blank', 'noopener,noreferrer');
+    status.innerHTML = `⚠️ RUT no encontrado en SII vía Haulmer. Portal SII abierto — verificá el dígito verificador y completá manualmente.`;
+    status.style.color = 'var(--orange)';
   }
 }
 
@@ -4506,6 +4512,96 @@ async function saveNewCliente() {
     })
   });
   if (data?.ok) { closeModal(); showToast('Cliente creado', 'success'); loadClientes(); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CLIENTES NUEVOS DETECTADOS (admin only — facturar)
+// ══════════════════════════════════════════════════════════════════════════════
+async function loadClientesNuevos() {
+  const panel = document.getElementById('clientes-nuevos-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="card" style="padding:20px;text-align:center;color:var(--txt2);">⏳ Detectando clientes no registrados...</div>';
+
+  const data = await apiFetch('/api/movimientos/clientes-nuevos');
+  if (!data) {
+    panel.innerHTML = '<div class="card" style="padding:16px;color:var(--red);">Error al consultar.</div>';
+    return;
+  }
+
+  if (!data.total) {
+    panel.innerHTML = `<div class="card" style="padding:14px;background:rgba(46,204,113,.06);border-left:3px solid #2ecc71;">
+      <strong style="color:#2ecc71;">✓ Sin clientes nuevos pendientes</strong>
+      <div style="font-size:12px;color:var(--txt2);margin-top:4px;">Todos los RUTs en estado pendiente/listo ya están registrados en alguna empresa.</div>
+    </div>`;
+    return;
+  }
+
+  const fmt = (n) => '$' + (parseFloat(n)||0).toLocaleString('es-CL');
+  const fmtFecha = (f) => { if (!f) return '—'; const s = String(f).split('T')[0]; if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d]=s.split('-'); return `${d}-${m}-${y.substring(2)}`; } return s; };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
+  const filas = data.clientes.map(c => `
+    <tr>
+      <td style="font-family:monospace;font-size:12px;">${esc(c.rut)}</td>
+      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${esc(c.razon_social_inferida)}">${esc(c.razon_social_inferida || c.glosa_ejemplo)}</td>
+      <td style="text-align:center;font-size:12px;">${c.tipo_dte === 34 ? '<span class="badge badge-blue">34</span>' : c.tipo_dte === 41 ? '<span class="badge badge-purple">41</span>' : '—'}</td>
+      <td style="text-align:right;font-size:12px;">${c.cantidad}</td>
+      <td style="text-align:right;font-size:12px;font-weight:500;">${fmt(c.monto_total)}</td>
+      <td style="font-size:11px;">${c.empresas.map(e => `<span class="badge badge-gray" style="font-size:10px;">${esc(e)}</span>`).join(' ')}</td>
+      <td style="font-size:11px;">${fmtFecha(c.primera_fecha)} → ${fmtFecha(c.ultima_fecha)}</td>
+      <td style="text-align:center;">
+        <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:var(--accent);color:#fff;border:none;" onclick="registrarClienteNuevo('${esc(c.rut)}', '${esc(c.empresas[0])}', '${esc(c.razon_social_inferida || '')}')">&#x1F195; Registrar</button>
+      </td>
+    </tr>
+  `).join('');
+
+  const totalMonto = data.clientes.reduce((s, c) => s + (c.monto_total||0), 0);
+
+  panel.innerHTML = `
+    <div class="card" style="padding:0;background:rgba(241,196,15,.05);border-left:3px solid #f1c40f;">
+      <div style="padding:14px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);">
+        <div style="font-size:24px;">⚠️</div>
+        <div style="flex:1;">
+          <strong style="font-size:15px;">${data.total} clientes nuevos requieren registro</strong>
+          <div style="font-size:12px;color:var(--txt2);margin-top:2px;">RUTs en movimientos pendientes/listos que NO existen en ninguna empresa (TG, MT, TS, Vanher). Total movimientos: ${fmt(totalMonto)}</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('clientes-nuevos-panel').style.display='none'">Ocultar</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:12px;">
+          <thead style="background:var(--surface2);">
+            <tr>
+              <th style="text-align:left;padding:8px 12px;">RUT</th>
+              <th style="text-align:left;padding:8px 12px;">Razón social inferida</th>
+              <th style="text-align:center;padding:8px 12px;">DTE</th>
+              <th style="text-align:right;padding:8px 12px;"># movs</th>
+              <th style="text-align:right;padding:8px 12px;">Monto total</th>
+              <th style="text-align:left;padding:8px 12px;">Empresas</th>
+              <th style="text-align:left;padding:8px 12px;">Período</th>
+              <th style="text-align:center;padding:8px 12px;">Acción</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function registrarClienteNuevo(rut, empresaSugerida, razonInferida) {
+  // Abre el modal de Nuevo Cliente con RUT pre-llenado y dispara auto-completar
+  showAddCliente();
+  setTimeout(() => {
+    const elRut = document.getElementById('nc-rut');
+    const elEmp = document.getElementById('nc-empresa');
+    if (elRut) elRut.value = rut;
+    if (elEmp && empresaSugerida) {
+      const opt = [...elEmp.options].find(o => o.value === empresaSugerida);
+      if (opt) elEmp.value = empresaSugerida;
+    }
+    // Auto-disparar la consulta SII
+    if (typeof buscarRUTenSII === 'function') buscarRUTenSII();
+  }, 100);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

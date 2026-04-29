@@ -1125,6 +1125,45 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
   });
 });
 
+// Endpoint simple: consulta SII via Haulmer sin validacion de cross-empresa.
+// Usado por el modal Editar Cliente para enriquecer datos faltantes de un
+// cliente que YA existe en la base.
+app.get('/api/sii/taxpayer/:rut', requireAuth, requireAdmin, async (req, res) => {
+  const rutNorm = normalizeRut(req.params.rut);
+  if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
+
+  const empresas = getAppData('empresas') || {};
+  const haulmerKey = empresas['ts-capital']?.haulmer?.api_key;
+  if (!haulmerKey) {
+    return res.status(400).json({ ok: false, error: 'API Key Haulmer no configurada' });
+  }
+
+  const tp = await consultarTaxpayerHaulmer(rutNorm, haulmerKey);
+  if (!tp) {
+    return res.status(404).json({
+      ok: false,
+      error: 'RUT no encontrado en SII vía Haulmer',
+      sii_portal_url: `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${rutNorm.slice(0,-1)}&DV=${rutNorm.slice(-1)}&PRG=STC&OPC=NOR`
+    });
+  }
+
+  res.json({
+    ok: true,
+    rut_normalizado: rutNorm,
+    rut_formato: formatRutDigits(rutNorm),
+    datos: {
+      razon_social: tp.razon_social,
+      giro:         tp.giro,
+      direccion:    tp.direccion,
+      comuna:       tp.comuna,
+      ciudad:       tp.ciudad,
+      email:        tp.email,
+      telefono:     tp.telefono
+    },
+    extra: { acteco: tp.acteco, actividades: tp.actividades }
+  });
+});
+
 // Endpoint: lista de RUTs en movimientos pendientes/listos que NO existen en
 // la base unificada de clientes (cross-empresa). Útil para que el operador vea
 // qué clientes nuevos requieren registro antes de facturar.

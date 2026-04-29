@@ -3996,7 +3996,14 @@ function editarCliente(id) {
     <h3>Editar cliente</h3>
     <p style="font-size:11px;color:var(--txt3);margin:0 0 16px;">ID: ${c.id} · Empresa: <strong>${c.empresa_id || '—'}</strong></p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="form-group"><label>RUT</label><input type="text" id="ec-rut" class="inline-input" value="${(c.rut || '').replace(/"/g,'&quot;')}"></div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label>RUT</label>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <input type="text" id="ec-rut" class="inline-input" style="flex:1;" value="${(c.rut || '').replace(/"/g,'&quot;')}">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="autoCompletarEditarSII(${c.id})" style="white-space:nowrap;padding:8px 14px;font-size:12px;" title="Trae datos faltantes desde SII vía Haulmer (no sobrescribe campos ya cargados)">&#x1FA84; Auto-completar SII</button>
+        </div>
+        <p id="ec-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: solo llena campos vacíos. No sobrescribe email/razón social ni datos cargados manualmente.</p>
+      </div>
       <div class="form-group"><label>Tipo</label>
         <select id="ec-tipo" class="inline-input">
           <option value="empresa" ${esEmpresa ? 'selected' : ''}>Empresa</option>
@@ -4022,6 +4029,52 @@ function editarCliente(id) {
       <button class="btn btn-primary" onclick="guardarEdicionCliente(${c.id})">Guardar cambios</button>
     </div>`;
   showModal();
+}
+
+async function autoCompletarEditarSII(clienteId) {
+  const rutRaw = document.getElementById('ec-rut')?.value?.trim();
+  const status = document.getElementById('ec-sii-status');
+  if (!rutRaw) { status.textContent = '⚠️ RUT vacío.'; status.style.color = 'var(--red)'; return; }
+  const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
+  if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
+
+  status.innerHTML = '⏳ Consultando SII vía Haulmer...';
+  status.style.color = 'var(--txt2)';
+
+  const data = await apiFetch(`/api/sii/taxpayer/${rutNorm}`);
+  if (!data || !data.ok) {
+    if (data?.sii_portal_url) window.open(data.sii_portal_url, '_blank', 'noopener,noreferrer');
+    status.innerHTML = `⚠️ ${data?.error || 'Error de conexión'}. Portal SII abierto si querés verificar.`;
+    status.style.color = 'var(--orange)';
+    return;
+  }
+
+  const d = data.datos || {};
+  // Política: solo llenar campos vacíos. No sobrescribir lo cargado manualmente.
+  const fillIfEmpty = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    const actual = String(el.value || '').trim();
+    if (!actual && val) { el.value = val; return true; }
+    return false;
+  };
+
+  let llenados = 0;
+  if (fillIfEmpty('ec-razon', d.razon_social)) llenados++;
+  if (fillIfEmpty('ec-giro', d.giro)) llenados++;
+  if (fillIfEmpty('ec-dir', d.direccion)) llenados++;
+  if (fillIfEmpty('ec-comuna', d.comuna)) llenados++;
+  if (fillIfEmpty('ec-ciudad', d.ciudad)) llenados++;
+  if (fillIfEmpty('ec-email', d.email)) llenados++;
+  if (fillIfEmpty('ec-tel', d.telefono)) llenados++;
+
+  if (llenados > 0) {
+    status.innerHTML = `✅ ${llenados} campo${llenados>1?'s':''} completado${llenados>1?'s':''} desde SII (${d.razon_social}). Revisá y guardá.`;
+    status.style.color = '#2ecc71';
+  } else {
+    status.innerHTML = `ℹ️ SII responde con datos pero todos los campos del formulario ya estaban llenos. No se sobrescribió nada (el operador tiene prioridad).`;
+    status.style.color = 'var(--txt2)';
+  }
 }
 
 async function guardarEdicionCliente(id) {

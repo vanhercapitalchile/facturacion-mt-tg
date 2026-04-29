@@ -1074,7 +1074,7 @@ async function consultarTaxpayerHaulmer(rutNorm, apiKey) {
 // GET preview: consulta receptor en Haulmer (issued) para auto-completar razon
 // social. Si Haulmer no tiene historial, devuelve estructura vacía pero ok.
 // Bloquea si el RUT ya existe en alguna empresa de la base unificada.
-app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, async (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);
   if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
 
@@ -1128,7 +1128,7 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
 // Endpoint simple: consulta SII via Haulmer sin validacion de cross-empresa.
 // Usado por el modal Editar Cliente para enriquecer datos faltantes de un
 // cliente que YA existe en la base.
-app.get('/api/sii/taxpayer/:rut', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/sii/taxpayer/:rut', requireAuth, async (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);
   if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
 
@@ -1232,10 +1232,16 @@ app.get('/api/movimientos/clientes-nuevos', requireAuth, requireAdmin, (req, res
 // POST aplicar: inserta el cliente en la empresa indicada y sincroniza
 // movimientos pendientes/listos del mismo RUT con los datos SII.
 // Mergea datos_extra del operador (ej: email cargado a mano) sobre los del SII.
-app.post('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/clientes/enriquecer-sii/:rut', requireAuth, async (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);
-  const { empresa_id, datos_extra = {} } = req.body || {};
-  if (!rutNorm)    return res.status(400).json({ error: 'RUT invalido' });
+  let { empresa_id, datos_extra = {} } = req.body || {};
+  if (!rutNorm) return res.status(400).json({ error: 'RUT invalido' });
+
+  // Si el usuario es operador (role 'empresa'), forzar empresa_id a la suya
+  // (no puede crear clientes en otras empresas).
+  if (req.user.role !== 'admin') {
+    empresa_id = req.user.empresa;
+  }
   if (!empresa_id) return res.status(400).json({ error: 'empresa_id requerido' });
 
   const yaEnEsta = db.prepare('SELECT id FROM clientes WHERE rut_normalizado = ? AND empresa_id = ?').get(rutNorm, empresa_id);

@@ -1255,6 +1255,9 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
       </div>
       <div class="view" id="emp-view-clientes">
         <div class="topbar"><h1>Base de Clientes</h1></div>
+        <div class="topbar-actions" style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary btn-sm" onclick="showAddCliente()">+ Nuevo Cliente</button>
+        </div>
         <div class="card"><div class="card-header"><h3 id="emp-clientes-count">Clientes</h3><div style="width:250px"><input type="text" class="inline-input" placeholder="Buscar..." id="emp-clientes-search" oninput="filterClientes()"></div></div>
         <div class="table-wrapper" style="max-height:60vh;overflow-y:auto;"><table><thead>
             <tr>
@@ -4516,7 +4519,7 @@ function showAddCliente() {
         <select id="nc-tipo" class="inline-input"><option value="empresa">Empresa</option><option value="persona">Persona</option></select>
       </div>
       <div class="form-group"><label>Empresa</label>
-        <select id="nc-empresa" class="inline-input">
+        <select id="nc-empresa" class="inline-input" ${!isAdmin() ? 'disabled' : ''}>
           <option value="tg-inversiones">TG Inversiones</option>
           <option value="mt-inversiones">MT Inversiones</option>
           <option value="ts-capital">TS Capital</option>
@@ -4529,6 +4532,12 @@ function showAddCliente() {
       <button class="btn btn-primary" onclick="saveNewCliente()">Crear</button>
     </div>`;
   showModal();
+  // Si es operador (role empresa), auto-seleccionar su empresa en el dropdown.
+  // El select ya está disabled por el atributo ${!isAdmin()} arriba.
+  if (!isAdmin() && ME && ME.empresa) {
+    const sel = document.getElementById('nc-empresa');
+    if (sel) sel.value = ME.empresa;
+  }
 }
 
 async function buscarRUTenSII() {

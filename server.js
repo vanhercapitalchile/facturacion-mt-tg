@@ -717,6 +717,40 @@ app.put('/api/clientes/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Edicion rapida: solo email, telefono, giro. Sincroniza email en movs
+// pendientes/listos del mismo RUT. Permite role 'empresa' editar SU empresa.
+app.patch('/api/clientes/:id/contacto', requireAuth, (req, res) => {
+  const id = req.params.id;
+  const { email = '', telefono = '', giro = '' } = req.body || {};
+  const now = nowCL();
+
+  const cliente = db.prepare('SELECT id, empresa_id, rut_normalizado FROM clientes WHERE id = ?').get(id);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (req.user.role !== 'admin' && cliente.empresa_id !== req.user.empresa) {
+    return res.status(403).json({ error: 'Sin permiso para editar este cliente' });
+  }
+
+  const emailClean = String(email).trim();
+  let movsSync = 0;
+
+  db.transaction(() => {
+    db.prepare('UPDATE clientes SET email=?, telefono=?, giro=?, updated_at=? WHERE id=?')
+      .run(emailClean, String(telefono).trim(), String(giro).trim(), now, id);
+
+    // Si hay email, sincronizar en movs pendientes/listos/en_lote del mismo RUT en esta empresa
+    if (emailClean && cliente.rut_normalizado) {
+      const r = db.prepare(`
+        UPDATE movimientos SET email_receptor=?, updated_at=?
+        WHERE empresa_id=? AND rut_normalizado=? AND estado IN ('pendiente','listo','en_lote')
+      `).run(emailClean, now, cliente.empresa_id, cliente.rut_normalizado);
+      movsSync = r.changes;
+    }
+  })();
+
+  console.log(`[CLIENTES PATCH] id=${id} email=${emailClean} → ${movsSync} movs sincronizados`);
+  res.json({ ok: true, movimientos_sincronizados: movsSync });
+});
+
 app.delete('/api/clientes/:id', requireAuth, requireAdmin, (req, res) => {
   db.prepare('DELETE FROM clientes WHERE id = ?').run(req.params.id);
   res.json({ ok: true });

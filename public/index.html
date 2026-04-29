@@ -2950,13 +2950,14 @@ function renderFacturacionTable() {
     renderFactPaginacion(totalPages);
     return;
   }
+  const escFact = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   tbody.innerHTML = movs.map(m => `
     <tr>
       <td><input type="checkbox" class="fact-check" value="${m.id}" checked></td>
       <td>${m.fecha || '—'}</td>
       <td style="font-weight:600">${fmt(m.monto)}</td>
       <td style="font-size:12px">${m.rut || '—'}</td>
-      <td>${m.razon_social || '—'}</td>
+      <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}')" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}</td>
       <td>${tipoDteBadge(m.tipo_dte)}</td>
       <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
       <td style="text-align:center;">
@@ -2967,6 +2968,72 @@ function renderFacturacionTable() {
     </tr>
   `).join('');
   renderFactPaginacion(totalPages);
+}
+
+// Edición rápida de cliente desde tabla Facturar — solo email, teléfono, giro.
+// Backend hace PATCH y sincroniza email en movimientos pendientes/listos del mismo RUT.
+async function abrirEdicionRapidaCliente(rutNorm, empresaId) {
+  if (!rutNorm) { showToast('Movimiento sin RUT registrado', 'info'); return; }
+
+  const url = `/api/clientes/buscar/${rutNorm}` + (empresaId && isAdmin() ? `?empresa_id=${empresaId}` : '');
+  const c = await apiFetch(url);
+  if (!c || !c.id) {
+    showToast('Cliente no está en la base. Crealo desde Base de Clientes con Auto-completar SII.', 'info');
+    return;
+  }
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>Edición rápida de contacto</h3>
+    <p style="font-size:11px;color:var(--txt3);margin:0 0 14px;">
+      <strong>${esc(c.razon_social || c.nombre || '—')}</strong> ·
+      <span style="font-family:monospace">${esc(c.rut)}</span> ·
+      <span class="badge badge-gray" style="font-size:10px;">${esc(c.empresa_id)}</span>
+    </p>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="erc-email" class="inline-input" value="${esc(c.email||'')}" placeholder="cliente@dominio.cl" autofocus>
+    </div>
+    <div class="form-group">
+      <label>Teléfono</label>
+      <input type="text" id="erc-tel" class="inline-input" value="${esc(c.telefono||'')}">
+    </div>
+    <div class="form-group">
+      <label>Giro</label>
+      <input type="text" id="erc-giro" class="inline-input" value="${esc(c.giro||'')}">
+    </div>
+    <div style="background:rgba(46,204,113,.07);border-left:3px solid #2ecc71;padding:8px 12px;margin:10px 0;font-size:11px;color:var(--txt2);border-radius:4px;">
+      ℹ️ Al guardar, el email se sincronizará automáticamente en los movimientos pendientes/listos del mismo RUT en esta empresa.
+    </div>
+    <div class="modal-actions" style="display:flex;justify-content:space-between;align-items:center;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal(); editarCliente(${c.id});" title="Abre el modal completo con todos los campos">✏️ Editar todos los datos</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEdicionRapida(${c.id})">Guardar</button>
+      </div>
+    </div>
+  `;
+  showModal();
+}
+
+async function guardarEdicionRapida(clienteId) {
+  const payload = {
+    email:    document.getElementById('erc-email')?.value?.trim() || '',
+    telefono: document.getElementById('erc-tel')?.value?.trim() || '',
+    giro:     document.getElementById('erc-giro')?.value?.trim() || ''
+  };
+  const data = await apiFetch(`/api/clientes/${clienteId}/contacto`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+  if (data?.ok) {
+    closeModal();
+    showToast(`Contacto actualizado · ${data.movimientos_sincronizados || 0} movimientos sincronizados`, 'success');
+    if (typeof loadFacturacion === 'function') loadFacturacion(FACT_PAGE || 0);
+  } else {
+    showToast('Error: ' + (data?.error || 'no se pudo guardar'), 'error');
+  }
 }
 
 async function quitarDeFacturar(id) {

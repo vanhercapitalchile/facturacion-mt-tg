@@ -4411,9 +4411,9 @@ function showAddCliente() {
         <label>RUT</label>
         <div style="display:flex;gap:8px;align-items:stretch;">
           <input type="text" id="nc-rut" class="inline-input" style="flex:1;" placeholder="76.123.456-7" onkeydown="if(event.key==='Enter') buscarRUTenSII()">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;" title="Abre el portal del SII con los datos del RUT en una pestaña nueva">&#x1F517; Abrir en SII</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="buscarRUTenSII()" style="white-space:nowrap;padding:8px 14px;font-size:12px;" title="Trae razón social desde Haulmer + abre portal SII para giro/dirección">&#x1FA84; Auto-completar</button>
         </div>
-        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Abrir en SII&quot; → se abre el portal oficial del SII en una pestaña nueva con los datos del contribuyente. Copiá razón social, giro, dirección y pegalos abajo.</p>
+        <p id="nc-sii-status" style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Tip: ingresá el RUT y presioná &quot;Auto-completar&quot; → consulta historial Haulmer (razón social) y abre portal SII (giro, dirección, comuna).</p>
       </div>
       <div class="form-group"><label>Razón Social</label><input type="text" id="nc-razon" class="inline-input"></div>
       <div class="form-group"><label>Giro</label><input type="text" id="nc-giro" class="inline-input"></div>
@@ -4440,32 +4440,54 @@ function showAddCliente() {
   showModal();
 }
 
-function buscarRUTenSII() {
-  // Consulta automatica al SII por API publica no disponible (SimpleAPI/Haulmer Open
-  // Factura no exponen este endpoint; APIGateway requiere contrato pago aparte).
-  // Solucion practica: abrir portal SII oficial en pestana nueva con el RUT cargado.
-  // Operador copia razon social/giro/direccion del portal y los pega en el modal.
+async function buscarRUTenSII() {
+  // Auto-completar: 1) Consulta Haulmer issued (razon social desde DTE previos),
+  // 2) Abre portal SII para el resto (giro, direccion, comuna). Lo mejor de
+  // ambos mundos sin contratar API Gateway.
   const rutRaw = document.getElementById('nc-rut')?.value?.trim();
   const status = document.getElementById('nc-sii-status');
   if (!rutRaw) { status.textContent = '⚠️ Ingresá un RUT primero.'; status.style.color = 'var(--red)'; return; }
   const rutNorm = rutRaw.replace(/[.\-\s]/g, '').toUpperCase();
   if (rutNorm.length < 7) { status.textContent = '⚠️ RUT muy corto.'; status.style.color = 'var(--red)'; return; }
 
-  // Verificar primero si el RUT ya está en la BD unificada (cualquier empresa)
-  apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`).then(data => {
-    if (data && !data.ok && data.existe_en) {
-      status.innerHTML = `⚠️ Este RUT ya está en BD: <strong>${data.existe_en.join(', ')}</strong>. Usá Editar en su empresa.`;
-      status.style.color = 'var(--red)';
-      return;
-    }
-    // Separar cuerpo y dígito verificador para el portal SII
-    const cuerpo = rutNorm.slice(0, -1);
-    const dv = rutNorm.slice(-1);
-    const url = `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${cuerpo}&DV=${dv}&PRG=STC&OPC=NOR`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-    status.innerHTML = `🔗 Portal SII abierto en pestaña nueva. Copiá razón social, giro, dirección y comuna desde ahí.`;
+  status.innerHTML = '⏳ Consultando historial Haulmer...';
+  status.style.color = 'var(--txt2)';
+
+  const data = await apiFetch(`/api/clientes/enriquecer-sii/${rutNorm}`);
+  if (!data) {
+    status.textContent = '❌ Error de conexión.';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  if (!data.ok && data.existe_en) {
+    status.innerHTML = `⚠️ Este RUT ya está en BD: <strong>${data.existe_en.join(', ')}</strong>. Usá Editar en su empresa.`;
+    status.style.color = 'var(--red)';
+    return;
+  }
+
+  // Pre-llenar lo que vino de Haulmer (típicamente solo razón social)
+  const d = data.datos || {};
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('nc-rut', data.rut_formato || rutRaw);
+  if (d.razon_social) set('nc-razon', d.razon_social);
+  if (d.giro)         set('nc-giro', d.giro);
+  if (d.direccion)    set('nc-dir', d.direccion);
+  if (d.comuna)       set('nc-comuna', d.comuna);
+  if (d.ciudad)       set('nc-ciudad', d.ciudad);
+  document.getElementById('nc-tipo').value = 'empresa';
+
+  // Abrir portal SII en pestaña nueva (siempre, para que pueda completar lo que falta)
+  if (data.sii_portal_url) {
+    window.open(data.sii_portal_url, '_blank', 'noopener,noreferrer');
+  }
+
+  if (data.source === 'haulmer_issued') {
+    status.innerHTML = `✅ Razón social cargada desde Haulmer (<strong>${data.extra?.total_dte_previos || 0}</strong> DTE previos). Portal SII abierto — copiá <strong>giro, dirección, comuna</strong> desde ahí.`;
+    status.style.color = '#2ecc71';
+  } else {
+    status.innerHTML = `🔗 Sin historial Haulmer para este RUT. Portal SII abierto — copiá <strong>razón social, giro, dirección, comuna</strong> manualmente.`;
     status.style.color = 'var(--txt)';
-  });
+  }
 }
 
 async function saveNewCliente() {

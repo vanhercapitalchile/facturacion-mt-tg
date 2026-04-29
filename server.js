@@ -1021,7 +1021,46 @@ function getSimpleApiKeyAnyEmpresa() {
   return getSimpleApiKey('tg-inversiones') || getSimpleApiKey('mt-inversiones') || null;
 }
 
-// GET preview: consulta SII via SimpleAPI y devuelve datos sin insertar.
+// Consulta receptor en Haulmer: POST /v2/dte/document/issued filtrando por RUTRecep
+// devuelve razon social desde DTE previamente emitidos a ese RUT (replicado del
+// comportamiento del complemento Google Sheets de OpenFactura).
+async function consultarReceptorHaulmer(rutNorm, apiKey) {
+  if (!apiKey || !rutNorm || rutNorm.length < 2) return null;
+  // Haulmer espera el cuerpo del RUT como entero (sin DV, sin puntos, sin guion)
+  const rutCuerpo = parseInt(rutNorm.slice(0, -1), 10);
+  if (!rutCuerpo || isNaN(rutCuerpo)) return null;
+  try {
+    const resp = await fetch('https://api.haulmer.com/v2/dte/document/issued', {
+      method: 'POST',
+      headers: { 'apikey': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ RUTRecep: { eq: rutCuerpo } }),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!resp.ok) {
+      console.warn(`[HAULMER ISSUED] HTTP ${resp.status} para RUT ${rutNorm}`);
+      return null;
+    }
+    const data = await resp.json();
+    if (!data?.data?.length) {
+      console.log(`[HAULMER ISSUED] Sin DTE previos para RUT ${rutNorm}`);
+      return null;
+    }
+    // Tomar el más reciente (primero del array)
+    const primero = data.data[0];
+    return {
+      razon_social: primero.RznSocRecep || '',
+      total_dte_previos: data.data.length,
+      ultimo_folio: primero.Folio,
+      ultima_fecha: primero.FchEmis
+    };
+  } catch(e) {
+    console.warn(`[HAULMER ISSUED] Error RUT ${rutNorm}: ${e.message}`);
+    return null;
+  }
+}
+
+// GET preview: consulta receptor en Haulmer (issued) para auto-completar razon
+// social. Si Haulmer no tiene historial, devuelve estructura vacía pero ok.
 // Bloquea si el RUT ya existe en alguna empresa de la base unificada.
 app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (req, res) => {
   const rutNorm = normalizeRut(req.params.rut);
@@ -1037,32 +1076,32 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
     });
   }
 
-  const apiKey = getSimpleApiKeyAnyEmpresa();
-  if (!apiKey) return res.status(400).json({ error: 'No hay API Key SimpleAPI configurada en MT ni TG' });
+  const empresas = getAppData('empresas') || {};
+  const haulmerKey = empresas['ts-capital']?.haulmer?.api_key;
+  let datos = { razon_social: '', giro: '', direccion: '', comuna: '', ciudad: '', email: '' };
+  let source = 'ninguno';
+  let extra = {};
 
-  const rawData = await consultarRUTSimpleAPI(rutNorm, apiKey);
-  if (!rawData) {
-    return res.status(404).json({
-      ok: false,
-      error: 'RUT no encontrado en SimpleAPI / SII (puede ser persona natural sin actividad o RUT no registrado)'
-    });
-  }
-
-  const datos = normalizarRespuestaSimpleAPI(rawData);
-  if (!datos || !datos.razon_social) {
-    return res.status(404).json({
-      ok: false,
-      error: 'SimpleAPI respondio sin razon_social',
-      raw_response: rawData
-    });
+  if (haulmerKey) {
+    const haulmer = await consultarReceptorHaulmer(rutNorm, haulmerKey);
+    if (haulmer && haulmer.razon_social) {
+      datos.razon_social = haulmer.razon_social;
+      source = 'haulmer_issued';
+      extra = { total_dte_previos: haulmer.total_dte_previos, ultimo_folio: haulmer.ultimo_folio, ultima_fecha: haulmer.ultima_fecha };
+    }
   }
 
   res.json({
     ok: true,
     rut_normalizado: rutNorm,
     rut_formato: formatRutDigits(rutNorm),
-    datos: { ...datos, estado_sii: '' },
-    source: 'simpleapi'
+    datos,
+    source,
+    extra,
+    sii_portal_url: `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${rutNorm.slice(0,-1)}&DV=${rutNorm.slice(-1)}&PRG=STC&OPC=NOR`,
+    nota: source === 'haulmer_issued'
+      ? `Razón social desde historial Haulmer (${extra.total_dte_previos || 0} DTE previos). Para giro/dirección/comuna abrí el portal SII.`
+      : 'Sin DTE previos a este RUT en TS Capital. Abrí el portal SII para todos los datos.'
   });
 });
 

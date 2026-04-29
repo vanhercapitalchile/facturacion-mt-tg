@@ -1120,7 +1120,7 @@ app.get('/api/clientes/enriquecer-sii/:rut', requireAuth, requireAdmin, async (r
     extra,
     sii_portal_url: `https://zeus.sii.cl/cvc_cgi/stc/getstc?RUT=${rutNorm.slice(0,-1)}&DV=${rutNorm.slice(-1)}&PRG=STC&OPC=NOR`,
     nota: source === 'haulmer_taxpayer'
-      ? `Datos completos desde SII vía Haulmer.${tp.email ? '' : ' Email no disponible — completalo a mano si lo tenés.'}`
+      ? `Datos completos desde SII vía Haulmer.${datos.email ? '' : ' Email no disponible — completalo a mano si lo tenés.'}`
       : 'RUT no encontrado en SII (puede ser DV inválido o RUT no registrado). Abrí el portal SII para verificar.'
   });
 });

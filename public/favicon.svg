@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" shape-rendering="geometricPrecision">
+  <!-- Documento principal: rectángulo verde oscuro con esquina doblada -->
+  <path d="M15 8 L70 8 L85 23 L85 92 L15 92 Z"
+        fill="#2C4A35" stroke="#1F3526" stroke-width="0.5"/>
+  <!-- Esquina doblada (papel) -->
+  <path d="M70 8 L70 23 L85 23 Z"
+        fill="#C9B381"/>
+  <!-- Símbolo $ grande dorado -->
+  <text x="32" y="42" font-family="Georgia, serif" font-size="22" font-weight="bold" fill="#C9B381" text-anchor="middle">$</text>
+  <!-- Líneas tabulares verdes claras -->
+  <rect x="22" y="48" width="56" height="3" fill="#5A8C5F" rx="0.5"/>
+  <rect x="22" y="54" width="56" height="3" fill="#5A8C5F" rx="0.5"/>
+  <rect x="22" y="60" width="56" height="3" fill="#5A8C5F" rx="0.5"/>
+  <!-- Línea inferior de "texto" -->
+  <rect x="22" y="76" width="42" height="2.5" fill="#7AAB7E" rx="0.5"/>
+  <rect x="22" y="81" width="32" height="2.5" fill="#7AAB7E" rx="0.5"/>
+  <!-- Círculo del check verde con borde dorado -->
+  <circle cx="78" cy="78" r="11" fill="#3D6342" stroke="#C9B381" stroke-width="1.5"/>
+  <!-- Check mark blanco/dorado -->
+  <path d="M73 78 L77 82 L84 74" stroke="#C9B381" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Flechas circulares (semicírculo izquierdo, indicación de proceso/refresh) -->
+  <path d="M8 50 Q4 50 4 60 Q4 70 12 70" stroke="#3D6342" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M9 67 L12 70 L9 73" stroke="#3D6342" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

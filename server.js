@@ -4392,6 +4392,7 @@ function mergeClientesEnriching(target, source) {
 // ── Endpoint principal: procesar cartola server-side con SimpleAPI ─────────────
 app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {
   try {
+    const isPreview = req.query.preview === '1' || req.body?.preview === '1' || req.body?.preview === true;
     if (!req.file) return res.status(400).json({ error: 'No se subió archivo' });
     if (!XLSX_LIB) return res.status(500).json({ error: 'Módulo xlsx no instalado — ejecutar: npm install xlsx' });
 
@@ -4531,7 +4532,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     const resultDetails = [];
     let primerDupFecha = null, primerDupLote = null;
 
-    db.transaction(() => {
+    const txFn = db.transaction(() => {
       for (const mov of movimientosRaw) {
         try {
           const idTransf    = String(mov.id_transferencia || '').trim();
@@ -4740,21 +4741,38 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           resultDetails.push({ id_transferencia: mov.id_transferencia, status: 'error', error: rowErr.message });
         }
       }
-    })();
+      // Si es preview, throw para que better-sqlite3 haga rollback automático
+      // de toda la transacción.
+      if (isPreview) throw new Error('__PREVIEW_ROLLBACK__');
+    });
+
+    let previewRolledBack = false;
+    try { txFn(); }
+    catch(txErr) {
+      if (txErr.message === '__PREVIEW_ROLLBACK__') {
+        previewRolledBack = true;
+      } else {
+        throw txErr;
+      }
+    }
 
     res.json({
       ok: true,
+      preview: previewRolledBack,
       banco: bancoCartola,
       tipo_cartola: (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
       total: movimientosRaw.length,
       nuevos, duplicados, errores, promovidos,
       clientes_nuevos: clientesNuevos,
       simpleapi_consultados: simpleApiConsultados,
-      lote_carga_id: loteCargaId,
+      lote_carga_id: previewRolledBack ? null : loteCargaId,
       filename: req.file.originalname,
       primera_carga_dup: primerDupFecha,
       primer_lote_dup: primerDupLote,
-      results: resultDetails.slice(0, 200)
+      results: resultDetails.slice(0, 200),
+      nota: previewRolledBack
+        ? 'Modo preview: BD NO modificada. Si los números son los esperados, repetí la carga sin preview para aplicar.'
+        : null
     });
   } catch(err) {
     console.error('[CARGAR-Y-PROCESAR FATAL]', err);

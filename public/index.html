@@ -3045,7 +3045,7 @@ function renderFacturacionTable() {
       <td>${m.fecha || '—'}</td>
       <td style="font-weight:600">${fmt(m.monto)}</td>
       <td style="font-size:12px">${m.rut || '—'}</td>
-      <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}',${m.id})" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}</td>
+      <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}',${m.id})" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}${m.email_provisional ? ' <span class="badge" title="Email genérico provisional - reemplazar con email real del cliente" style="background:rgba(241,196,15,.18);color:#a86c00;border:1px solid #f1c40f;font-size:9px;padding:1px 6px;margin-left:4px;border-radius:10px;font-weight:600;">⚠ PROV</span>' : ''}</td>
       <td>${tipoDteBadge(m.tipo_dte)}</td>
       <td><span class="badge badge-gray">${m.banco_cartola}</span></td>
       <td style="text-align:center;">
@@ -3211,6 +3211,11 @@ async function abrirEdicionRapidaCliente(rutNorm, empresaId, movId) {
     // Cliente no existe → modal con opciones (crear / asociar / editar nombre)
     return abrirModalClienteNoEncontrado(rutNorm, empresaId, movId);
   }
+  // Hidratar cache global ALL_CLIENTES para que 'Editar todos los datos' funcione
+  // aunque el usuario no haya entrado a Base de Clientes o el cliente sea de otra empresa.
+  if (!Array.isArray(window.ALL_CLIENTES)) window.ALL_CLIENTES = [];
+  const _idxAC = ALL_CLIENTES.findIndex(x => x.id === c.id);
+  if (_idxAC >= 0) ALL_CLIENTES[_idxAC] = c; else ALL_CLIENTES.push(c);
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
   const modal = document.getElementById('modal-content');

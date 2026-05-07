@@ -4437,8 +4437,16 @@ async function guardarEdicionCliente(id) {
   const data = await apiFetch(`/api/clientes/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
   if (data?.ok) {
     closeModal();
-    showToast('Cliente actualizado', 'success');
-    loadClientes();
+    const sync = data.movimientos_sincronizados || 0;
+    showToast(`Cliente actualizado` + (sync > 0 ? ` · ${sync} movimientos sincronizados` : ''), 'success');
+    // Refrescar todas las vistas que pueden estar mostrando este cliente:
+    if (typeof loadClientes === 'function') loadClientes();
+    if (typeof loadFacturacion === 'function') loadFacturacion(typeof FACT_PAGE !== 'undefined' ? FACT_PAGE : 0);
+    // Consulta de Movimientos: refrescar sólo si la vista está visible
+    const consultaView = document.getElementById('view-consulta');
+    if (consultaView && consultaView.style.display !== 'none' && typeof loadConsultaMovs === 'function') {
+      loadConsultaMovs();
+    }
   } else {
     showToast('Error: ' + (data?.error || 'no se pudo actualizar'), 'error');
   }

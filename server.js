@@ -721,6 +721,14 @@ app.put('/api/clientes/:id', requireAuth, (req, res) => {
   const c = req.body;
   const now = nowCL();
   const rutNorm = normalizeRut(c.rut);
+  let movsSincronizados = 0;
+
+  // Permiso: empresa sólo puede editar clientes de su propia empresa
+  const target = db.prepare('SELECT empresa_id FROM clientes WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (req.user.role !== 'admin' && target.empresa_id !== req.user.empresa) {
+    return res.status(403).json({ error: 'Sin permiso para editar este cliente' });
+  }
 
   db.transaction(() => {
     // Actualizar datos del cliente
@@ -729,18 +737,38 @@ app.put('/api/clientes/:id', requireAuth, (req, res) => {
       WHERE id=?
     `).run(c.tipo, c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, now, req.params.id);
 
-    // Sincronizar email_receptor en movimientos pendientes/listos del mismo RUT
-    if (c.email && rutNorm) {
-      const synced = db.prepare(`
+    // Propagar datos del cliente a movimientos no facturados del mismo RUT en esta empresa.
+    // razon_social/giro/direccion/comuna/ciudad: cliente es source of truth → sobreescribir
+    // email_receptor: sólo si está vacío (preservar override per-mov)
+    if (rutNorm) {
+      // Para personas, usar nombre si razon_social vacío
+      const nombreParaMov = (c.razon_social && c.razon_social.trim()) ? c.razon_social : (c.nombre || '');
+      const r1 = db.prepare(`
         UPDATE movimientos
-        SET email_receptor = ?, updated_at = ?
-        WHERE rut_normalizado = ? AND estado IN ('pendiente', 'listo') AND (email_receptor IS NULL OR email_receptor = '')
-      `).run(c.email, now, rutNorm);
-      console.log(`[CLIENTES] Email sincronizado en ${synced.changes} movimientos para RUT ${rutNorm}`);
+        SET razon_social = ?,
+            giro      = COALESCE(NULLIF(?, ''), giro),
+            direccion = COALESCE(NULLIF(?, ''), direccion),
+            comuna    = COALESCE(NULLIF(?, ''), comuna),
+            ciudad    = COALESCE(NULLIF(?, ''), ciudad),
+            updated_at = ?
+        WHERE empresa_id = ? AND rut_normalizado = ? AND estado IN ('pendiente','listo','en_lote','error')
+      `).run(nombreParaMov, c.giro || '', c.direccion || '', c.comuna || '', c.ciudad || '', now, target.empresa_id, rutNorm);
+      movsSincronizados = r1.changes;
+
+      // Email sólo si vacío (preservar override) y si tenemos uno
+      if (c.email && c.email.trim()) {
+        const r2 = db.prepare(`
+          UPDATE movimientos
+          SET email_receptor = ?, updated_at = ?
+          WHERE empresa_id = ? AND rut_normalizado = ? AND estado IN ('pendiente','listo','en_lote') AND (email_receptor IS NULL OR email_receptor = '')
+        `).run(c.email.trim(), now, target.empresa_id, rutNorm);
+        console.log(`[CLIENTES PUT] Email sincronizado en ${r2.changes} movimientos para RUT ${rutNorm}`);
+      }
+      console.log(`[CLIENTES PUT] id=${req.params.id} rut=${rutNorm} → ${movsSincronizados} movs (razón/giro/dir) sincronizados`);
     }
   })();
 
-  res.json({ ok: true });
+  res.json({ ok: true, movimientos_sincronizados: movsSincronizados });
 });
 
 // Edicion rapida: solo email, telefono, giro. Sincroniza email en movs

@@ -668,6 +668,12 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
 
       <!-- LOTES VIEW -->
       <div class="view" id="view-lotes">
+        <div class="topbar" style="margin-bottom:12px;">
+          <h1>Lotes de Facturación</h1>
+          <div class="topbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="repararMovsHuerfanos()" title="Resetea movimientos cuyo lote fue eliminado pero quedaron en estado en_lote/error">🔧 Reparar movimientos huérfanos</button>
+          </div>
+        </div>
         <div class="topbar"><h1>Lotes de Facturación</h1></div>
         <div id="lotes-list"></div>
       </div>
@@ -3168,6 +3174,29 @@ function crearClienteDesdeNoEncontrado(rutNorm, empresaId, nombreInferido) {
     // Disparar auto-completar
     if (typeof buscarRUTenSII === 'function') buscarRUTenSII();
   }, 150);
+}
+
+// Reparar movimientos huérfanos: resetea movs en_lote/error cuyo lote ya
+// no existe (eliminado por algún flujo previo). Vuelven a estado 'listo'
+// y aparecen en Facturar. Aplica a TODAS las empresas.
+async function repararMovsHuerfanos() {
+  if (!confirm('¿Reparar movimientos huérfanos en TODAS las empresas? Los movimientos cuyo lote fue eliminado volverán a estado "listo" y aparecerán en Facturar.')) return;
+  const data = await apiFetch('/api/movimientos/reparar-huerfanos', { method: 'POST' });
+  if (!data?.ok) {
+    showToast('Error: ' + (data?.error || 'no se pudo'), 'error');
+    return;
+  }
+  if (data.reparados === 0) {
+    showToast('✓ Sin movimientos huérfanos. Todo está consistente.', 'success');
+    return;
+  }
+  const empresas = Object.entries(data.por_empresa || {})
+    .map(([k,v]) => `${k}: ${v}`).join(' · ');
+  showToast(`✓ ${data.reparados} movimientos reseteados a "listo" (${empresas}). Refrescando...`, 'success');
+  setTimeout(() => {
+    if (typeof loadLotes === 'function') loadLotes();
+    if (typeof loadFacturacion === 'function') loadFacturacion(0);
+  }, 800);
 }
 
 // Edición rápida de cliente desde tabla Facturar — solo email, teléfono, giro.

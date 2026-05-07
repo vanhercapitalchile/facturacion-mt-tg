@@ -291,6 +291,25 @@ try {
   console.log('[STARTUP] Limpieza de lotes con error completada');
 } catch(e) { console.warn('[STARTUP] Error en limpieza de lotes:', e.message); }
 
+// ── Migration: movs huérfanos con lote_id apuntando a lote inexistente ──
+// Caso reportado: usuario eliminó lote y movs quedaron en estado 'en_lote'
+// con lote_id de un lote ya borrado de lotes_facturacion. Resetear a 'listo'
+// para que vuelvan a aparecer en la sección Facturar. Aplica a TODAS las
+// empresas. Idempotente: solo afecta movs cuyo lote_id NO existe en lotes_facturacion
+// y que NO están facturados (esos conservan su lote_id por trazabilidad).
+try {
+  const r = db.prepare(`
+    UPDATE movimientos
+    SET estado = 'listo', lote_id = NULL, updated_at = datetime('now')
+    WHERE lote_id IS NOT NULL AND lote_id != ''
+      AND estado IN ('en_lote', 'error')
+      AND lote_id NOT IN (SELECT lote_id FROM lotes_facturacion WHERE lote_id IS NOT NULL)
+  `).run();
+  if (r.changes > 0) {
+    console.log(`[STARTUP] ${r.changes} movimientos huérfanos reseteados a 'listo' (lote_id sin lote correspondiente)`);
+  }
+} catch(e) { console.warn('[STARTUP] Error reset huérfanos:', e.message); }
+
 // ── Re-classify existing movements on startup using empresa config ─────────────
 (function reclassifyMovimientos() {
   try {
@@ -4388,6 +4407,53 @@ function mergeClientesEnriching(target, source) {
   }
   return updates;
 }
+
+// Endpoint admin: detectar y reparar movs huérfanos (estado en_lote/error con
+// lote_id apuntando a un lote inexistente en lotes_facturacion). Resetea a
+// 'listo' con lote_id NULL para que vuelvan a estar facturables.
+app.post('/api/movimientos/reparar-huerfanos', requireAuth, requireAdmin, (req, res) => {
+  const now = nowCL();
+  // Listar antes de reparar para auditoria
+  const previewSql = `
+    SELECT id, empresa_id, banco_cartola, lote_id, estado, fecha, monto, rut, razon_social
+    FROM movimientos
+    WHERE lote_id IS NOT NULL AND lote_id != ''
+      AND estado IN ('en_lote', 'error')
+      AND lote_id NOT IN (SELECT lote_id FROM lotes_facturacion WHERE lote_id IS NOT NULL)
+    ORDER BY empresa_id, fecha DESC
+  `;
+  const huerfanos = db.prepare(previewSql).all();
+
+  if (huerfanos.length === 0) {
+    return res.json({ ok: true, reparados: 0, mensaje: 'No hay movimientos huérfanos.' });
+  }
+
+  // Agrupar por empresa para reporte
+  const porEmpresa = {};
+  for (const h of huerfanos) {
+    porEmpresa[h.empresa_id] = (porEmpresa[h.empresa_id] || 0) + 1;
+  }
+
+  // Reparar
+  const r = db.prepare(`
+    UPDATE movimientos
+    SET estado = 'listo', lote_id = NULL, updated_at = ?
+    WHERE lote_id IS NOT NULL AND lote_id != ''
+      AND estado IN ('en_lote', 'error')
+      AND lote_id NOT IN (SELECT lote_id FROM lotes_facturacion WHERE lote_id IS NOT NULL)
+  `).run(now);
+
+  console.log(`[REPARAR HUÉRFANOS] ${r.changes} movs reseteados a 'listo' por ${req.user.username}. Por empresa: ${JSON.stringify(porEmpresa)}`);
+  res.json({
+    ok: true,
+    reparados: r.changes,
+    por_empresa: porEmpresa,
+    detalle_muestra: huerfanos.slice(0, 20).map(h => ({
+      id: h.id, empresa: h.empresa_id, lote_id: h.lote_id, estado_previo: h.estado,
+      fecha: h.fecha, monto: h.monto, rut: h.rut, razon_social: h.razon_social
+    }))
+  });
+});
 
 // ── Endpoint principal: procesar cartola server-side con SimpleAPI ─────────────
 app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('cartola'), async (req, res) => {

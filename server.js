@@ -122,6 +122,13 @@ try { db.exec("ALTER TABLE movimientos ADD COLUMN tipo_cartola TEXT DEFAULT 'def
 try { db.exec('ALTER TABLE movimientos ADD COLUMN dedup_key TEXT'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_dedup ON movimientos(empresa_id, banco_cartola, dedup_key)'); } catch(e){}
 
+// ── Flag email_provisional ────────────────────────────────────────────────────
+// Marca movimientos/clientes cuyo email_receptor fue asignado genericamente
+// (ej: vanhercapitalchile@gmail.com) y requiere edicion manual posterior con
+// el correo real del cliente.
+try { db.exec('ALTER TABLE movimientos ADD COLUMN email_provisional INTEGER DEFAULT 0'); } catch(e){}
+try { db.exec('ALTER TABLE clientes ADD COLUMN email_provisional INTEGER DEFAULT 0'); } catch(e){}
+
 // ── Migration: limpiar CR/LF en campos de texto (emails con newline al final) ─
 // Causa de error SF: "Field at index N does not exist" cuando un email tiene \n
 try {
@@ -753,15 +760,22 @@ app.patch('/api/clientes/:id/contacto', requireAuth, (req, res) => {
   let movsSync = 0;
 
   db.transaction(() => {
-    db.prepare('UPDATE clientes SET email=?, telefono=?, giro=?, updated_at=? WHERE id=?')
-      .run(emailClean, String(telefono).trim(), String(giro).trim(), now, id);
+    // Si el operador puso un email distinto al genérico, desmarcar email_provisional
+    const empresas = getAppData('empresas') || {};
+    const emailGenerico = (empresas[cliente.empresa_id]?.email_facturacion || '').trim().toLowerCase();
+    const esGenerico = emailClean.toLowerCase() === emailGenerico;
+    const newProvisional = (emailClean && !esGenerico) ? 0 : (emailClean ? 1 : 0);
+
+    db.prepare('UPDATE clientes SET email=?, telefono=?, giro=?, email_provisional=?, updated_at=? WHERE id=?')
+      .run(emailClean, String(telefono).trim(), String(giro).trim(), newProvisional, now, id);
 
     // Si hay email, sincronizar en movs pendientes/listos/en_lote del mismo RUT en esta empresa
+    // y propagar también el flag email_provisional (si email es real, desmarcar)
     if (emailClean && cliente.rut_normalizado) {
       const r = db.prepare(`
-        UPDATE movimientos SET email_receptor=?, updated_at=?
+        UPDATE movimientos SET email_receptor=?, email_provisional=?, updated_at=?
         WHERE empresa_id=? AND rut_normalizado=? AND estado IN ('pendiente','listo','en_lote')
-      `).run(emailClean, now, cliente.empresa_id, cliente.rut_normalizado);
+      `).run(emailClean, newProvisional, now, cliente.empresa_id, cliente.rut_normalizado);
       movsSync = r.changes;
     }
   })();
@@ -4407,6 +4421,101 @@ function mergeClientesEnriching(target, source) {
   }
   return updates;
 }
+
+// Asignar email genérico (empresa.email_facturacion) a movs pendientes tipo 34
+// que no tienen email_receptor. Marca email_provisional=1 para que el operador
+// sepa que requieren edición posterior con el correo real del cliente.
+// Pasan a estado 'listo' y aparecen en Facturar.
+app.post('/api/movimientos/asignar-email-generico', requireAuth, async (req, res) => {
+  const empresaFiltro = req.query.empresa_id || req.body?.empresa_id;
+  // Operador solo puede aplicar a su empresa; admin a la que indique o todas
+  const targetEmpresa = req.user.role === 'admin' ? empresaFiltro : req.user.empresa;
+
+  const empresas = getAppData('empresas') || {};
+  const empresaIds = targetEmpresa
+    ? [targetEmpresa]
+    : Object.keys(empresas);
+
+  const now = nowCL();
+  const stats = { por_empresa: {}, total: 0 };
+
+  db.transaction(() => {
+    for (const empId of empresaIds) {
+      const conf = empresas[empId];
+      const emailGenerico = (conf?.email_facturacion || '').trim();
+      if (!emailGenerico) {
+        stats.por_empresa[empId] = { skip: 'sin email_facturacion configurado' };
+        continue;
+      }
+
+      // Buscar candidatos: movs pendientes tipo 34 sin email
+      const candidatos = db.prepare(`
+        SELECT id, rut_normalizado FROM movimientos
+        WHERE empresa_id = ? AND tipo_dte = 34 AND estado = 'pendiente'
+          AND (email_receptor IS NULL OR email_receptor = '')
+      `).all(empId);
+
+      if (candidatos.length === 0) {
+        stats.por_empresa[empId] = { actualizados: 0, email_usado: emailGenerico };
+        continue;
+      }
+
+      // UPDATE bulk: asignar email genérico, marcar provisional, pasar a listo
+      const upd = db.prepare(`
+        UPDATE movimientos
+        SET email_receptor = ?, email_provisional = 1, estado = 'listo', updated_at = ?
+        WHERE empresa_id = ? AND tipo_dte = 34 AND estado = 'pendiente'
+          AND (email_receptor IS NULL OR email_receptor = '')
+      `).run(emailGenerico, now, empId);
+
+      // También actualizar el cliente en BD si su email está vacío
+      const rutsAfectados = [...new Set(candidatos.map(c => c.rut_normalizado).filter(r => r))];
+      let clientesAct = 0;
+      for (const rut of rutsAfectados) {
+        const r = db.prepare(`
+          UPDATE clientes
+          SET email = ?, email_provisional = 1, updated_at = ?
+          WHERE empresa_id = ? AND rut_normalizado = ?
+            AND (email IS NULL OR email = '')
+        `).run(emailGenerico, now, empId, rut);
+        clientesAct += r.changes;
+      }
+
+      stats.por_empresa[empId] = {
+        actualizados: upd.changes,
+        clientes_actualizados: clientesAct,
+        email_usado: emailGenerico
+      };
+      stats.total += upd.changes;
+    }
+  })();
+
+  console.log(`[ASIGNAR EMAIL GENERICO] ${stats.total} movs actualizados por ${req.user.username} | ${JSON.stringify(stats.por_empresa)}`);
+  res.json({ ok: true, stats });
+});
+
+// Preview de candidatos (cuántos movs tipo 34 sin email hay por empresa)
+app.get('/api/movimientos/preview-email-generico', requireAuth, (req, res) => {
+  const empresas = getAppData('empresas') || {};
+  const empresaFiltro = req.user.role === 'admin' ? req.query.empresa_id : req.user.empresa;
+  const empresaIds = empresaFiltro ? [empresaFiltro] : Object.keys(empresas);
+
+  const preview = {};
+  for (const empId of empresaIds) {
+    const conf = empresas[empId];
+    const candidatos = db.prepare(`
+      SELECT COUNT(*) as cnt FROM movimientos
+      WHERE empresa_id = ? AND tipo_dte = 34 AND estado = 'pendiente'
+        AND (email_receptor IS NULL OR email_receptor = '')
+    `).get(empId);
+    preview[empId] = {
+      candidatos: candidatos?.cnt || 0,
+      email_facturacion: conf?.email_facturacion || null,
+      puede_aplicar: !!conf?.email_facturacion
+    };
+  }
+  res.json({ ok: true, preview });
+});
 
 // Endpoint admin: detectar y reparar movs huérfanos (estado en_lote/error con
 // lote_id apuntando a un lote inexistente en lotes_facturacion). Resetea a

@@ -614,6 +614,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <h1>Facturar</h1>
           <div class="topbar-actions">
             <button class="btn btn-secondary btn-sm" onclick="loadClientesNuevos()" title="Detecta RUTs de movimientos pendientes que no están en ninguna base">&#x1F50D; Detectar clientes nuevos</button>
+            <button class="btn btn-secondary btn-sm" onclick="abrirAsignarEmailGenerico()" title="Asigna el email_facturacion de la empresa a movs tipo 34 sin email (marca como provisional)">⚠️ Asignar email genérico tipo 34</button>
           </div>
         </div>
         <div id="clientes-nuevos-panel" style="display:none;margin-bottom:16px;"></div>
@@ -5110,6 +5111,74 @@ async function loadDiagnosticoDTE() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// EMAIL GENERICO PROVISIONAL — para movs tipo 34 sin email
+// ═══════════════════════════════
+async function abrirAsignarEmailGenerico() {
+  const data = await apiFetch('/api/movimientos/preview-email-generico');
+  if (!data?.ok) { showToast('Error consultando preview', 'error'); return; }
+  const preview = data.preview || {};
+  const empresas = Object.entries(preview);
+  const totalCandidatos = empresas.reduce((s,[k,v]) => s + (v.candidatos||0), 0);
+
+  if (totalCandidatos === 0) {
+    showToast('✓ No hay movimientos tipo 34 sin email pendientes.', 'success');
+    return;
+  }
+
+  const esc = s => String(s||'').replace(/[&<>"\']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\'":'&#39;'})[c]);
+  const filasHTML = empresas
+    .filter(([k,v]) => v.candidatos > 0 || !v.puede_aplicar)
+    .map(([k,v]) => `
+      <tr>
+        <td><span class="badge badge-gray">${esc(k)}</span></td>
+        <td style="text-align:right;font-weight:500;">${v.candidatos}</td>
+        <td style="font-size:11px;color:${v.puede_aplicar?'var(--txt2)':'var(--red)'};">${esc(v.email_facturacion || '⚠ no configurado')}</td>
+      </tr>
+    `).join('');
+
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>⚠️ Asignar email genérico provisional</h3>
+    <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">
+      Esto asigna el <strong>email_facturacion</strong> de cada empresa a sus movimientos
+      <strong>tipo 34 (Factura exenta)</strong> en estado <strong>pendiente</strong> que no tienen email,
+      marcándolos como <strong>provisional</strong> para que el operador sepa que debe reemplazar
+      por el email real del cliente más adelante.
+    </p>
+    <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">
+      Los movimientos pasan a estado <strong>listo</strong> y aparecen en Facturar.
+    </p>
+    <table style="width:100%;font-size:13px;margin-bottom:12px;">
+      <thead style="background:var(--surface2);">
+        <tr><th style="text-align:left;padding:6px 10px;">Empresa</th><th style="text-align:right;padding:6px 10px;">Candidatos</th><th style="text-align:left;padding:6px 10px;">Email genérico a usar</th></tr>
+      </thead>
+      <tbody>${filasHTML}</tbody>
+    </table>
+    <div style="background:rgba(241,196,15,.07);border-left:3px solid #f1c40f;padding:8px 12px;font-size:12px;color:var(--txt2);border-radius:4px;">
+      ⚠️ <strong>Importante</strong>: cuando edités el cliente con el correo real, el flag provisional se desmarca automáticamente.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="aplicarEmailGenerico()">Aplicar a ${totalCandidatos} movimientos</button>
+    </div>
+  `;
+  showModal();
+}
+
+async function aplicarEmailGenerico() {
+  const data = await apiFetch('/api/movimientos/asignar-email-generico', { method: 'POST' });
+  if (!data?.ok) { showToast('Error: ' + (data?.error || ''), 'error'); return; }
+  closeModal();
+  const detalle = Object.entries(data.stats?.por_empresa || {})
+    .filter(([k,v]) => v.actualizados > 0)
+    .map(([k,v]) => `${k}: ${v.actualizados}`).join(' · ');
+  showToast(`✓ ${data.stats?.total || 0} movimientos actualizados (${detalle}). Refrescando...`, 'success');
+  setTimeout(() => {
+    if (typeof loadFacturacion === 'function') loadFacturacion(0);
+  }, 800);
+}
+
+// ════════════════════════════════
 // CLIENTES NUEVOS DETECTADOS (admin only — facturar)
 // ══════════════════════════════════════════════════════════════════════════════
 async function loadClientesNuevos() {
@@ -5277,7 +5346,7 @@ async function loadConsultaMovs() {
       <td><span class="badge badge-${m.estado==='facturado'?'green':m.estado==='error'?'red':m.estado==='listo'?'blue':m.estado==='interno'?'gray':'gold'}">${esc(m.estado||'—')}</span></td>
       <td style="text-align:center;">${m.tipo_dte || '—'}</td>
       <td style="font-family:monospace;font-size:11px;">${esc(m.folio_dte || '—')}</td>
-      <td style="font-size:11px;color:${m.email_receptor?'var(--txt2)':'var(--red)'};">${esc(m.email_receptor || '(sin email)')}</td>
+      <td style="font-size:11px;color:${m.email_receptor?'var(--txt2)':'var(--red)'};">${esc(m.email_receptor || '(sin email)')}${m.email_provisional ? ' <span class="badge" style="background:rgba(241,196,15,.15);color:#a86c00;border:1px solid #f1c40f;font-size:9px;padding:1px 6px;">⚠ PROV</span>' : ''}</td>
       <td style="font-size:11px;">${esc(m.lote_id || '—')}</td>
       <td style="font-family:monospace;font-size:10px;color:var(--txt3);">${esc(m.id_transferencia || '—')}</td>
       <td style="text-align:center;white-space:nowrap;">

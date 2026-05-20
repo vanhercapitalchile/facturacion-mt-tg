@@ -15,8 +15,25 @@ const JWT_SECRET = process.env.JWT_SECRET || 'facturacion-mt-tg-dev-secret-chang
 const DATA_DIR   = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new Database(path.join(DATA_DIR, 'app.db'));
-db.pragma('journal_mode = WAL');
+// ── DB open con recuperación ante corrupción ─────────────────────────────────
+const DB_PATH = path.join(DATA_DIR, 'app.db');
+let db;
+try {
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('integrity_check');
+    console.log('[DB] Abierta correctamente:', DB_PATH);
+} catch (dbErr) {
+    console.error('[DB] Error abriendo DB, iniciando recuperación:', dbErr.message);
+    const ts = Date.now();
+    for (const ext of ['', '-wal', '-shm']) {
+          const src = DB_PATH + ext;
+          if (fs.existsSync(src)) { try { fs.renameSync(src, src + '.corrupted.' + ts); } catch(e) {} }
+    }
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    console.warn('[DB] DB corrupta respaldada. Nueva DB creada. Ts:', ts);
+}
 
 // Upload config
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -5414,4 +5431,4 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   }
 });
 
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));

@@ -4545,7 +4545,7 @@ function showImportEmailsModal() {
 
     <div class="form-group">
       <label>Archivo Excel (.xlsx)</label>
-      <input type="file" id="iemail-file" accept=".xlsx,.xls" onchange="parseImportEmailsFile(this)">
+      <input type="file" id="iemail-file" accept=".xlsx,.xls,.csv" onchange="parseImportEmailsFile(this)">
       <p style="font-size:11px;color:var(--txt3);margin:4px 0 0;">
         Columnas esperadas: <code>rut</code>, <code>email</code> (obligatorias) + <code>empresa_id</code>, <code>nombre_completo</code>, <code>tipo</code>, <code>empresa_asociada_rut</code>.
       </p>
@@ -4595,9 +4595,26 @@ function parseImportEmailsFile(input) {
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
-      const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      // Intenta leer como XLSX/XLS; si falla (CSV de texto real), parsea como CSV
+      let rows;
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      } catch(xlsxErr) {
+        // Fallback: parsear como CSV de texto
+        const text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) throw new Error('Archivo CSV vacío o sin datos');
+        const sep = lines[0].includes(';') ? ';' : ',';
+        const hdrs = lines[0].split(sep).map(h => h.replace(/^"|"$/g,'').trim());
+        rows = lines.slice(1).map(line => {
+          const vals = line.split(sep).map(v => v.replace(/^"|"$/g,'').trim());
+          const obj = {};
+          hdrs.forEach((h, i) => { obj[h] = vals[i] || ''; });
+          return obj;
+        });
+      }
       // Normalizar nombres de columnas (acepta variantes con/sin tildes)
       const norm = s => String(s||'').toLowerCase().trim();
       const filas = rows.map(r => {

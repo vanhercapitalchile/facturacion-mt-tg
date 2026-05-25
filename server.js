@@ -15,24 +15,28 @@ const JWT_SECRET = process.env.JWT_SECRET || 'facturacion-mt-tg-dev-secret-chang
 const DATA_DIR   = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ── DB open con recuperación ante corrupción ─────────────────────────────────
+// ── DB open con recuperación ante corrupción ──────────────────────────────────
 const DB_PATH = path.join(DATA_DIR, 'app.db');
 let db;
 try {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('integrity_check');
-    console.log('[DB] Abierta correctamente:', DB_PATH);
+  db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.pragma('integrity_check'); // detecta corrupción temprano
+  console.log('[DB] Base de datos abierta correctamente:', DB_PATH);
 } catch (dbErr) {
-    console.error('[DB] Error abriendo DB, iniciando recuperación:', dbErr.message);
-    const ts = Date.now();
-    for (const ext of ['', '-wal', '-shm']) {
-          const src = DB_PATH + ext;
-          if (fs.existsSync(src)) { try { fs.renameSync(src, src + '.corrupted.' + ts); } catch(e) {} }
+  console.error('[DB] Error abriendo base de datos, intentando recuperación:', dbErr.message);
+  // Renombrar archivos corruptos para preservarlos
+  const ts = Date.now();
+  for (const ext of ['', '-wal', '-shm']) {
+    const src = DB_PATH + ext;
+    if (fs.existsSync(src)) {
+      try { fs.renameSync(src, src + `.corrupted.${ts}`); } catch(e) {}
     }
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    console.warn('[DB] DB corrupta respaldada. Nueva DB creada. Ts:', ts);
+  }
+  // Crear DB nueva vacía
+  db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  console.warn('[DB] DB corrupta renombrada. Se inició con base de datos nueva. Ts:', ts);
 }
 
 // Upload config
@@ -1003,6 +1007,7 @@ app.post('/api/clientes/import-emails', requireAuth, requireAdmin, (req, res) =>
         if (r1 === 'actualizado')   stats.principal_actualizado++;
         else if (r1 === 'creado')   stats.principal_creado++;
         else if (r1 === 'sin_cambio') stats.principal_sin_cambio++;
+        else if (r1 === null) stats.errores.push({ fila: i + 2, error: `RUT inválido o campos vacíos (rut=${rut}, empresa=${empresaId})` });
 
         // 2. Cliente asociado (mismo email)
         if (asociadoRut) {
@@ -5427,8 +5432,4 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
     });
   } catch(e) {
     console.error('[BASE HISTORICA]', e);
-    res.status(500).json({ error: 'Error procesando base histórica: ' + e.message });
-  }
-});
-
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+    res.status(500).json({ error:

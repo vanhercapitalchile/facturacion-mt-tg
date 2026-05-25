@@ -4547,8 +4547,16 @@ function showImportEmailsModal() {
       <label>Archivo Excel (.xlsx)</label>
       <input type="file" id="iemail-file" accept=".xlsx,.xls" onchange="parseImportEmailsFile(this)">
       <p style="font-size:11px;color:var(--txt3);margin:4px 0 0;">
-        Columnas esperadas (por nombre): empresa_id, rut, nombre_completo, email, tipo, empresa_asociada_rut, empresa_asociada_nombre.
+        Columnas esperadas: <code>rut</code>, <code>email</code> (obligatorias) + <code>empresa_id</code>, <code>nombre_completo</code>, <code>tipo</code>, <code>empresa_asociada_rut</code>.
       </p>
+    </div>
+
+    <div class="form-group" style="margin-top:10px;">
+      <label>Empresa (si no viene en el Excel)</label>
+      <select id="iemail-empresa-override" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--txt1);font-size:13px;">
+        <option value="">-- usar empresa_id del Excel --</option>
+      </select>
+      <p style="font-size:11px;color:var(--txt3);margin:4px 0 0;">Si el Excel no tiene columna empresa_id, elige la empresa aquí y se aplicará a todas las filas.</p>
     </div>
 
     <div id="iemail-preview" style="display:none;margin-top:12px;"></div>
@@ -4560,6 +4568,19 @@ function showImportEmailsModal() {
   `;
   showModal();
   window.IEMAIL_FILAS = null;
+  // Poblar dropdown de empresas
+  (function() {
+    const sel = document.getElementById('iemail-empresa-override');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- usar empresa_id del Excel --</option>';
+    const emps = DB.empresas || {};
+    Object.entries(emps).forEach(([id, e]) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = e.nombre || id;
+      sel.appendChild(opt);
+    });
+  })();
 }
 
 function parseImportEmailsFile(input) {
@@ -4588,8 +4609,10 @@ function parseImportEmailsFile(input) {
           }
           return '';
         };
+        const empresaOverride = (document.getElementById('iemail-empresa-override')?.value || '').trim();
+        const empId = get('empresa_id', 'empresa') || empresaOverride;
         return {
-          empresa_id:        get('empresa_id', 'empresa'),
+          empresa_id:        empId,
           rut:               get('rut'),
           nombre:            get('nombre_completo', 'nombre', 'razon_social', 'razón social'),
           email:             get('email', 'correo'),
@@ -4602,6 +4625,7 @@ function parseImportEmailsFile(input) {
       window.IEMAIL_FILAS = filas;
 
       // Resumen previo
+      const detectedCols = rows.length > 0 ? Object.keys(rows[0]) : [];
       const porEmp = {};
       let conAsoc = 0;
       for (const f of filas) {
@@ -4611,13 +4635,36 @@ function parseImportEmailsFile(input) {
       const empresasHTML = Object.entries(porEmp)
         .map(([k,v]) => `<span class="badge badge-blue">${k}: ${v}</span>`).join(' ');
 
-      preview.innerHTML = `
-        <div style="background:rgba(46,204,113,.05);border-left:3px solid #2ecc71;padding:12px;border-radius:4px;">
-          <strong>${filas.length} filas válidas detectadas</strong><br>
-          <div style="margin-top:6px;font-size:12px;">${empresasHTML}</div>
-          <div style="margin-top:6px;font-size:12px;color:var(--txt2);">${conAsoc} filas con RUT asociado (propagación de email a 2do RUT)</div>
-        </div>
-      `;
+      if (filas.length === 0) {
+        const empresaSeleccionada = (document.getElementById('iemail-empresa-override')?.value || '').trim();
+        const normKey = s => String(s||"").toLowerCase().trim();
+        const allKeys = rows.length > 0 ? Object.keys(rows[0]).map(normKey) : [];
+        const tieneEmpresa = allKeys.some(k => ['empresa_id','empresa'].includes(k));
+        const tieneRut = allKeys.some(k => k === 'rut');
+        const tieneEmail = allKeys.some(k => ['email','correo'].includes(k));
+        const faltantes = [];
+        if (!tieneEmpresa && !empresaSeleccionada) faltantes.push('"empresa_id" (o selecciona empresa arriba)');
+        if (!tieneRut) faltantes.push('"rut"');
+        if (!tieneEmail) faltantes.push('"email" o "correo"');
+        preview.innerHTML = `
+          <div style="background:rgba(231,76,60,.07);border-left:3px solid #e74c3c;padding:12px;border-radius:4px;">
+            <strong>⚠ 0 filas válidas — revisa el Excel</strong><br>
+            <div style="margin-top:8px;font-size:12px;color:var(--txt2);">
+              <div>Columnas detectadas: <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">${detectedCols.join(', ') || '(ninguna)'}</code></div>
+              ${faltantes.length ? `<div style="margin-top:6px;color:var(--red);">❌ Faltan: <strong>${faltantes.join(', ')}</strong></div>` : ''}
+              <div style="margin-top:6px;">Asegúrate de tener columnas <strong>rut</strong> y <strong>email</strong>. Si el Excel no tiene <strong>empresa_id</strong>, selecciona la empresa en el selector de arriba.</div>
+            </div>
+          </div>
+        `;
+      } else {
+        preview.innerHTML = `
+          <div style="background:rgba(46,204,113,.05);border-left:3px solid #2ecc71;padding:12px;border-radius:4px;">
+            <strong>${filas.length} filas válidas</strong> <span style="font-size:11px;color:var(--txt2);">(de ${rows.length} filas totales en el Excel)</span><br>
+            <div style="margin-top:6px;font-size:12px;">${empresasHTML}</div>
+            <div style="margin-top:6px;font-size:12px;color:var(--txt2);">${conAsoc} filas con RUT asociado (propagación de email a 2do RUT)</div>
+          </div>
+        `;
+      }
       apply.disabled = filas.length === 0;
     } catch(err) {
       preview.innerHTML = `<p style="color:var(--red);">Error leyendo archivo: ${err.message}</p>`;

@@ -257,10 +257,34 @@ try {
   }
 } catch(e) { console.warn('[MIGRATION] Error fix RUT con puntos:', e.message); }
 
+// ── Migration: marcar como interno movimientos de socios recién agregados ─────
+// Margoth (177277614), José (188744567), Vanessa (168693591) se agregaron 2026-05-25.
+try {
+  const nuevosRutsInternos = ['177277614', '188744567', '168693591'];
+  const placeholders = nuevosRutsInternos.map(() => '?').join(',');
+  const migResult = db.prepare(`
+    UPDATE movimientos
+    SET estado = 'interno', updated_at = datetime('now')
+    WHERE rut_normalizado IN (${placeholders})
+      AND estado IN ('pendiente', 'listo')
+  `).run(...nuevosRutsInternos);
+  if (migResult.changes > 0) {
+    console.log(`[MIGRATION] ${migResult.changes} movimientos de socios marcados como interno (Margoth/José/Vanessa)`);
+  }
+} catch(e) { console.warn('[MIGRATION] Error marcando socios como internos:', e.message); }
+
 // ── RUTs internos excluidos de facturación (transferencias entre empresas propias) ─
+// Regla de negocio: nunca facturar ni boletear a los socios/dueños de las empresas.
+// MT Inversiones: excluir RUT corporativo + Margoth Sofía Turra Guzmán (17.727.761-4)
+// TG Inversiones: excluir RUT corporativo + José Javier Turra Guzmán (18.874.456-7)
+// TS Capital:     excluir RUT corporativo + Hernán Ariel Turra Guzmán (16.793.858-2)
+// Vanher Capital: excluir RUT corporativo + Vanessa Andrea Soto Castillo (16.869.359-1)
 const RUTS_INTERNOS = [
-  '778593769', '778856980', '775063432', '779766063', // TG / MT / TS Capital / Vanher Capital
-  '167938582'  // Hernán Ariel Turra Guzmán — no facturable en ninguna empresa
+  '778593769', '778856980', '775063432', '779766063', // RUTs corporativos: TG / MT / TS Capital / Vanher Capital
+  '167938582', // Hernán Ariel Turra Guzmán (TS Capital)
+  '177277614', // Margoth Sofía Turra Guzmán (MT Inversiones)
+  '188744567', // José Javier Turra Guzmán (TG Inversiones)
+  '168693591'  // Vanessa Andrea Soto Castillo (Vanher Capital)
 ];
 try {
   db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')

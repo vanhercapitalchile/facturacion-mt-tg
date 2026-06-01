@@ -143,6 +143,50 @@ try { db.exec("ALTER TABLE movimientos ADD COLUMN tipo_cartola TEXT DEFAULT 'def
 try { db.exec('ALTER TABLE movimientos ADD COLUMN dedup_key TEXT'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_dedup ON movimientos(empresa_id, banco_cartola, dedup_key)'); } catch(e){}
 
+// ── Audit log de cargas de cartola ────────────────────────────────────────────
+// Registra TODA subida de cartola, aunque no haya generado movimientos nuevos
+// (caso histórica 100% duplicada/promovida). Permite a admin auditar quién subió
+// qué y cuándo, sin depender de GROUP BY sobre movimientos.
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS cartolas_cargas (
+    lote_carga_id TEXT PRIMARY KEY,
+    empresa_id TEXT,
+    banco_cartola TEXT,
+    tipo_cartola TEXT,
+    cargado_por TEXT,
+    fecha_carga TEXT,
+    filename TEXT,
+    total_filas INTEGER DEFAULT 0,
+    nuevos INTEGER DEFAULT 0,
+    duplicados INTEGER DEFAULT 0,
+    promovidos INTEGER DEFAULT 0,
+    errores INTEGER DEFAULT 0,
+    monto_total REAL DEFAULT 0
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cc_fecha ON cartolas_cargas(fecha_carga DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cc_empresa ON cartolas_cargas(empresa_id)');
+} catch(e){ console.warn('[SCHEMA] cartolas_cargas:', e.message); }
+
+// ── Backfill cartolas_cargas desde movimientos existentes (una sola vez) ─────
+// Para que cargas previas a la creacion del audit log aparezcan en el historial.
+try {
+  const backfilled = db.prepare(`
+    INSERT OR IGNORE INTO cartolas_cargas
+      (lote_carga_id, empresa_id, banco_cartola, tipo_cartola, cargado_por,
+       fecha_carga, total_filas, nuevos, duplicados, promovidos, errores, monto_total)
+    SELECT lote_carga_id, empresa_id, banco_cartola,
+           COALESCE(MAX(tipo_cartola),'definitiva'),
+           MAX(cargado_por),
+           MIN(fecha_carga),
+           COUNT(*), COUNT(*), 0, 0, 0,
+           COALESCE(SUM(monto),0)
+    FROM movimientos
+    WHERE lote_carga_id IS NOT NULL AND lote_carga_id != ''
+    GROUP BY lote_carga_id, empresa_id, banco_cartola
+  `).run();
+  if (backfilled.changes > 0) console.log(`[BACKFILL] ${backfilled.changes} cargas históricas registradas en cartolas_cargas`);
+} catch(e){ console.warn('[BACKFILL] cartolas_cargas:', e.message); }
+
 // ── Flag email_provisional ────────────────────────────────────────────────────
 // Marca movimientos/clientes cuyo email_receptor fue asignado genericamente
 // (ej: vanhercapitalchile@gmail.com) y requiere edicion manual posterior con
@@ -1896,16 +1940,29 @@ app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
 });
 
 // ── Historial de cargas de cartola ───────────────────────────────────────────
+// Lee del audit log cartolas_cargas → muestra TODAS las cargas (incluso las que
+// no insertaron movimientos nuevos, p.ej. histórica 100% dedup) y sin LIMIT 50.
+// Admin sin empresa_id en query ve TODAS las empresas.
 app.get('/api/cartolas/historial', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  let sql = `SELECT lote_carga_id, empresa_id, banco_cartola, fecha_carga,
-    MAX(cargado_por) as cargado_por,
-    COUNT(*) as cantidad, SUM(monto) as monto_total
-    FROM movimientos WHERE lote_carga_id IS NOT NULL AND lote_carga_id != ''`;
+  let sql = `SELECT cc.lote_carga_id, cc.empresa_id, cc.banco_cartola, cc.tipo_cartola,
+    cc.fecha_carga, cc.cargado_por, cc.filename,
+    cc.total_filas, cc.nuevos, cc.duplicados, cc.promovidos, cc.errores, cc.monto_total,
+    (SELECT COUNT(*) FROM movimientos m WHERE m.lote_carga_id = cc.lote_carga_id) as cantidad_actual,
+    (SELECT COUNT(*) FROM movimientos m WHERE m.lote_carga_id = cc.lote_carga_id AND m.estado IN ('facturado','en_lote')) as cantidad_protegida
+    FROM cartolas_cargas cc
+    WHERE 1=1`;
   const params = [];
-  if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
-  sql += ' GROUP BY lote_carga_id ORDER BY fecha_carga DESC LIMIT 50';
-  res.json(db.prepare(sql).all(...params));
+  if (empresaId) { sql += ' AND cc.empresa_id = ?'; params.push(empresaId); }
+  // Filtros opcionales (futuro: paginación si hace falta)
+  const lim = Math.min(parseInt(req.query.limit) || 500, 2000);
+  sql += ` ORDER BY cc.fecha_carga DESC LIMIT ${lim}`;
+  const rows = db.prepare(sql).all(...params);
+  // Compat con frontend existente: alias 'cantidad' = total_filas
+  for (const r of rows) {
+    if (r.cantidad == null) r.cantidad = r.total_filas;
+  }
+  res.json(rows);
 });
 
 app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
@@ -1916,7 +1973,18 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
   const params = [lote_carga_id];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
   const result = db.prepare(sql).run(...params);
-  res.json({ ok: true, eliminados: result.changes });
+  // Limpiar audit log SOLO si ya no quedan movs protegidos (facturado/en_lote)
+  // asociados a esa carga → así la fila desaparece del historial.
+  const quedanProtegidos = db.prepare(
+    `SELECT COUNT(*) as c FROM movimientos WHERE lote_carga_id = ?`
+  ).get(lote_carga_id).c;
+  if (quedanProtegidos === 0) {
+    let auditSql = 'DELETE FROM cartolas_cargas WHERE lote_carga_id = ?';
+    const auditParams = [lote_carga_id];
+    if (empresaId) { auditSql += ' AND empresa_id = ?'; auditParams.push(empresaId); }
+    db.prepare(auditSql).run(...auditParams);
+  }
+  res.json({ ok: true, eliminados: result.changes, audit_eliminado: quedanProtegidos === 0 });
 });
 
 // Helper: determinar tipo_dte según RUT y config de empresa
@@ -4802,9 +4870,10 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
          nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto,
          estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor,
          nombre_item, descripcion_item, precio, monto_exento, monto_total,
-         fecha_carga, created_at, updated_at, lote_carga_id, tipo_cartola, dedup_key)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         fecha_carga, created_at, updated_at, lote_carga_id, tipo_cartola, dedup_key, cargado_por)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
+    const cargadoPor  = req.user.username || 'sistema';
     const insertCliente = db.prepare(`
       INSERT OR IGNORE INTO clientes
         (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion,
@@ -5014,7 +5083,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             monto, monto, monto,   // precio, monto_exento, monto_total
             now, now, now, loteCargaId,
             (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
-            dedupKey
+            dedupKey,
+            cargadoPor
           );
           nuevos++;
           resultDetails.push({
@@ -5047,6 +5117,26 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       }
     }
 
+    // ── Audit log: registrar TODA carga, aunque 0 nuevos (caso histórica 100% dedup) ──
+    // Se omite solo si fue preview (no se persistio nada en BD).
+    if (!previewRolledBack) {
+      try {
+        const montoTotalCarga = movimientosRaw.reduce((s, m) => s + (parseFloat(m.monto) || 0), 0);
+        db.prepare(`INSERT OR REPLACE INTO cartolas_cargas
+          (lote_carga_id, empresa_id, banco_cartola, tipo_cartola, cargado_por,
+           fecha_carga, filename, total_filas, nuevos, duplicados, promovidos, errores, monto_total)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(
+            loteCargaId, empresaId, bancoCartola,
+            (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
+            cargadoPor, now, req.file.originalname || '',
+            movimientosRaw.length, nuevos, duplicados, promovidos, errores, montoTotalCarga
+          );
+      } catch(auditErr) {
+        console.error('[AUDIT cartolas_cargas]', auditErr.message);
+      }
+    }
+
     res.json({
       ok: true,
       preview: previewRolledBack,
@@ -5056,6 +5146,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       nuevos, duplicados, errores, promovidos,
       clientes_nuevos: clientesNuevos,
       simpleapi_consultados: simpleApiConsultados,
+      cargado_por: cargadoPor,
       lote_carga_id: previewRolledBack ? null : loteCargaId,
       filename: req.file.originalname,
       primera_carga_dup: primerDupFecha,
@@ -5401,7 +5492,6 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
           }
           continue;
         }
-
         // Fecha de emisión (SF CSV: 'FechaEmision' | TS Capital Excel: 'Fecha de emisión (*)')
         let fechaStr = '';
         const fechaRaw = row['FechaEmision'] || row['Fecha de emisión (*)'] || row['Fecha de emisión'];

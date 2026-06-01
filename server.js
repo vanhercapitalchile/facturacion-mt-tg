@@ -167,8 +167,10 @@ try {
   db.exec('CREATE INDEX IF NOT EXISTS idx_cc_empresa ON cartolas_cargas(empresa_id)');
 } catch(e){ console.warn('[SCHEMA] cartolas_cargas:', e.message); }
 
-// ── Backfill cartolas_cargas desde movimientos existentes (una sola vez) ─────
-// Para que cargas previas a la creacion del audit log aparezcan en el historial.
+// ── Backfill cartolas_cargas desde movimientos existentes (cada startup) ─────
+// 1) Inserta cargas nuevas que aún no estén en el audit log.
+// 2) Refresca cargado_por desde movimientos cuando el audit log lo tiene NULL
+//    pero los movs sí tienen el username (caso uploads viejos o vía legacy).
 try {
   const backfilled = db.prepare(`
     INSERT OR IGNORE INTO cartolas_cargas
@@ -185,6 +187,23 @@ try {
     GROUP BY lote_carga_id, empresa_id, banco_cartola
   `).run();
   if (backfilled.changes > 0) console.log(`[BACKFILL] ${backfilled.changes} cargas históricas registradas en cartolas_cargas`);
+
+  // Refresca cargado_por en filas existentes donde el audit log lo perdió.
+  const refreshed = db.prepare(`
+    UPDATE cartolas_cargas
+    SET cargado_por = (
+      SELECT MAX(m.cargado_por) FROM movimientos m
+      WHERE m.lote_carga_id = cartolas_cargas.lote_carga_id
+        AND m.cargado_por IS NOT NULL AND m.cargado_por != ''
+    )
+    WHERE (cargado_por IS NULL OR cargado_por = '')
+      AND EXISTS (
+        SELECT 1 FROM movimientos m
+        WHERE m.lote_carga_id = cartolas_cargas.lote_carga_id
+          AND m.cargado_por IS NOT NULL AND m.cargado_por != ''
+      )
+  `).run();
+  if (refreshed.changes > 0) console.log(`[BACKFILL] ${refreshed.changes} cargado_por refrescados desde movimientos`);
 } catch(e){ console.warn('[BACKFILL] cartolas_cargas:', e.message); }
 
 // ── Flag email_provisional ────────────────────────────────────────────────────
@@ -1917,6 +1936,23 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
       }
     }
   })();
+
+  // Audit log: registrar carga aunque venga del modo legacy (SheetJS en browser).
+  // Mismo formato que el endpoint server-side para que aparezca en el historial.
+  try {
+    const montoTotalCarga = (movs || []).reduce((s, m) => s + (parseFloat(m.monto) || 0), 0);
+    db.prepare(`INSERT OR REPLACE INTO cartolas_cargas
+      (lote_carga_id, empresa_id, banco_cartola, tipo_cartola, cargado_por,
+       fecha_carga, filename, total_filas, nuevos, duplicados, promovidos, errores, monto_total)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(
+        loteCargaId, empresaId, banco_cartola,
+        'definitiva', cargadoPor, now, '',
+        (movs || []).length, nuevos, duplicados, 0, errores, montoTotalCarga
+      );
+  } catch(auditErr) {
+    console.error('[AUDIT cartolas_cargas legacy]', auditErr.message);
+  }
 
   res.json({ ok: true, nuevos, duplicados, errores, total: movs.length, results });
 });

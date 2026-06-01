@@ -132,8 +132,12 @@ try { db.exec('ALTER TABLE lotes_facturacion ADD COLUMN nombre TEXT'); } catch(e
 try { db.exec('ALTER TABLE movimientos ADD COLUMN cargado_por TEXT'); } catch(e){}
 
 // ── Soporte cartola provisoria Santander ──────────────────────────────────────
-// tipo_cartola: 'definitiva' (tradicional/Transferencias Recibidas) | 'provisoria' (Cartola provisoria)
-// dedup_key: clave canónica común a ambos formatos para deduplicar entre provisoria y tradicional.
+// tipo_cartola: 'definitiva' (tradicional/Transferencias Recibidas, diaria)
+//             | 'provisoria' (Cartola provisoria Cta. Cte., preliminar del día)
+//             | 'historica'  (Cartola Histórica CtaCte, oficial de período cerrado)
+// dedup_key: clave canónica común a los 3 formatos. La histórica detecta y no
+// duplica movimientos ya cargados vía provisoria o tradicional, y promueve
+// provisorias previas a estado oficial conservando facturación.
 //   Formato: {YYYY-MM-DD}_{monto_int}_{glosa_normalizada}_{seq_dentro_de_bucket}
 try { db.exec("ALTER TABLE movimientos ADD COLUMN tipo_cartola TEXT DEFAULT 'definitiva'"); } catch(e){}
 try { db.exec('ALTER TABLE movimientos ADD COLUMN dedup_key TEXT'); } catch(e){}
@@ -3962,9 +3966,12 @@ function detectarTipoSantander(buffer) {
   if (!XLSX_LIB) return 'definitiva';
   try {
     const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+    // Histórica: sheet 'Cartola Historica CtaCte' o A1 'Cartolas históricas...'
+    if (wb.SheetNames.some(n => /hist(o|ó)rica/i.test(n))) return 'historica';
     if (wb.SheetNames.some(n => /provisoria/i.test(n))) return 'provisoria';
     const ws0 = wb.Sheets[wb.SheetNames[0]];
     const a1 = String(ws0?.A1?.v || '').toLowerCase();
+    if (a1.includes('hist') && a1.includes('rica')) return 'historica';
     if (a1.includes('cartola provisoria')) return 'provisoria';
     return 'definitiva';
   } catch(e) { return 'definitiva'; }
@@ -4164,7 +4171,7 @@ function parseSantanderProvisoria(buffer) {
   if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   // Preferir sheet con "provisoria" en el nombre; sino, el primero
-  const sheetName = wb.SheetNames.find(n => /provisoria/i.test(n)) || wb.SheetNames[0];
+  const sheetName = wb.SheetNames.find(n => /provisoria|hist(o|ó)rica/i.test(n)) || wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
@@ -4674,7 +4681,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     let movimientosRaw = [];
     try {
       if (bancoCartola === 'SANTANDER') {
-        movimientosRaw = tipoCartolaSantander === 'provisoria'
+        // provisoria e histórica comparten estructura → mismo parser.
+        movimientosRaw = (tipoCartolaSantander === 'provisoria' || tipoCartolaSantander === 'historica')
           ? parseSantanderProvisoria(req.file.buffer)
           : parseSantanderCartola(req.file.buffer);
       }
@@ -4745,8 +4753,11 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                                     FROM movimientos
                                     WHERE empresa_id = ? AND banco_cartola = ? AND dedup_key = ?`);
     // Promoción in-place provisoria → definitiva (preserva estado de facturación)
+    // Promote: cuando una cartola oficial (definitiva o histórica) llega para un mov
+    // ya capturado como provisoria, actualiza in-place conservando estado/lote/folio.
+    // tipo_cartola resultante refleja la fuente que finalizó el mov (auditoría).
     const promote     = db.prepare(`UPDATE movimientos
-                                    SET tipo_cartola = 'definitiva',
+                                    SET tipo_cartola = ?,
                                         id_transferencia = ?,
                                         id_compuesto = ?,
                                         glosa = ?,
@@ -4772,7 +4783,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
-    const loteCargaId = `${empresaId}-${bancoCartola}-${tipoCartolaSantander === 'provisoria' ? 'prov-' : ''}${Date.now()}`.toLowerCase().replace(/\s/g, '-');
+    const lotePrefix  = tipoCartolaSantander === 'provisoria' ? 'prov-' : (tipoCartolaSantander === 'historica' ? 'hist-' : '');
+    const loteCargaId = `${empresaId}-${bancoCartola}-${lotePrefix}${Date.now()}`.toLowerCase().replace(/\s/g, '-');
     let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0, promovidos = 0;
     const resultDetails = [];
     let primerDupFecha = null, primerDupLote = null;
@@ -4800,10 +4812,14 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           if (bancoCartola === 'SANTANDER' && dedupKey) {
             const matchPrev = checkDedup.get(empresaId, bancoCartola, dedupKey);
             if (matchPrev) {
-              if (tipoCartolaSantander === 'definitiva' && matchPrev.tipo_cartola === 'provisoria') {
-                // Promoción provisoria → definitiva (conserva estado/lote/folio)
+              // Una cartola oficial (definitiva o histórica) promueve provisorias previas.
+              const esOficialActual = (tipoCartolaSantander === 'definitiva' || tipoCartolaSantander === 'historica');
+              if (esOficialActual && matchPrev.tipo_cartola === 'provisoria') {
+                // Promoción provisoria → oficial (conserva estado/lote/folio).
+                // tipo_cartola refleja la fuente ('definitiva' o 'historica').
                 const rutNormProm = normalizeRut(mov.rut || mov.rut_digits || '');
                 promote.run(
+                  tipoCartolaSantander,
                   idTransf, idCompuesto, mov.glosa || '',
                   mov.rut || '', rutNormProm, mov.nombre_origen || '',
                   now, matchPrev.id

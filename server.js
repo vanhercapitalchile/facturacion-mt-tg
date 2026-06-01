@@ -4005,11 +4005,38 @@ function formatRutDigits(rutDigits) {
   return formatted + '-' + dv;
 }
 
+// ── Helper: recalcular !ref del sheet cuando viene corrupto ────────
+// Algunos bancos (Banco Chile, etc.) generan .xls(x) con un !ref incorrecto
+// que declara un rango menor al real. Si XLSX respeta ese rango, solo lee
+// las primeras filas y oculta el resto del archivo.
+function ensureFullRange(ws) {
+  if (!ws) return;
+  const cells = Object.keys(ws).filter(k => !k.startsWith('!'));
+  if (cells.length === 0) return;
+  let maxR = 0, maxC = 0;
+  for (const k of cells) {
+    const m = k.match(/^([A-Z]+)(\d+)$/);
+    if (!m) continue;
+    let col = 0;
+    for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
+    col--;
+    const row = parseInt(m[2]) - 1;
+    if (row > maxR) maxR = row;
+    if (col > maxC) maxC = col;
+  }
+  const newRef = XLSX_LIB.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
+  if (ws['!ref'] !== newRef) {
+    console.log(`[CARTOLA] !ref corregido: ${ws['!ref']} → ${newRef} (${cells.length} celdas)`);
+    ws['!ref'] = newRef;
+  }
+}
+
 // ── Parser BCI (.xls) ─────────────────────────────────────────────────────────
 function parseBCICartola(buffer) {
   if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
+  ensureFullRange(ws);
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   const movimientos = [];
@@ -4274,6 +4301,7 @@ function parseBancoEstadoCartola(buffer) {
   // Buscar sheet "Transferencias" o usar el primero disponible
   const sheetName = wb.SheetNames.includes('Transferencias') ? 'Transferencias' : wb.SheetNames[wb.SheetNames.length - 1];
   const ws = wb.Sheets[sheetName];
+  ensureFullRange(ws);
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   const movimientos = [];
@@ -4355,6 +4383,7 @@ function parseBancoChileCartola(buffer) {
   if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
   const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
+  ensureFullRange(ws);  // Banco Chile genera !ref corrupto con menos filas que las reales
   const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   const movimientos = [];
@@ -4659,7 +4688,8 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       if (fname.includes('santander'))                            bancoCartola = 'SANTANDER';
       else if (fname.includes('banco_estado') || fname.includes('bancoestado') || fname.includes('banco estado'))
                                                                   bancoCartola = 'BANCO ESTADO';
-      else if (fname.includes('banco_chile') || fname.includes('bancochile') || fname.includes('banco chile') || fname.includes('bchile') || fname.includes('chile'))
+      else if (fname.includes('banco_chile') || fname.includes('bancochile') || fname.includes('banco chile') || fname.includes('bchile') || fname.includes('chile')
+            || fname.includes('consultas-recibidas') || fname.includes('consultas_recibidas') || fname.includes('tef_empresa') || fname.includes('tefempresa'))
                                                                   bancoCartola = 'BANCO CHILE';
       else if (fname.includes('bci'))                             bancoCartola = 'BCI';
       else bancoCartola = fname.endsWith('.xlsx') ? 'SANTANDER' : 'BCI';

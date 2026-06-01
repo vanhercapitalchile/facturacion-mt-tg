@@ -2004,7 +2004,14 @@ app.get('/api/cartolas/historial', requireAuth, (req, res) => {
   if (empresaId) { sql += ' AND cc.empresa_id = ?'; params.push(empresaId); }
   // Filtros opcionales (futuro: paginación si hace falta)
   const lim = Math.min(parseInt(req.query.limit) || 500, 2000);
-  sql += ` ORDER BY cc.fecha_carga DESC LIMIT ${lim}`;
+  // Orden cronológico real: fecha_carga es texto DD-MM-YYYY HH:MM:SS (formato es-CL)
+  // sortear como TEXT ordena por día primero (mal). Extraer YYYY/MM/DD/tiempo para sortear bien.
+  sql += ` ORDER BY
+    SUBSTR(cc.fecha_carga, 7, 4) DESC,
+    SUBSTR(cc.fecha_carga, 4, 2) DESC,
+    SUBSTR(cc.fecha_carga, 1, 2) DESC,
+    SUBSTR(cc.fecha_carga, 13) DESC
+    LIMIT ${lim}`;
   const rows = db.prepare(sql).all(...params);
   // Compat con frontend existente: alias 'cantidad' = total_filas
   for (const r of rows) {
@@ -2033,6 +2040,78 @@ app.delete('/api/cartolas/:lote_carga_id', requireAuth, (req, res) => {
     db.prepare(auditSql).run(...auditParams);
   }
   res.json({ ok: true, eliminados: result.changes, audit_eliminado: quedanProtegidos === 0 });
+});
+
+// ── Detectar duplicados cross-lote ───────────────────────────────────────────
+// Para una carga (lote_carga_id), busca movimientos en OTRAS cargas de la misma
+// empresa+banco que coincidan en (fecha, monto, rut_normalizado) — útil para
+// auditar si una histórica re-cargó movs que ya estaban facturados en cargas
+// anteriores y el dedup falló por dedup_key=NULL en filas viejas.
+app.get('/api/cartolas/:lote_carga_id/duplicados-cross-lote', requireAuth, (req, res) => {
+  const { lote_carga_id } = req.params;
+  const empresaId = filterByEmpresa(req);
+  // Resolver empresa+banco del lote
+  const info = db.prepare(`SELECT empresa_id, banco_cartola FROM cartolas_cargas WHERE lote_carga_id = ?`).get(lote_carga_id);
+  if (!info) return res.status(404).json({ error: 'Carga no encontrada' });
+  if (empresaId && info.empresa_id !== empresaId) return res.status(403).json({ error: 'Sin acceso a esta empresa' });
+
+  // Match: misma empresa+banco, otro lote_carga_id, misma fecha+monto+rut
+  // (incluye match con rut_normalizado vacío, pero solo si fecha+monto coinciden)
+  const matches = db.prepare(`
+    SELECT
+      a.id as id_a, a.fecha as fecha_a, a.monto as monto_a, a.rut_normalizado as rut_a,
+      a.estado as estado_a, a.razon_social as razon_a, a.lote_carga_id as lote_a,
+      b.id as id_b, b.lote_carga_id as lote_b, b.estado as estado_b,
+      b.folio_dte as folio_b, b.fecha_facturacion as fecha_fact_b
+    FROM movimientos a
+    INNER JOIN movimientos b ON
+      a.empresa_id = b.empresa_id
+      AND a.banco_cartola = b.banco_cartola
+      AND a.fecha = b.fecha
+      AND a.monto = b.monto
+      AND COALESCE(a.rut_normalizado,'') = COALESCE(b.rut_normalizado,'')
+      AND a.id != b.id
+      AND a.lote_carga_id != b.lote_carga_id
+    WHERE a.lote_carga_id = ?
+      AND a.empresa_id = ?
+      AND a.banco_cartola = ?
+    ORDER BY a.fecha DESC, a.monto DESC
+  `).all(lote_carga_id, info.empresa_id, info.banco_cartola);
+
+  // Agrupar por mov_a (un mov_a puede tener varios mov_b matcheando, pero raro)
+  const grouped = new Map();
+  for (const m of matches) {
+    const key = m.id_a;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: m.id_a, fecha: m.fecha_a, monto: m.monto_a, rut: m.rut_a,
+        estado: m.estado_a, razon_social: m.razon_a,
+        matches: []
+      });
+    }
+    grouped.get(key).matches.push({
+      id: m.id_b, lote_carga_id: m.lote_b, estado: m.estado_b,
+      folio_dte: m.folio_b, fecha_facturacion: m.fecha_fact_b
+    });
+  }
+  const dupes = [...grouped.values()];
+
+  // Resumen
+  const totalEnLote = db.prepare(
+    `SELECT COUNT(*) as c FROM movimientos WHERE lote_carga_id = ?`
+  ).get(lote_carga_id).c;
+  const matchedFacturados = dupes.filter(d =>
+    d.matches.some(m => m.estado === 'facturado' || m.estado === 'en_lote')
+  ).length;
+
+  res.json({
+    ok: true,
+    lote_carga_id, empresa_id: info.empresa_id, banco_cartola: info.banco_cartola,
+    total_en_lote: totalEnLote,
+    movs_con_match_otro_lote: dupes.length,
+    movs_que_duplican_un_facturado: matchedFacturados,
+    detalle: dupes.slice(0, 200)  // limit response size
+  });
 });
 
 // Helper: determinar tipo_dte según RUT y config de empresa

@@ -2297,14 +2297,70 @@ async function loadHistorialCartolas() {
           <span style="color:#7c3aed;">${r.promovidos||0}</span>
         </td>
         <td style="text-align:right;padding:8px 4px;">$${Number(r.monto_total||0).toLocaleString('es-CL')}</td>
-        <td style="text-align:center;padding:8px 4px;">
+        <td style="text-align:center;padding:8px 4px;white-space:nowrap;">
+          <button class="btn btn-sm" style="background:#6366f1;color:#fff;font-size:11px;padding:4px 8px;margin-right:4px;"
+            onclick="auditarDuplicadosCarga('${r.lote_carga_id}')" title="Buscar duplicados cross-lote (misma fecha+monto+RUT en otras cargas)">🔍 Auditar</button>
           <button class="btn btn-sm" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 10px;"
             onclick="eliminarCarga('${r.lote_carga_id}', ${r.total_filas || r.cantidad || 0})" ${titleProt}>🗑 Eliminar</button>
         </td>
       </tr>`; }).join('')}</tbody>
-    </table>`;
+    </table>
+    <div id="audit-carga-result" style="margin-top:12px;"></div>`;
   } catch(e) {
     el.innerHTML = '<p style="color:#e74c3c;font-size:13px;">Error cargando historial</p>';
+  }
+}
+
+async function auditarDuplicadosCarga(loteCargaId) {
+  const out = document.getElementById('audit-carga-result');
+  if (out) out.innerHTML = '<p style="color:var(--txt2);">Buscando duplicados…</p>';
+  try {
+    const r = await apiFetch(`/api/cartolas/${encodeURIComponent(loteCargaId)}/duplicados-cross-lote`);
+    if (!r.ok) throw new Error(r.error || 'error');
+    const det = r.detalle || [];
+    const alerta = r.movs_que_duplican_un_facturado > 0
+      ? `<div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;padding:10px;border-radius:8px;margin-bottom:8px;">
+           ⚠️ <strong>${r.movs_que_duplican_un_facturado}</strong> movs de esta carga duplican un movimiento que ya está <strong>facturado o en lote</strong> en otra carga. Eliminar esta carga es seguro: solo borra los pendientes nuevos.
+         </div>`
+      : `<div style="background:rgba(16,185,129,.1);border:1px solid #10b981;padding:10px;border-radius:8px;margin-bottom:8px;">
+           ✅ Ninguno de los movs de esta carga duplica un facturado/en_lote previo.
+         </div>`;
+    const resumen = `<div style="font-size:13px;color:var(--txt2);margin-bottom:8px;">
+      Carga <code>${r.lote_carga_id}</code> · ${r.empresa_id} · ${r.banco_cartola}<br>
+      Total en lote: <strong>${r.total_en_lote}</strong> ·
+      Con match en otro lote: <strong>${r.movs_con_match_otro_lote}</strong> ·
+      Duplican facturado/en_lote: <strong style="color:#ef4444;">${r.movs_que_duplican_un_facturado}</strong>
+    </div>`;
+    const tabla = det.length === 0 ? '' : `
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="color:var(--txt2);border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:6px;">Fecha</th>
+          <th style="text-align:right;padding:6px;">Monto</th>
+          <th style="text-align:left;padding:6px;">RUT</th>
+          <th style="text-align:left;padding:6px;">Razón social</th>
+          <th style="text-align:left;padding:6px;">Estado este lote</th>
+          <th style="text-align:left;padding:6px;">Match en otro lote</th>
+        </tr></thead>
+        <tbody>${det.map(d => {
+          const matchInfo = d.matches.map(m =>
+            `<span style="color:${m.estado === 'facturado' ? '#ef4444' : (m.estado === 'en_lote' ? '#f59e0b' : 'var(--txt2)')};">
+               ${m.estado}${m.folio_dte ? ' · folio ' + m.folio_dte : ''}
+             </span>`).join('<br>');
+          return `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:6px;">${d.fecha || '—'}</td>
+            <td style="text-align:right;padding:6px;">$${Number(d.monto||0).toLocaleString('es-CL')}</td>
+            <td style="padding:6px;">${d.rut || '—'}</td>
+            <td style="padding:6px;">${d.razon_social || '—'}</td>
+            <td style="padding:6px;">${d.estado}</td>
+            <td style="padding:6px;font-size:11px;">${matchInfo}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      ${det.length >= 200 ? '<p style="color:var(--txt2);font-size:11px;">(mostrando primeros 200)</p>' : ''}
+    `;
+    if (out) out.innerHTML = `<div class="card" style="padding:12px;"><h4 style="margin:0 0 8px 0;">🔍 Auditoría de duplicados cross-lote</h4>${resumen}${alerta}${tabla}</div>`;
+  } catch(e) {
+    if (out) out.innerHTML = `<p style="color:#ef4444;">Error: ${e.message}</p>`;
   }
 }
 

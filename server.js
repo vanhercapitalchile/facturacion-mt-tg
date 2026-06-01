@@ -586,7 +586,19 @@ try {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    // HTML nunca se cachea (evita que UI vieja persista tras deploy).
+    // Assets estáticos (PNG, ICO, etc.) sí, con revalidación corta.
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+  }
+}));
 
 function sha256(str) { return crypto.createHash('sha256').update(str).digest('hex'); }
 
@@ -5589,6 +5601,11 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
   } catch(e) {
     console.error('[BASE HISTORICA]', e);
     res.status(500).json({ error: 'Error procesando base histórica: ' + e.message });
+  }
+});
+
+app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+torica: ' + e.message });
   }
 });
 

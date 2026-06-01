@@ -2261,28 +2261,47 @@ async function loadHistorialCartolas() {
       el.innerHTML = '<p style="color:var(--txt2);font-size:13px;padding:8px 0;">No hay cargas registradas.</p>';
       return;
     }
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    el.innerHTML = `<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;">${data.length} cargas registradas (TODAS las subidas, sin límite)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="color:var(--txt2);border-bottom:1px solid var(--border);">
         <th style="text-align:left;padding:8px 4px;">Empresa</th>
         <th style="text-align:left;padding:8px 4px;">Banco</th>
+        <th style="text-align:left;padding:8px 4px;">Tipo</th>
         <th style="text-align:left;padding:8px 4px;">Fecha carga</th>
         <th style="text-align:left;padding:8px 4px;">Subida por</th>
-        <th style="text-align:right;padding:8px 4px;">Movs.</th>
+        <th style="text-align:left;padding:8px 4px;">Archivo</th>
+        <th style="text-align:right;padding:8px 4px;">Filas</th>
+        <th style="text-align:right;padding:8px 4px;" title="Nuevos / Duplicados / Promovidos">N / D / P</th>
         <th style="text-align:right;padding:8px 4px;">Monto total</th>
         <th style="text-align:center;padding:8px 4px;">Acción</th>
       </tr></thead>
-      <tbody>${data.map(r => `<tr style="border-bottom:1px solid var(--border);">
+      <tbody>${data.map(r => {
+        const tipoLabel = r.tipo_cartola === 'historica' ? '<span style="background:#7c3aed;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">HIST</span>'
+                        : r.tipo_cartola === 'provisoria' ? '<span style="background:#f59e0b;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">PROV</span>'
+                        : '<span style="background:#10b981;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">DEF</span>';
+        const subidaPor = r.cargado_por ? `<span style="color:var(--accent);font-weight:600;">${r.cargado_por}</span>` : '<span style="color:var(--txt2);">—</span>';
+        const fname = r.filename ? (r.filename.length > 28 ? r.filename.substring(0,26) + '…' : r.filename) : '—';
+        const protegida = (r.cantidad_protegida || 0) > 0;
+        const titleProt = protegida ? `title="${r.cantidad_protegida} movs ya facturados — solo se borran los pendientes"` : '';
+        return `<tr style="border-bottom:1px solid var(--border);">
         <td style="padding:8px 4px;">${r.empresa_id}</td>
         <td style="padding:8px 4px;">${r.banco_cartola}</td>
+        <td style="padding:8px 4px;">${tipoLabel}</td>
         <td style="padding:8px 4px;">${(r.fecha_carga||'').substring(0,16)}</td>
-        <td style="padding:8px 4px;font-weight:600;color:var(--accent);">${r.cargado_por || '—'}</td>
-        <td style="text-align:right;padding:8px 4px;">${r.cantidad}</td>
+        <td style="padding:8px 4px;">${subidaPor}</td>
+        <td style="padding:8px 4px;font-size:11px;color:var(--txt2);" title="${(r.filename||'').replace(/"/g,'&quot;')}">${fname}</td>
+        <td style="text-align:right;padding:8px 4px;">${r.total_filas || r.cantidad || 0}</td>
+        <td style="text-align:right;padding:8px 4px;font-size:11px;">
+          <span style="color:#10b981;font-weight:600;">${r.nuevos||0}</span> /
+          <span style="color:var(--txt2);">${r.duplicados||0}</span> /
+          <span style="color:#7c3aed;">${r.promovidos||0}</span>
+        </td>
         <td style="text-align:right;padding:8px 4px;">$${Number(r.monto_total||0).toLocaleString('es-CL')}</td>
         <td style="text-align:center;padding:8px 4px;">
           <button class="btn btn-sm" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 10px;"
-            onclick="eliminarCarga('${r.lote_carga_id}', ${r.cantidad})">🗑 Eliminar</button>
+            onclick="eliminarCarga('${r.lote_carga_id}', ${r.total_filas || r.cantidad || 0})" ${titleProt}>🗑 Eliminar</button>
         </td>
-      </tr>`).join('')}</tbody>
+      </tr>`; }).join('')}</tbody>
     </table>`;
   } catch(e) {
     el.innerHTML = '<p style="color:#e74c3c;font-size:13px;">Error cargando historial</p>';

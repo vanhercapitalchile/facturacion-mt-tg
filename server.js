@@ -732,6 +732,25 @@ function normalizeRut(rut) {
   return String(rut).replace(/[.\-\s]/g, '').toUpperCase();
 }
 
+// Valida dígito verificador chileno (módulo 11). Acepta RUT en cualquier formato.
+// Útil para descartar "RUTs" extraídos del fallback regex de glosa que en realidad
+// son números de factura/referencia que casualmente tienen 7-9 dígitos + char final.
+function validarDvRut(rut) {
+  const clean = normalizeRut(rut);
+  if (clean.length < 2) return false;
+  const cuerpo = clean.slice(0, -1);
+  const dv = clean.slice(-1);
+  if (!/^\d+$/.test(cuerpo)) return false;
+  let suma = 0, mult = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += parseInt(cuerpo[i]) * mult;
+    mult = mult === 7 ? 2 : mult + 1;
+  }
+  const resto = 11 - (suma % 11);
+  const dvCalc = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+  return dv === dvCalc;
+}
+
 function formatRut(rut) {
   const clean = normalizeRut(rut);
   if (clean.length < 2) return rut;
@@ -3086,7 +3105,10 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // Payload Haulmer v2 — orden de campos sigue esquema SII estricto
       // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd → NO tiene FmaPago
       // Facturas (33/34): DTE_v10.xsd → tiene FmaPago
+      // Tipo afecto (33 Factura, 39 Boleta afecta): monto incluye IVA 19% → desglosar.
+      // Tipo exento (34 Factura Exenta, 41 Boleta Exenta): monto íntegro a MntExe.
       const esBoleta = (tipoDte === 39 || tipoDte === 41);
+      const esAfecto = (tipoDte === 33 || tipoDte === 39);
 
       // ── Ley 21.713: validacion previa para boletas > 135 UF ──────────────────
       // Si supera el umbral y falta RUT real o email del cliente, NO se emite —
@@ -3175,6 +3197,33 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         CiudadRecep: m.ciudad || ciudadOrigen
       };
 
+      // Totales: si tipo es AFECTO (33/39) → neto + IVA 19%. Si EXENTO (34/41) → todo MntExe.
+      // Monto stored ya incluye IVA cuando aplica (transferencia recibida total).
+      const totales = esAfecto
+        ? (() => {
+            const neto = Math.round(monto / 1.19);
+            const iva  = monto - neto;
+            return { MntNeto: neto, TasaIVA: 19, IVA: iva, MntTotal: monto };
+          })()
+        : { MntExe: monto, MntTotal: monto };
+
+      const detalle = esAfecto
+        ? {
+            NroLinDet: 1,
+            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
+            QtyItem:   1,
+            PrcItem:   Math.round(monto / 1.19),
+            MontoItem: Math.round(monto / 1.19)
+          }
+        : {
+            NroLinDet: 1,
+            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
+            QtyItem:   1,
+            PrcItem:   monto,
+            MontoItem: monto,
+            IndExe:    1
+          };
+
       const payload = {
         response: ['FOLIO'],
         dte: {
@@ -3182,19 +3231,9 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
             IdDoc: idDoc,
             Emisor: emisor,
             Receptor: receptor,
-            Totales: {
-              MntExe:   monto,
-              MntTotal: monto
-            }
+            Totales: totales
           },
-          Detalle: [{
-            NroLinDet: 1,
-            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
-            QtyItem:   1,
-            PrcItem:   monto,
-            MontoItem: monto,
-            IndExe:    1
-          }]
+          Detalle: [detalle]
         }
       };
 
@@ -4628,8 +4667,12 @@ function parseSantanderCartola(buffer) {
         rutDigits = m1[1];
         nombre    = m1[2]?.trim() || '';
       } else {
+        // Fallback m2: extrae cualquier número 7-9 dígitos + char final de la glosa.
+        // SEGURIDAD: validar DV módulo 11 ANTES de aceptar. Sin esto, un número de
+        // referencia/factura como "12345678 cliente" producía RUT falso 12345678-8 →
+        // se facturaba a un RUT inexistente.
         const m2 = glosa.match(/(\d{7,9}[0-9kK])/);
-        if (m2) rutDigits = m2[1];
+        if (m2 && validarDvRut(m2[1])) rutDigits = m2[1];
         nombre = cleanSantanderName(glosa);
       }
     }
@@ -4708,8 +4751,11 @@ function parseSantanderProvisoria(buffer) {
     // Filtrar bloque "saldos diarios" del final (solo monto + fecha, sin descripción)
     if (!desc) continue;
 
-    // Solo abonos (A o monto positivo). Cargos se descartan — no son facturables.
-    if (tipo === 'C' || monto < 0) continue;
+    // Solo abonos (A). Cargos (C) o tipo desconocido se descartan — no son facturables.
+    // SEGURIDAD: exigir tipo === 'A' explícito. Variantes Santander pueden traer cargos
+    // con monto positivo y `tipo` vacío → si solo filtraramos por C/monto<0, esos cargos
+    // se colaban como abonos y eran facturados como transferencias inexistentes.
+    if (tipo !== 'A' || monto <= 0) continue;
 
     // Fecha DD/MM/YYYY → YYYY-MM-DD (también acepta serial Excel por si acaso)
     if (typeof row[3] === 'number') {
@@ -4737,8 +4783,10 @@ function parseSantanderProvisoria(buffer) {
         rutDigits = m1[1];
         nombre    = m1[2]?.trim() || '';
       } else {
+        // Fallback m2 (provisoria): mismo riesgo de RUT inventado que tradicional.
+        // Validar DV módulo 11 antes de aceptar el número como RUT.
         const m2 = desc.match(/(\d{7,9}[0-9kK])/);
-        if (m2) rutDigits = m2[1];
+        if (m2 && validarDvRut(m2[1])) rutDigits = m2[1];
         nombre = cleanSantanderName(desc);
       }
     }

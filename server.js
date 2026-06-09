@@ -1167,7 +1167,7 @@ app.get('/api/clientes/buscar/:rut', requireAuth, (req, res) => {
 // ── Movimientos (transferencias de cartola) ──────────────────────────────────
 app.get('/api/movimientos', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
-  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag, orden, dir } = req.query;
+  const { estado, fecha_desde, fecha_hasta, lote_id, tipo_dte, banco, limit: lim, offset: off, pag, orden, dir, search } = req.query;
   let sql = 'SELECT * FROM movimientos WHERE 1=1';
   const params = [];
 
@@ -1178,6 +1178,20 @@ app.get('/api/movimientos', requireAuth, (req, res) => {
   if (fecha_desde) { sql += ' AND fecha >= ?'; params.push(fecha_desde); }
   if (fecha_hasta) { sql += ' AND fecha <= ?'; params.push(fecha_hasta); }
   if (lote_id) { sql += ' AND lote_id = ?'; params.push(lote_id); }
+  // Búsqueda libre server-side: RUT (con o sin puntos), razon social, nombre origen, glosa, folio_dte, id_transferencia
+  if (search && String(search).trim()) {
+    const q = String(search).trim();
+    const qNum = q.replace(/[.\-\s]/g, ''); // versión sin puntos/guiones para RUT normalizado
+    sql += ` AND (
+      rut LIKE ? OR rut_normalizado LIKE ?
+      OR LOWER(razon_social) LIKE LOWER(?)
+      OR LOWER(nombre_origen) LIKE LOWER(?)
+      OR LOWER(glosa) LIKE LOWER(?)
+      OR CAST(folio_dte AS TEXT) = ?
+      OR id_transferencia LIKE ?
+    )`;
+    params.push(`%${q}%`, `%${qNum}%`, `%${q}%`, `%${q}%`, `%${q}%`, q, `%${q}%`);
+  }
 
   // Columnas permitidas para ORDER BY (whitelist anti-injection)
   const COLS_FACT = { fecha: 'fecha', monto: 'monto', rut: 'rut', razon_social: 'razon_social', id: 'id' };
@@ -2138,6 +2152,92 @@ app.get('/api/cartolas/:lote_carga_id/duplicados-cross-lote', requireAuth, (req,
     movs_que_duplican_un_facturado: matchedFacturados,
     detalle: dupes.slice(0, 200)  // limit response size
   });
+});
+
+// ── Diagnóstico: clientes/movs con razon_social = nombre de la propia empresa ─
+// Detecta contaminación por bug BCI-Tbanc (anterior al fix): cuando un cliente
+// externo quedó registrado con la razón social de la empresa receptora.
+// Devuelve clientes sospechosos + conteo de movs por estado para cada uno.
+app.get('/api/diagnostico/clientes-con-nombre-propio', requireAuth, requireAdmin, (req, res) => {
+  const empresas = getAppData('empresas') || {};
+  const result = [];
+  for (const [empresaId, conf] of Object.entries(empresas)) {
+    if (req.query.empresa_id && req.query.empresa_id !== empresaId) continue;
+    const clientes = db.prepare(
+      `SELECT id, rut, rut_normalizado, razon_social, email FROM clientes WHERE empresa_id = ?`
+    ).all(empresaId);
+    for (const c of clientes) {
+      if (!c.razon_social) continue;
+      if (!nombreCoincideConEmpresa(conf, c.razon_social)) continue;
+      const movs = db.prepare(`
+        SELECT estado, COUNT(*) as cnt, COALESCE(SUM(monto),0) as monto
+        FROM movimientos WHERE empresa_id = ? AND rut_normalizado = ?
+        GROUP BY estado
+      `).all(empresaId, c.rut_normalizado);
+      const por_estado = {};
+      let total_movs = 0, total_monto = 0;
+      for (const m of movs) {
+        por_estado[m.estado] = { cantidad: m.cnt, monto: m.monto };
+        total_movs += m.cnt; total_monto += m.monto;
+      }
+      result.push({
+        empresa_id: empresaId,
+        cliente_id: c.id,
+        rut: c.rut,
+        rut_normalizado: c.rut_normalizado,
+        razon_social_contaminada: c.razon_social,
+        nombre_empresa: conf.nombre,
+        email_actual: c.email || '',
+        total_movs, total_monto, por_estado
+      });
+    }
+  }
+  res.json({
+    ok: true,
+    total: result.length,
+    clientes: result.sort((a, b) => b.total_monto - a.total_monto)
+  });
+});
+
+// Limpieza: poner razon_social = '' en clientes Y en sus movs no-facturados.
+// Movs facturados quedan intactos (auditoría). El usuario debe editar manualmente
+// cada cliente luego para asignarle el nombre real.
+app.post('/api/diagnostico/clientes-con-nombre-propio/limpiar', requireAuth, requireAdmin, (req, res) => {
+  const empresas = getAppData('empresas') || {};
+  const empresaIdFilter = req.body?.empresa_id || null;
+  const rutsFilter = Array.isArray(req.body?.ruts) && req.body.ruts.length
+    ? new Set(req.body.ruts.map(r => normalizeRut(r)))
+    : null;
+  const now = nowCL();
+  let clientesLimpiados = 0, movsLimpiados = 0;
+  const detalle = [];
+
+  db.transaction(() => {
+    for (const [empresaId, conf] of Object.entries(empresas)) {
+      if (empresaIdFilter && empresaIdFilter !== empresaId) continue;
+      const clientes = db.prepare(
+        `SELECT id, rut_normalizado, razon_social FROM clientes WHERE empresa_id = ?`
+      ).all(empresaId);
+      for (const c of clientes) {
+        if (!c.razon_social) continue;
+        if (!nombreCoincideConEmpresa(conf, c.razon_social)) continue;
+        if (rutsFilter && !rutsFilter.has(c.rut_normalizado)) continue;
+        // Limpiar cliente
+        db.prepare(`UPDATE clientes SET razon_social = '', updated_at = ? WHERE id = ?`)
+          .run(now, c.id);
+        clientesLimpiados++;
+        // Limpiar movs no-facturados del mismo RUT en esa empresa
+        const r = db.prepare(`
+          UPDATE movimientos SET razon_social = '', updated_at = ?
+          WHERE empresa_id = ? AND rut_normalizado = ? AND estado NOT IN ('facturado','en_lote')
+        `).run(now, empresaId, c.rut_normalizado);
+        movsLimpiados += r.changes;
+        detalle.push({ empresa_id: empresaId, rut: c.rut_normalizado, movs_limpiados: r.changes });
+      }
+    }
+  })();
+
+  res.json({ ok: true, clientes_limpiados: clientesLimpiados, movs_limpiados: movsLimpiados, detalle });
 });
 
 // Helper: determinar tipo_dte según RUT y config de empresa

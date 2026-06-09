@@ -695,6 +695,32 @@ function esMovimientoInterno(rutNorm, nombreOrigen, empresaId) {
   return false;
 }
 
+// ── Detección de "nombre destinatario" en cartola BCI/Banco Chile ────────────
+// Aplica a TODAS las empresas que usen BCI. Caso: BCI-Tbanc (red interna BCI)
+// pone en la columna "Nombre Destino/Origen" el nombre del DESTINATARIO
+// (= nuestra empresa receptora), no del emisor real. Resultado: si copiamos
+// ese nombre como razon_social, el cliente externo queda registrado con
+// nuestro propio nombre. Esta función normaliza ambos strings (sin acentos,
+// sin sufijos societarios, solo alfanumérico) y detecta si coinciden.
+function normalizeNombreEmpresa(s) {
+  if (!s) return '';
+  return String(s)
+    .toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita acentos
+    .replace(/\b(SPA|S\.?A\.?|LTDA|LIMITADA|CIA|EIRL|INVERSIONES|CAPITAL)\b/g, ' ')
+    .replace(/[^A-Z0-9]/g, '');
+}
+function nombreCoincideConEmpresa(empresaConfig, nombreCartola) {
+  if (!empresaConfig?.nombre || !nombreCartola) return false;
+  const a = normalizeNombreEmpresa(empresaConfig.nombre);
+  const b = normalizeNombreEmpresa(nombreCartola);
+  if (!a || !b) return false;
+  // Núcleo corto (≤3 chars) → match exacto. Si quitamos sufijos y queda muy poco
+  // (ej. "TS" vs "TS"), aceptamos solo igualdad estricta para evitar falsos positivos.
+  if (a.length <= 3 || b.length <= 3) return a === b;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 function normalizeRut(rut) {
   if (!rut) return '';
   return String(rut).replace(/[.\-\s]/g, '').toUpperCase();
@@ -5160,9 +5186,24 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 fuenteRazonSocial = 'simpleapi';
               } else if (bancoCartola === 'BCI' || bancoCartola === 'BANCO CHILE') {
                 // BCI y Banco Chile entregan nombre y RUT completo directamente
-                razonSocial = (mov.nombre_origen || '').trim();
-                estado      = tipoDte === 41 ? 'listo' : 'pendiente';
-                fuenteRazonSocial = bancoCartola === 'BANCO CHILE' ? 'cartola_banco_chile' : 'cartola_bci';
+                // EXCEPCIÓN BCI-Tbanc (red interna BCI): la cartola pone como
+                // "Nombre Destino/Origen" el nombre del DESTINATARIO (= nuestra
+                // empresa receptora), no del emisor. Si copiáramos ese nombre como
+                // razon_social, registraríamos al cliente externo con nuestro propio
+                // nombre. Detectamos el caso y dejamos razon_social vacía para
+                // edición manual o consulta posterior. Regla aplica a TODAS las
+                // empresas con BCI: tg/mt/ts/vanher (y cualquier futura).
+                const nombreCartola = (mov.nombre_origen || '').trim();
+                const esNombrePropio = bancoCartola === 'BCI' && nombreCoincideConEmpresa(empConf, nombreCartola);
+                if (esNombrePropio) {
+                  razonSocial       = '';
+                  estado            = 'pendiente';
+                  fuenteRazonSocial = 'cartola_bci_nombre_destino_ignorado';
+                } else {
+                  razonSocial       = nombreCartola;
+                  estado            = tipoDte === 41 ? 'listo' : 'pendiente';
+                  fuenteRazonSocial = bancoCartola === 'BANCO CHILE' ? 'cartola_banco_chile' : 'cartola_bci';
+                }
               } else {
                 // Santander sin datos API → limpiar nombre de glosa
                 razonSocial = cleanSantanderName(mov.glosa || '') || (mov.nombre_origen || '').trim();

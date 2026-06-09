@@ -5250,8 +5250,43 @@ async function loadClientesContaminados() {
     const url = '/api/diagnostico/clientes-con-nombre-propio' + (empId ? `?empresa_id=${empId}` : '');
     const r = await apiFetch(url);
     if (!r.ok) throw new Error(r.error || 'error');
+
+    // Sección 2: autofacturación (RUT propio o socio interno). No es contaminación,
+    // pero los movs facturados son auto-DTE — anomalías a revisar.
+    let autoHtml = '';
+    if (r.autofacturados_total > 0) {
+      const filasAuto = r.autofacturados.map(c => {
+        const estados = Object.entries(c.por_estado).map(([e, info]) =>
+          `<span style="color:${e === 'facturado' ? '#ef4444' : (e === 'pendiente' ? '#f0a030' : (e === 'listo' ? '#10b981' : 'var(--txt2)'))};">${e}: ${info.cantidad}</span>`
+        ).join(' · ');
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px;">${c.empresa_id}</td>
+          <td style="padding:6px;">${c.rut || '—'}</td>
+          <td style="padding:6px;font-size:11px;color:var(--txt2);">${c.motivo === 'rut_propio' ? 'RUT propio' : 'Socio interno'}</td>
+          <td style="padding:6px;text-align:right;">${c.total_movs}</td>
+          <td style="padding:6px;text-align:right;">$${Number(c.total_monto||0).toLocaleString('es-CL')}</td>
+          <td style="padding:6px;font-size:11px;">${estados}</td>
+        </tr>`;
+      }).join('');
+      autoHtml = `<div style="background:rgba(239,68,68,.1);border:1px solid #ef4444;padding:10px;border-radius:8px;margin-bottom:14px;">
+        ⚠️ <strong>${r.autofacturados_total} RUT(s) propios/internos con movs en BD.</strong>
+        Los movs marcados <code>facturado</code> son auto-DTE históricos (la empresa se emitió DTE a sí misma antes que existiera la regla RUTS_INTERNOS). Hoy estos RUTs se marcan automáticamente como <code>interno</code> al subir cartola — pero los facturados antiguos quedan así.
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">
+          <thead><tr style="color:var(--txt2);border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:6px;">Empresa</th>
+            <th style="text-align:left;padding:6px;">RUT</th>
+            <th style="text-align:left;padding:6px;">Motivo</th>
+            <th style="text-align:right;padding:6px;">Movs</th>
+            <th style="text-align:right;padding:6px;">Monto</th>
+            <th style="text-align:left;padding:6px;">Por estado</th>
+          </tr></thead>
+          <tbody>${filasAuto}</tbody>
+        </table>
+      </div>`;
+    }
+
     if (r.total === 0) {
-      el.innerHTML = '<div style="background:rgba(16,185,129,.1);border:1px solid #10b981;padding:10px;border-radius:8px;">✅ Sin clientes contaminados. Todo limpio.</div>';
+      el.innerHTML = autoHtml + '<div style="background:rgba(16,185,129,.1);border:1px solid #10b981;padding:10px;border-radius:8px;">✅ Sin clientes externos contaminados. Todo limpio.</div>';
       return;
     }
     const filas = r.clientes.map(c => {
@@ -5272,7 +5307,7 @@ async function loadClientesContaminados() {
         </td>
       </tr>`;
     }).join('');
-    el.innerHTML = `<div style="font-size:13px;color:var(--txt2);margin-bottom:8px;">${r.total} clientes contaminados encontrados</div>
+    el.innerHTML = autoHtml + `<div style="font-size:13px;color:var(--txt2);margin-bottom:8px;">${r.total} clientes externos contaminados (RUT propio/interno excluidos)</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead><tr style="color:var(--txt2);border-bottom:1px solid var(--border);">
           <th style="text-align:left;padding:6px;">Empresa</th>

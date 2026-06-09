@@ -2161,14 +2161,17 @@ app.get('/api/cartolas/:lote_carga_id/duplicados-cross-lote', requireAuth, (req,
 app.get('/api/diagnostico/clientes-con-nombre-propio', requireAuth, requireAdmin, (req, res) => {
   const empresas = getAppData('empresas') || {};
   const result = [];
+  const autofacturados = [];
   for (const [empresaId, conf] of Object.entries(empresas)) {
     if (req.query.empresa_id && req.query.empresa_id !== empresaId) continue;
+    const rutPropio = normalizeRut(conf.rut || '');
     const clientes = db.prepare(
       `SELECT id, rut, rut_normalizado, razon_social, email FROM clientes WHERE empresa_id = ?`
     ).all(empresaId);
     for (const c of clientes) {
       if (!c.razon_social) continue;
       if (!nombreCoincideConEmpresa(conf, c.razon_social)) continue;
+
       const movs = db.prepare(`
         SELECT estado, COUNT(*) as cnt, COALESCE(SUM(monto),0) as monto
         FROM movimientos WHERE empresa_id = ? AND rut_normalizado = ?
@@ -2180,7 +2183,8 @@ app.get('/api/diagnostico/clientes-con-nombre-propio', requireAuth, requireAdmin
         por_estado[m.estado] = { cantidad: m.cnt, monto: m.monto };
         total_movs += m.cnt; total_monto += m.monto;
       }
-      result.push({
+
+      const row = {
         empresa_id: empresaId,
         cliente_id: c.id,
         rut: c.rut,
@@ -2189,13 +2193,28 @@ app.get('/api/diagnostico/clientes-con-nombre-propio', requireAuth, requireAdmin
         nombre_empresa: conf.nombre,
         email_actual: c.email || '',
         total_movs, total_monto, por_estado
-      });
+      };
+
+      // Caso especial: el cliente ES la propia empresa (RUT propio o socio interno).
+      // No es contaminación — la razón social ESTÁ correcta. Pero exponemos en
+      // sección aparte porque movs facturados con ese RUT son "auto-facturación"
+      // (la empresa se emitió DTE a sí misma — anomalía histórica que debe revisarse).
+      const esRutPropio = rutPropio && c.rut_normalizado === rutPropio;
+      const esInterno = RUTS_INTERNOS.includes(c.rut_normalizado);
+      if (esRutPropio || esInterno) {
+        autofacturados.push({ ...row, motivo: esRutPropio ? 'rut_propio' : 'rut_interno' });
+        continue;
+      }
+
+      result.push(row);
     }
   }
   res.json({
     ok: true,
     total: result.length,
-    clientes: result.sort((a, b) => b.total_monto - a.total_monto)
+    clientes: result.sort((a, b) => b.total_monto - a.total_monto),
+    autofacturados_total: autofacturados.length,
+    autofacturados: autofacturados.sort((a, b) => b.total_monto - a.total_monto)
   });
 });
 
@@ -2215,6 +2234,7 @@ app.post('/api/diagnostico/clientes-con-nombre-propio/limpiar', requireAuth, req
   db.transaction(() => {
     for (const [empresaId, conf] of Object.entries(empresas)) {
       if (empresaIdFilter && empresaIdFilter !== empresaId) continue;
+      const rutPropio = normalizeRut(conf.rut || '');
       const clientes = db.prepare(
         `SELECT id, rut_normalizado, razon_social FROM clientes WHERE empresa_id = ?`
       ).all(empresaId);
@@ -2222,6 +2242,9 @@ app.post('/api/diagnostico/clientes-con-nombre-propio/limpiar', requireAuth, req
         if (!c.razon_social) continue;
         if (!nombreCoincideConEmpresa(conf, c.razon_social)) continue;
         if (rutsFilter && !rutsFilter.has(c.rut_normalizado)) continue;
+        // Nunca limpiar el RUT propio o socios internos — su razón social ESTÁ correcta
+        if (rutPropio && c.rut_normalizado === rutPropio) continue;
+        if (RUTS_INTERNOS.includes(c.rut_normalizado)) continue;
         // Limpiar cliente
         db.prepare(`UPDATE clientes SET razon_social = '', updated_at = ? WHERE id = ?`)
           .run(now, c.id);

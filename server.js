@@ -1882,11 +1882,22 @@ app.post('/api/movimientos/cargar-cartola', requireAuth, upload.single('cartola'
   }
 });
 
-// Process parsed movements from frontend
+// Process parsed movements from frontend (modo legacy SheetJS browser)
 app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
   const { empresa_id, banco_cartola, movimientos: movs } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
   if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+  // SEGURIDAD anti doble-facturación: este endpoint NO calcula dedup_key cross-format
+  // (provisoria↔tradicional↔histórica). Si se acepta SANTANDER por aquí, una segunda
+  // carga del mismo período por el flujo server-side podría insertar duplicados que
+  // se facturarían dos veces. Forzamos uso del endpoint principal /cargar-y-procesar
+  // que sí implementa dedup_key + checkDedup canónico.
+  const bancoUp = String(banco_cartola || '').toUpperCase();
+  if (bancoUp === 'SANTANDER') {
+    return res.status(400).json({
+      error: 'Cartola Santander debe subirse por el panel "⚡ Procesamiento Automático" (server-side parser). El modo manual está deshabilitado para Santander porque no calcula la clave de dedup cross-format (provisoria↔tradicional↔histórica) y podría duplicar facturas.'
+    });
+  }
   const now = nowCL();
   const config = getAppData('config');
 
@@ -2751,9 +2762,16 @@ const SF_CSV_HEADERS = [
 ];
 
 function rutParaSF(rut) {
-  // Formato SimpleFactura CSV: sin puntos, con guión (ej: 77653656-3)
+  // Formato SimpleFactura CSV: sin puntos, con guión (ej: 77653656-3).
+  // Acepta cualquier input: con/sin puntos, con/sin guión, con espacios, mayúsculas.
+  // Si viene ya normalizado (solo dígitos+K), inserta el guión antes del DV.
   if (!rut) return '';
-  return rut.replace(/\./g, ''); // quitar puntos, mantener guión
+  const clean = String(rut).replace(/[.\s]/g, '').toUpperCase();
+  if (!clean) return '';
+  if (clean.includes('-')) return clean; // ya tiene guión
+  // Sin guión → último char es DV, lo separamos
+  if (clean.length < 2) return clean;
+  return clean.slice(0, -1) + '-' + clean.slice(-1);
 }
 
 // Formato RUT con puntos para Credenciales (registro interno SimpleFactura: "77.859.376-9")
@@ -2810,7 +2828,7 @@ function buildSfCsvRows(movs, empresa) {
       1,                        // FmaPago: contado
       fecha,                    // FechaEmision DD-MM-YYYY
       fecha,                    // Vencimiento (igual a emisión)
-      rutParaSF(m.rut),         // RutRecep sin puntos con guión
+      rutParaSF(m.rut_normalizado || m.rut),  // RutRecep desde normalizado (siempre limpio) o fallback
       giro,
       'NO INFORMADO',           // Contacto
       correoRecep,              // CorreoRecep
@@ -3133,8 +3151,12 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
 
       // Receptor Boleta: RUTRecep, RznSocRecep, [CorreoRecep si > 135 UF], DirRecep, CmnaRecep, CiudadRecep
       // Receptor Factura: RUTRecep, RznSocRecep, GiroRecep, CorreoRecep, DirRecep, CmnaRecep, CiudadRecep
+      // RUTRecep: derivar SIEMPRE desde rut_normalizado (digit+K). Si solo está m.rut
+      // con formato variable (puntos, espacios, sin guión), rutParaSF lo normaliza
+      // y asegura formato 'XXXXXXXX-K' que cumple el XSD del SII.
+      const rutRecep = rutParaSF(m.rut_normalizado || m.rut);
       const receptor = esBoleta ? {
-        RUTRecep:    (m.rut || '').replace(/\./g, ''),
+        RUTRecep:    rutRecep,
         RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
         // CorreoRecep en posicion XSD correcta (entre RznSocRecep y DirRecep) cuando supera 135 UF
         ...(superaUmbral135UF && m.email_receptor ? { CorreoRecep: m.email_receptor.trim() } : {}),
@@ -3142,7 +3164,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         CmnaRecep:   m.comuna || 'NO INFORMADA',
         CiudadRecep: m.ciudad || ciudadOrigen
       } : {
-        RUTRecep:    (m.rut || '').replace(/\./g, ''),
+        RUTRecep:    rutRecep,
         RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
         GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
         // Solo poblar CorreoRecep si el cliente tiene correo propio.
@@ -3400,47 +3422,106 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     let data;
     try { data = JSON.parse(rawText); } catch(e) { data = { raw: rawText, httpStatus: uploadResp.status }; }
 
-    // Respuesta exitosa según docs: { status: 200, message: "...", data: [{idCsv, folio}...], errors: null }
-    const isSuccess = uploadResp.ok && data?.status === 200 && !data?.errors;
-    // También aceptar formato antiguo por compatibilidad
-    const tieneErrores = data?.data?.tieneErrores;
-    const loteEstado = (isSuccess || (uploadResp.ok && tieneErrores !== true)) ? 'emitido' : 'error';
+    // Respuesta esperada SF: { status:200, data:[{idCsv,folio}…], errors:[{idCsv,…}|"texto"]|null }
+    // Parsear por idCsv para diferenciar emitidos vs rechazados (idCsv = posición 1..N en CSV).
+    // movs[idCsv-1] da el mov correspondiente.
+    const dataArr   = Array.isArray(data?.data)   ? data.data   : [];
+    const errorsArr = Array.isArray(data?.errors) ? data.errors : [];
+    const tieneErroresLegacy = data?.data?.tieneErrores === true;
+
+    // Map idCsv → folio (éxitos por línea)
+    const folioPorIdCsv = new Map();
+    for (const d of dataArr) {
+      const idCsv = parseInt(d?.idCsv);
+      if (idCsv && d?.folio) folioPorIdCsv.set(idCsv, String(d.folio));
+    }
+    // Map idCsv → mensaje de error por línea (cuando SF lo entrega estructurado)
+    const errorPorIdCsv = new Map();
+    const erroresSinIdCsv = [];
+    for (const e of errorsArr) {
+      if (e && typeof e === 'object' && e.idCsv) {
+        errorPorIdCsv.set(parseInt(e.idCsv), e.error || e.message || JSON.stringify(e));
+      } else if (e != null) {
+        erroresSinIdCsv.push(typeof e === 'object' ? JSON.stringify(e) : String(e));
+      }
+    }
+
+    // Clasificar movs uno por uno
+    const movsEmitidos = [], movsConError = [];
+    for (let i = 0; i < movs.length; i++) {
+      const idCsv = i + 1;
+      const folio = folioPorIdCsv.get(idCsv);
+      const errLinea = errorPorIdCsv.get(idCsv);
+      if (folio) movsEmitidos.push({ mov: movs[i], folio });
+      else if (errLinea) movsConError.push({ mov: movs[i], err: errLinea });
+      else if (folioPorIdCsv.size > 0 || errorPorIdCsv.size > 0) {
+        // SF respondió estructurado pero esta línea no figura → considerar error sin detalle
+        movsConError.push({ mov: movs[i], err: 'No retornado por SF' });
+      }
+      // Si SF no entregó ni data[] ni errors[] estructurados → caemos al fallback más abajo
+    }
+
+    // Si SF NO entregó arrays estructurados pero HTTP fue OK, mantener compat: todo emitido.
+    if (folioPorIdCsv.size === 0 && errorPorIdCsv.size === 0) {
+      if (uploadResp.ok && !tieneErroresLegacy && erroresSinIdCsv.length === 0) {
+        for (const m of movs) movsEmitidos.push({ mov: m, folio: null });
+      } else {
+        // HTTP no-OK o errores genéricos → todo error
+        for (const m of movs) movsConError.push({ mov: m, err: erroresSinIdCsv.join(' | ') || `HTTP ${uploadResp.status}` });
+      }
+    }
+
+    // Estado del lote
+    let loteEstado;
+    if (movsEmitidos.length > 0 && movsConError.length === 0)      loteEstado = 'emitido';
+    else if (movsEmitidos.length > 0 && movsConError.length > 0)   loteEstado = 'emitido_parcial';
+    else                                                            loteEstado = 'error';
 
     // Mensaje legible
     let mensaje;
     if (loteEstado === 'emitido') {
-      if (data?.message) {
-        mensaje = data.message;
-        // Agregar folios si disponibles
-        if (Array.isArray(data.data)) {
-          const folios = data.data.map(d => d.folio).filter(Boolean);
-          if (folios.length) mensaje += ` | Folios: ${folios.join(', ')}`;
-        }
-      } else {
-        const d = data.data || {};
-        mensaje = `Procesado: ${d.cantidadDte || movs.length} DTEs`;
-        if (d.montoTotal) mensaje += `, $${d.montoTotal.toLocaleString('es-CL')}`;
-      }
+      mensaje = data?.message || `Procesado: ${movsEmitidos.length} DTE emitidos`;
+      const folios = movsEmitidos.map(x => x.folio).filter(Boolean);
+      if (folios.length) mensaje += ` | Folios: ${folios.join(', ')}`;
+    } else if (loteEstado === 'emitido_parcial') {
+      mensaje = `⚠️ Emisión parcial: ${movsEmitidos.length} OK, ${movsConError.length} con error.` +
+        (movsEmitidos.length ? ` Folios OK: ${movsEmitidos.map(x=>x.folio).filter(Boolean).join(', ')}.` : '') +
+        (movsConError.length ? ` Errores: ${movsConError.slice(0,5).map(x=>`#${x.mov.id}:${x.err}`).join(' | ')}` : '');
     } else {
-      const errs = data?.errors;
-      const errBody = Array.isArray(errs) ? errs.join('. ')
-        : (typeof errs === 'object' && errs !== null ? JSON.stringify(errs) : errs)
-        || data?.message || data?.title
-        || (data?.raw !== undefined ? `Respuesta vacía del servidor` : null)
-        || JSON.stringify(data);
+      const errBody = (erroresSinIdCsv.length ? erroresSinIdCsv.join('. ') : '')
+        || (movsConError.length ? movsConError.slice(0,5).map(x=>`#${x.mov.id}:${x.err}`).join(' | ') : '')
+        || data?.message || data?.title || JSON.stringify(data);
       mensaje = `HTTP ${uploadResp.status}: ${errBody} [data enviada: ${lastDataJson}]`;
     }
 
-    // 4. Si exitoso, marcar movimientos como facturados
-    if (loteEstado === 'emitido') {
-      const updStmt = db.prepare("UPDATE movimientos SET estado = 'facturado', fecha_facturacion = ?, updated_at = ? WHERE id = ?");
-      db.transaction(() => { for (const m of movs) updStmt.run(now, now, m.id); })();
-    }
+    // 4. Aplicar resultado por mov:
+    //    - emitidos → estado=facturado + folio_dte + fecha_facturacion
+    //    - con error → estado='error' (queda visible y reintenta desde UI)
+    db.transaction(() => {
+      const stmtFact = db.prepare(
+        "UPDATE movimientos SET estado='facturado', folio_dte=COALESCE(?, folio_dte), fecha_facturacion=?, updated_at=? WHERE id=?"
+      );
+      for (const { mov, folio } of movsEmitidos) stmtFact.run(folio || null, now, now, mov.id);
+
+      const stmtErr = db.prepare(
+        "UPDATE movimientos SET estado='error', updated_at=? WHERE id=?"
+      );
+      for (const { mov } of movsConError) stmtErr.run(now, mov.id);
+    })();
 
     db.prepare('UPDATE lotes_facturacion SET estado = ?, response_api = ?, updated_at = ? WHERE lote_id = ?')
-      .run(loteEstado, JSON.stringify({ httpStatus: uploadResp.status, message: mensaje, data: data?.data }), now, loteId);
+      .run(loteEstado, JSON.stringify({
+        httpStatus: uploadResp.status, message: mensaje,
+        emitidos: movsEmitidos.length, con_error: movsConError.length,
+        data: data?.data, errors: data?.errors
+      }), now, loteId);
 
-    res.json({ ok: loteEstado === 'emitido', estado: loteEstado, mensaje, httpStatus: uploadResp.status });
+    res.json({
+      ok: loteEstado === 'emitido',
+      estado: loteEstado,
+      mensaje, httpStatus: uploadResp.status,
+      emitidos: movsEmitidos.length, con_error: movsConError.length
+    });
   } catch (err) {
     console.error('[SIMPLEFACTURA ERROR]', err);
     db.prepare('UPDATE lotes_facturacion SET estado = ?, response_api = ?, updated_at = ? WHERE lote_id = ?')
@@ -5178,10 +5259,14 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     // Promote: cuando una cartola oficial (definitiva o histórica) llega para un mov
     // ya capturado como provisoria, actualiza in-place conservando estado/lote/folio.
     // tipo_cartola resultante refleja la fuente que finalizó el mov (auditoría).
+    // SEGURIDAD AUDIT TRAIL: NO sobrescribir id_compuesto al promover. Si el mov
+    // venía con id_compuesto PROV_xxx (provisoria) y luego llega la tradicional con
+    // id_compuesto distinto, conservar el original preserva trazabilidad y permite
+    // a queries externas localizar el registro por su id_compuesto inicial. La
+    // unicidad cross-format se mantiene vía dedup_key.
     const promote     = db.prepare(`UPDATE movimientos
                                     SET tipo_cartola = ?,
                                         id_transferencia = ?,
-                                        id_compuesto = ?,
                                         glosa = ?,
                                         rut = COALESCE(NULLIF(?, ''), rut),
                                         rut_normalizado = COALESCE(NULLIF(?, ''), rut_normalizado),
@@ -5238,12 +5323,13 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               // Una cartola oficial (definitiva o histórica) promueve provisorias previas.
               const esOficialActual = (tipoCartolaSantander === 'definitiva' || tipoCartolaSantander === 'historica');
               if (esOficialActual && matchPrev.tipo_cartola === 'provisoria') {
-                // Promoción provisoria → oficial (conserva estado/lote/folio).
+                // Promoción provisoria → oficial (conserva estado/lote/folio/id_compuesto).
                 // tipo_cartola refleja la fuente ('definitiva' o 'historica').
+                // id_compuesto se mantiene en su valor PROV_ original para audit trail.
                 const rutNormProm = normalizeRut(mov.rut || mov.rut_digits || '');
                 promote.run(
                   tipoCartolaSantander,
-                  idTransf, idCompuesto, mov.glosa || '',
+                  idTransf, mov.glosa || '',
                   mov.rut || '', rutNormProm, mov.nombre_origen || '',
                   now, matchPrev.id
                 );

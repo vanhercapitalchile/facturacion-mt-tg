@@ -354,10 +354,16 @@ const RUTS_INTERNOS = [
   '168693591'  // Vanessa Andrea Soto Castillo (Vanher Capital)
 ];
 try {
-  db.exec(`UPDATE movimientos SET estado='interno', updated_at=datetime('now')
-           WHERE rut_normalizado IN ('778593769','778856980','775063432','779766063','167938582')
-           AND estado IN ('pendiente','listo')`);
-  console.log('[STARTUP] RUTs internos marcados como interno');
+  // Marcar interno TODOS los RUTs de la lista RUTS_INTERNOS (no solo 5).
+  // Antes faltaban Margoth/José/Vanessa históricos → quedaban facturables.
+  const phold = RUTS_INTERNOS.map(() => '?').join(',');
+  const stmt = db.prepare(
+    `UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+     WHERE rut_normalizado IN (${phold})
+     AND estado IN ('pendiente','listo')`
+  );
+  const r = stmt.run(...RUTS_INTERNOS);
+  if (r.changes > 0) console.log(`[STARTUP] ${r.changes} movimientos marcados como interno (RUTs internos completos)`);
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs internos:', e.message); }
 
 // ── Nombres internos — coincidencia por nombre cuando el RUT no viene en la cartola ─
@@ -1998,9 +2004,18 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
 });
 
 // Update single movimiento (edit client data, estado, etc.)
+// SEGURIDAD: users role=empresa solo pueden tocar movs de su propia empresa.
+// Admin sin restricción.
 app.put('/api/movimientos/:id', requireAuth, (req, res) => {
   const m = req.body;
   const now = nowCL();
+  if (req.user.role !== 'admin') {
+    const owner = db.prepare('SELECT empresa_id FROM movimientos WHERE id = ?').get(req.params.id);
+    if (!owner) return res.status(404).json({ error: 'Movimiento no encontrado' });
+    if (owner.empresa_id !== req.user.empresa) {
+      return res.status(403).json({ error: 'Sin acceso a este movimiento' });
+    }
+  }
   db.prepare(`
     UPDATE movimientos SET rut=?, rut_normalizado=?, razon_social=?, giro=?, direccion=?, comuna=?, ciudad=?, email_receptor=?, tipo_dte=?, estado=?, nombre_item=?, descripcion_item=?, precio=?, monto_exento=?, monto_total=?, updated_at=?
     WHERE id=?
@@ -2009,22 +2024,39 @@ app.put('/api/movimientos/:id', requireAuth, (req, res) => {
 });
 
 // Bulk update estado
+// SEGURIDAD: users role=empresa solo afectan movs de su propia empresa.
 app.put('/api/movimientos/bulk-estado', requireAuth, (req, res) => {
   const { ids, estado } = req.body;
   const now = nowCL();
+  const restrictEmpresa = req.user.role !== 'admin' ? req.user.empresa : null;
+  let updated = 0;
   if (estado === 'facturado') {
     // Al marcar facturado, usar la fecha de la transferencia como fecha_facturacion
-    const stmt = db.prepare('UPDATE movimientos SET estado = ?, fecha_facturacion = COALESCE(fecha, ?), updated_at = ? WHERE id = ?');
+    const stmt = restrictEmpresa
+      ? db.prepare('UPDATE movimientos SET estado = ?, fecha_facturacion = COALESCE(fecha, ?), updated_at = ? WHERE id = ? AND empresa_id = ?')
+      : db.prepare('UPDATE movimientos SET estado = ?, fecha_facturacion = COALESCE(fecha, ?), updated_at = ? WHERE id = ?');
     db.transaction(() => {
-      for (const id of ids) stmt.run(estado, now, now, id);
+      for (const id of ids) {
+        const r = restrictEmpresa
+          ? stmt.run(estado, now, now, id, restrictEmpresa)
+          : stmt.run(estado, now, now, id);
+        updated += r.changes;
+      }
     })();
   } else {
-    const stmt = db.prepare('UPDATE movimientos SET estado = ?, updated_at = ? WHERE id = ?');
+    const stmt = restrictEmpresa
+      ? db.prepare('UPDATE movimientos SET estado = ?, updated_at = ? WHERE id = ? AND empresa_id = ?')
+      : db.prepare('UPDATE movimientos SET estado = ?, updated_at = ? WHERE id = ?');
     db.transaction(() => {
-      for (const id of ids) stmt.run(estado, now, id);
+      for (const id of ids) {
+        const r = restrictEmpresa
+          ? stmt.run(estado, now, id, restrictEmpresa)
+          : stmt.run(estado, now, id);
+        updated += r.changes;
+      }
     })();
   }
-  res.json({ ok: true, updated: ids.length });
+  res.json({ ok: true, updated, ignorados_otras_empresas: ids.length - updated });
 });
 
 // ── Historial de cargas de cartola ───────────────────────────────────────────
@@ -2328,7 +2360,12 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   } else {
     const placeholders = (movimiento_ids || []).map(() => '?').join(',');
     if (!placeholders) return res.status(400).json({ error: 'Sin movimientos ni tipo_dte' });
-    movs = db.prepare(`SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo'`).all(...movimiento_ids);
+    // SEGURIDAD: filtrar por empresa_id para impedir armar lote con movs cross-empresa.
+    // Admin sin empresaId definido sigue restringido a la empresa que mandó en el body.
+    if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
+    movs = db.prepare(
+      `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo' AND empresa_id = ?`
+    ).all(...movimiento_ids, empresaId);
   }
 
   if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos listos para facturar' });
@@ -2363,9 +2400,10 @@ app.post('/api/facturacion/marcar-manual', requireAuth, (req, res) => {
   const nombre = 'Marcado facturado manual';
 
   const placeholders = movimiento_ids.map(() => '?').join(',');
+  // SEGURIDAD: filtrar por empresa_id para impedir marcar manual movs de otra empresa.
   const movs = db.prepare(
-    `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo'`
-  ).all(...movimiento_ids);
+    `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo' AND empresa_id = ?`
+  ).all(...movimiento_ids, empresaId);
 
   if (!movs.length) return res.status(400).json({ error: 'No hay movimientos listos para marcar' });
 
@@ -2413,6 +2451,16 @@ app.delete('/api/facturacion/lotes/:lote_id', requireAuth, (req, res) => {
 
 // Detalle de movimientos de un lote
 app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) => {
+  // SEGURIDAD: validar que el lote pertenezca a la empresa del usuario (rol empresa).
+  // lote_ids siguen formato enumerable empresaId-tsBase36-rnd → sin este check un
+  // usuario rol=empresa podría leer movs (RUT, email, montos) de otra empresa.
+  if (req.user.role !== 'admin') {
+    const lote = db.prepare('SELECT empresa_id FROM lotes_facturacion WHERE lote_id = ?').get(req.params.lote_id);
+    if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+    if (lote.empresa_id !== req.user.empresa) {
+      return res.status(403).json({ error: 'Sin acceso a este lote' });
+    }
+  }
   const movs = db.prepare(
     `SELECT id, fecha, monto, monto_total, rut, razon_social, nombre_origen, tipo_dte,
             estado, banco_cartola, email_receptor, giro, direccion, comuna, ciudad,
@@ -5803,6 +5851,14 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
         const rutRaw   = String(row['RutRecep'] || row['RUT Receptor'] || '').trim();
         const rutNorm  = normalizeRut(rutRaw);
         const rutFmt   = rutNorm ? formatRut(rutNorm) : '';
+        // SEGURIDAD: NO importar como 'facturado' DTE cuyo receptor es un RUT
+        // interno (propias empresas o socios). Esto evita repetir el caso histórico
+        // de los 86 auto-facturados a 77.506.343-2. Si el Excel los trae, los
+        // saltamos y los contamos como duplicados/saltados.
+        if (rutNorm && esRutExcluido(rutNorm, empresaId)) {
+          duplicados++;
+          continue;
+        }
         const razon    = String(row['RazonSocialRecep'] || row['Razón Social'] || row['Contacto'] || '').trim();
         const giro     = String(row['GiroRecep']  || row['Giro'] || '').trim();
         const dir      = String(row['DirRecep']   || row['Dirección'] || '').trim();

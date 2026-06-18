@@ -3673,33 +3673,94 @@ function normalizeIssuedDoc(d) {
   };
 }
 
-// Trae la lista COMPLETA de DTE emitidos por SF en el rango [desdeISO, hastaISO].
-async function sfFetchDocumentsIssued(sfConf, desdeISO, hastaISO) {
+// Trae la lista COMPLETA de DTE emitidos por SF en el rango [desdeYMD, hastaYMD].
+// SF es exigente con el formato del body/fecha; probamos varias variantes (igual que
+// el endpoint de diagnóstico) y nos quedamos con la primera que devuelve registros.
+// Devuelve { items, total, raw, debug } — debug sirve para depurar el mapeo de campos.
+async function sfFetchDocumentsIssued(sfConf, desdeYMD, hastaYMD) {
   const email = sfConf.username || 'api-token';
   const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
-  const reqBody = {
-    credenciales: {
-      rutEmisor: rutParaSF(sfConf.rut_emisor || ''),
-      nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
-    },
-    ambiente: 0, salida: 0, desde: desdeISO, hasta: hastaISO
-  };
-  const bodyStr = JSON.stringify(reqBody);
-  const text = await new Promise((resolve, reject) => {
-    const https = require('https');
-    const url = new URL(`${SF_API}/documentsIssued`);
+  const https = require('https');
+  const sucursal = (sfConf.nombre_sucursal || 'Casa Matriz').trim();
+  const rutSP = rutParaSF(sfConf.rut_emisor || '');       // sin puntos
+  const rutCP = rutConPuntos(sfConf.rut_emisor || '');    // con puntos
+  const desdeUTC = new Date(`${desdeYMD}T00:00:00Z`).toISOString();
+  const hastaUTC = new Date(`${hastaYMD}T23:59:59Z`).toISOString();
+  const desdeLocal = `${desdeYMD}T00:00:00`, hastaLocal = `${hastaYMD}T23:59:59`;
+
+  const doReq = (bodyObj, query = '') => new Promise((resolve, reject) => {
+    const bodyStr = JSON.stringify(bodyObj);
+    const url = new URL(`${SF_API}/documentsIssued${query}`);
     const opts = {
       hostname: url.hostname, path: url.pathname + url.search, method: 'GET',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) }
     };
-    const r = https.request(opts, resp => { let b = ''; resp.on('data', c => b += c); resp.on('end', () => resolve(b)); });
+    const r = https.request(opts, resp => { let b = ''; resp.on('data', c => b += c); resp.on('end', () => resolve({ status: resp.statusCode, text: b })); });
     r.on('error', reject); r.write(bodyStr); r.end();
   });
-  let data;
-  try { data = JSON.parse(text); } catch (e) { throw new Error('SF documentsIssued respuesta no-JSON: ' + text.slice(0, 200)); }
-  const items = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
-  const total = (typeof data?.total === 'number') ? data.total : items.length;
-  return { items, total, raw: data };
+  const parseItems = d => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
+
+  const variantes = [
+    { label: 'credSP-UTC',   body: { credenciales: { rutEmisor: rutSP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
+    { label: 'credCP-UTC',   body: { credenciales: { rutEmisor: rutCP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
+    { label: 'credSP-local', body: { credenciales: { rutEmisor: rutSP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeLocal, hasta: hastaLocal } },
+    { label: 'credCP-local', body: { credenciales: { rutEmisor: rutCP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeLocal, hasta: hastaLocal } },
+  ];
+
+  let chosen = null, primera = null;
+  for (const v of variantes) {
+    let status, text;
+    try { ({ status, text } = await doReq(v.body)); } catch (e) { continue; }
+    let d; try { d = JSON.parse(text); } catch (e) { d = null; }
+    if (!primera) primera = {
+      variante: v.label, status, preview: (text || '').slice(0, 500),
+      keys: (d && typeof d === 'object' && !Array.isArray(d)) ? Object.keys(d) : (Array.isArray(d) ? ['(array)'] : [])
+    };
+    const items = parseItems(d);
+    const total = (typeof d?.total === 'number') ? d.total : items.length;
+    if (items.length > 0 || total > 0) { chosen = { v, d, items, total, status }; break; }
+  }
+
+  if (!chosen) {
+    return { items: [], total: 0, raw: primera, debug: { usado: null, intentos: variantes.map(x => x.label), primera } };
+  }
+
+  // Paginación defensiva: si SF reporta más de los que trajo, recorrer páginas.
+  let allItems = chosen.items.slice();
+  const total = chosen.total;
+  const pageSize = chosen.items.length || 50;
+  if (total > allItems.length && allItems.length > 0) {
+    let page = 2;
+    while (allItems.length < total && page <= 300) {
+      let resp; try { resp = await doReq(chosen.v.body, `?PageNumber=${page}&PageSize=${pageSize}`); } catch (e) { break; }
+      let d; try { d = JSON.parse(resp.text); } catch (e) { break; }
+      const more = parseItems(d);
+      if (!more.length) break;
+      allItems = allItems.concat(more);
+      page++;
+    }
+  }
+
+  // Dedupe por (tipo|folio) — si la paginación repite filas, NO deben parecer duplicados.
+  const seen = new Set();
+  const dedup = [];
+  for (const it of allItems) {
+    const nd = normalizeIssuedDoc(it);
+    const key = nd ? `${nd.tipo}|${nd.folio}` : JSON.stringify(it);
+    if (seen.has(key)) continue;
+    seen.add(key); dedup.push(it);
+  }
+
+  return {
+    items: dedup, total,
+    raw: chosen.d,
+    debug: {
+      usado: chosen.v.label, status: chosen.status, total_sf: total,
+      traidos_unicos: dedup.length,
+      keys: (chosen.d && typeof chosen.d === 'object' && !Array.isArray(chosen.d)) ? Object.keys(chosen.d) : ['(array)'],
+      sample_keys: dedup[0] ? Object.keys(dedup[0]) : []
+    }
+  };
 }
 
 // GET /api/notas-credito/detectar-duplicados?empresa_id=mt-inversiones&desde=YYYY-MM-DD&hasta=YYYY-MM-DD
@@ -3719,12 +3780,19 @@ app.get('/api/notas-credito/detectar-duplicados', requireAuth, async (req, res) 
   const hoy = todayCL();
   const desdeYMD = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || '') ? req.query.desde : addDaysYMD(hoy, -10);
   const hastaYMD = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || '') ? req.query.hasta : hoy;
-  const desdeISO = `${desdeYMD}T00:00:00`;
-  const hastaISO = `${hastaYMD}T23:59:59`;
 
   try {
-    const { items, total, raw } = await sfFetchDocumentsIssued(sfConf, desdeISO, hastaISO);
-    const norm = items.map(normalizeIssuedDoc).filter(d => d && d.folio && d.tipo != null);
+    const { items, total, raw, debug } = await sfFetchDocumentsIssued(sfConf, desdeYMD, hastaYMD);
+    // Normalizar + dedupe por (tipo|folio): evita que filas repetidas parezcan duplicados
+    const seen = new Set();
+    const norm = [];
+    for (const it of items) {
+      const d = normalizeIssuedDoc(it);
+      if (!d || !d.folio || d.tipo == null) continue;
+      const k = `${d.tipo}|${d.folio}`;
+      if (seen.has(k)) continue;
+      seen.add(k); norm.push(d);
+    }
 
     // Excluir folios ya acreditados previamente (NC emitida)
     const yaAcreditados = new Set(
@@ -3776,6 +3844,8 @@ app.get('/api/notas-credito/detectar-duplicados', requireAuth, async (req, res) 
       diagnostico: {
         sample_normalizado: norm[0] || null,
         sample_raw_keys: items[0] ? Object.keys(items[0]) : [],
+        raw_preview: (() => { try { return JSON.stringify(raw).slice(0, 600); } catch (e) { return null; } })(),
+        sf_debug: debug || null,
         nota: 'Revisa cada candidato contra el portal del SII antes de confirmar. Si total_analizados < total_emitidos_sf, la lista puede estar incompleta.'
       }
     });

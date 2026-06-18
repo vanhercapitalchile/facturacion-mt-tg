@@ -412,6 +412,29 @@ try {
   console.log('[STARTUP] Limpieza de lotes con error completada');
 } catch(e) { console.warn('[STARTUP] Error en limpieza de lotes:', e.message); }
 
+// ── Tabla de Notas de Crédito emitidas (anulación de DTE duplicados) ──────────
+// Registra cada NC emitida para: (a) trazabilidad y (b) evitar volver a proponer
+// anular un folio que YA fue acreditado (la detección de duplicados lo excluye).
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS notas_credito (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    empresa_id TEXT NOT NULL,
+    nc_batch_id TEXT,          -- agrupa las NC emitidas en un mismo envío
+    tipo_ref INTEGER,          -- tipo del DTE original (33/34/39/41)
+    folio_ref TEXT,            -- folio del DTE original que se anula
+    fch_ref TEXT,              -- fecha del DTE original
+    rut TEXT,
+    razon_social TEXT,
+    monto REAL,
+    folio_nc TEXT,             -- folio de la Nota de Crédito emitida
+    estado TEXT DEFAULT 'emitida',
+    error TEXT,
+    created_at TEXT
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_nc_empresa_folioref ON notas_credito(empresa_id, folio_ref)');
+  console.log('[STARTUP] Tabla notas_credito lista');
+} catch(e) { console.warn('[STARTUP] Error creando tabla notas_credito:', e.message); }
+
 // ── Migration: movs huérfanos con lote_id apuntando a lote inexistente ──
 // Caso reportado: usuario eliminó lote y movs quedaron en estado 'en_lote'
 // con lote_id de un lote ya borrado de lotes_facturacion. Resetear a 'listo'
@@ -2370,6 +2393,21 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
 });
 
 // ── Facturación (crear lote + enviar a SimpleFactura) ────────────────────────
+// ── Lock anti doble-emisión ───────────────────────────────────────────────────
+// Set en memoria con los lote_id que se están emitiendo AHORA. Node es
+// single-thread: el chequeo + add ocurre sincrónicamente antes de cualquier await,
+// así que dos requests concurrentes (doble-click) no pueden pasar ambos. El lock se
+// libera automáticamente al terminar la respuesta (finish/close) por cualquier vía.
+const LOTES_EMITIENDO = new Set();
+function lockEmision(loteId, res) {
+  if (LOTES_EMITIENDO.has(loteId)) return false;        // ya hay una emisión en curso
+  LOTES_EMITIENDO.add(loteId);
+  const liberar = () => LOTES_EMITIENDO.delete(loteId);
+  res.on('finish', liberar);
+  res.on('close', liberar);
+  return true;
+}
+
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids, tipo_dte } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -3063,6 +3101,9 @@ const UMBRAL_LEY_21713_UF = 135; // Boletas con monto > 135 UF requieren campos 
 
 app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, res) => {
   const loteId  = req.params.lote_id;
+  if (!lockEmision(loteId, res)) {
+    return res.status(409).json({ ok: false, error: 'Este lote ya se está emitiendo. Espera a que termine el proceso actual antes de reintentar.' });
+  }
   const lote    = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
   if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
   if (checkEmpresaAdminOnly(req, res, lote.empresa_id)) return;
@@ -3248,8 +3289,11 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         console.log(`[HAULMER] sendEmail.to=${m.email_receptor} para mov ${m.id}`);
       }
 
-      // Idempotency-Key para evitar duplicados (basada en mov ID + lote)
-      const idempKey = `${loteId}-mov-${m.id}-${Date.now()}`;
+      // Idempotency-Key DETERMINISTA por (lote, mov): si por cualquier motivo se
+      // reenvía el mismo movimiento, Haulmer reconoce la clave y NO emite un duplicado.
+      // (Antes incluía Date.now(), lo que cambiaba la clave en cada intento y anulaba
+      //  la protección de idempotencia del proveedor.)
+      const idempKey = `${loteId}-mov-${m.id}`;
 
       try {
         const resp = await fetch(HAULMER_API_URL, {
@@ -3384,6 +3428,9 @@ app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
 // Emit via SimpleFactura API (CSV upload)
 app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
   const loteId = req.params.lote_id;
+  if (!lockEmision(loteId, res)) {
+    return res.status(409).json({ ok: false, error: 'Este lote ya se está emitiendo. Espera a que termine el proceso actual antes de reintentar.' });
+  }
   const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
   if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
   if (checkEmpresaAdminOnly(req, res, lote.empresa_id)) return;
@@ -3567,6 +3614,345 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       .run('error', JSON.stringify({ error: err.message }), now, loteId);
     res.status(500).json({ error: 'Error al conectar con SimpleFactura: ' + err.message });
   }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// NOTAS DE CRÉDITO MASIVAS — anular DTE emitidos por duplicado (SimpleFactura)
+// Flujo: detectar-duplicados (consulta SF) → revisión humana → emitir (NC tipo 61)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Normaliza fechas a YYYY-MM-DD (acepta DD-MM-YYYY, ISO, etc.)
+function fechaYMD(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  const iso = str.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;                  // ya YYYY-MM-DD
+  const m = str.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);           // DD-MM-YYYY
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return iso;
+}
+// YYYY-MM-DD (o lo que sea) → DD-MM-YYYY para el CSV de SF
+function fechaSfDDMMYYYY(s) {
+  const ymd = fechaYMD(s);
+  const p = ymd.split('-');
+  return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : ymd;
+}
+function addDaysYMD(ymd, days) {
+  const d = new Date(ymd + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Normaliza un documento de /documentsIssued a un shape común, tolerando los
+// distintos nombres de campo que SF puede usar según versión/endpoint.
+function normalizeIssuedDoc(d) {
+  if (!d || typeof d !== 'object') return null;
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = d[k];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
+    return undefined;
+  };
+  const tipoRaw = pick('tipoDte', 'tipoDTE', 'tipo', 'codigoTipoDte', 'tipoDocumento', 'TipoDTE', 'TipoDte', 'codTipoDte');
+  const tipo = parseInt(tipoRaw);
+  const folio = String(pick('folio', 'Folio', 'folioDte', 'numeroFolio', 'nroFolio') ?? '').trim();
+  let rut = pick('rutReceptor', 'rutRecep', 'RUTRecep', 'rut', 'rutReceptorDte', 'receptorRut');
+  if (rut && typeof rut === 'object') rut = rut.rut || rut.rutReceptor || '';
+  let razon = pick('razonSocialReceptor', 'razonReceptor', 'nombreReceptor', 'razonSocial', 'RznSocRecep', 'nombreRazonSocialReceptor');
+  if (razon && typeof razon === 'object') razon = razon.razonSocial || razon.nombre || '';
+  const montoRaw = pick('montoTotal', 'total', 'mntTotal', 'monto', 'MntTotal', 'totalDte', 'valorTotal', 'montoTotalDte');
+  const fecha = pick('fechaEmision', 'fecha', 'fchEmis', 'FchEmis', 'fechaDte', 'fechaEmis');
+  return {
+    tipo: isNaN(tipo) ? null : tipo,
+    folio,
+    rut: rut ? String(rut).replace(/[.\s]/g, '').toUpperCase() : '',
+    razon: typeof razon === 'string' ? razon : '',
+    monto: (montoRaw != null && montoRaw !== '') ? Math.round(Number(montoRaw)) : null,
+    fecha: fechaYMD(fecha)
+  };
+}
+
+// Trae la lista COMPLETA de DTE emitidos por SF en el rango [desdeISO, hastaISO].
+async function sfFetchDocumentsIssued(sfConf, desdeISO, hastaISO) {
+  const email = sfConf.username || 'api-token';
+  const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
+  const reqBody = {
+    credenciales: {
+      rutEmisor: rutParaSF(sfConf.rut_emisor || ''),
+      nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
+    },
+    ambiente: 0, salida: 0, desde: desdeISO, hasta: hastaISO
+  };
+  const bodyStr = JSON.stringify(reqBody);
+  const text = await new Promise((resolve, reject) => {
+    const https = require('https');
+    const url = new URL(`${SF_API}/documentsIssued`);
+    const opts = {
+      hostname: url.hostname, path: url.pathname + url.search, method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) }
+    };
+    const r = https.request(opts, resp => { let b = ''; resp.on('data', c => b += c); resp.on('end', () => resolve(b)); });
+    r.on('error', reject); r.write(bodyStr); r.end();
+  });
+  let data;
+  try { data = JSON.parse(text); } catch (e) { throw new Error('SF documentsIssued respuesta no-JSON: ' + text.slice(0, 200)); }
+  const items = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+  const total = (typeof data?.total === 'number') ? data.total : items.length;
+  return { items, total, raw: data };
+}
+
+// GET /api/notas-credito/detectar-duplicados?empresa_id=mt-inversiones&desde=YYYY-MM-DD&hasta=YYYY-MM-DD
+// Detecta DTE con mismo (tipo + RUT receptor + monto + fecha) emitidos más de una vez.
+// Devuelve, por grupo duplicado, los folios "extra" candidatos a anular vía NC.
+app.get('/api/notas-credito/detectar-duplicados', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden detectar duplicados' });
+  const empresaId = req.query.empresa_id;
+  if (!empresaId) return res.status(400).json({ error: 'empresa_id requerido' });
+  const empresas = getAppData('empresas');
+  const empresa = empresas[empresaId];
+  const sfConf = empresa?.simplefactura || {};
+  if (!sfConf.rut_emisor || (!sfConf.username && !sfConf.api_token))
+    return res.status(400).json({ error: 'Sin credenciales SimpleFactura configuradas para ' + empresaId });
+
+  // Rango: por defecto últimos 10 días (cubre el incidente). Acepta desde/hasta YYYY-MM-DD.
+  const hoy = todayCL();
+  const desdeYMD = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || '') ? req.query.desde : addDaysYMD(hoy, -10);
+  const hastaYMD = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || '') ? req.query.hasta : hoy;
+  const desdeISO = `${desdeYMD}T00:00:00`;
+  const hastaISO = `${hastaYMD}T23:59:59`;
+
+  try {
+    const { items, total, raw } = await sfFetchDocumentsIssued(sfConf, desdeISO, hastaISO);
+    const norm = items.map(normalizeIssuedDoc).filter(d => d && d.folio && d.tipo != null);
+
+    // Excluir folios ya acreditados previamente (NC emitida)
+    const yaAcreditados = new Set(
+      db.prepare("SELECT folio_ref FROM notas_credito WHERE empresa_id=? AND estado='emitida'").all(empresaId).map(r => String(r.folio_ref))
+    );
+
+    // Agrupar por (tipo | rut | monto | fecha)
+    const grupos = new Map();
+    for (const d of norm) {
+      const key = `${d.tipo}|${d.rut}|${d.monto}|${d.fecha}`;
+      if (!grupos.has(key)) grupos.set(key, []);
+      grupos.get(key).push(d);
+    }
+
+    const candidatos = [];
+    let gruposDuplicados = 0;
+    for (const [key, docs] of grupos) {
+      if (docs.length < 2) continue;
+      gruposDuplicados++;
+      // Mantener el folio más bajo como original; los demás son duplicados a anular
+      docs.sort((a, b) => (parseInt(a.folio) || 0) - (parseInt(b.folio) || 0));
+      const original = docs[0];
+      for (let i = 1; i < docs.length; i++) {
+        const dup = docs[i];
+        if (yaAcreditados.has(String(dup.folio))) continue; // ya tiene NC
+        candidatos.push({
+          tipo_ref: dup.tipo,
+          folio_ref: dup.folio,
+          folio_original: original.folio,
+          fch_ref: dup.fecha,
+          rut: dup.rut,
+          razon: dup.razon || original.razon || '',
+          monto: dup.monto,
+          repeticiones: docs.length
+        });
+      }
+    }
+    candidatos.sort((a, b) => (parseInt(a.folio_ref) || 0) - (parseInt(b.folio_ref) || 0));
+
+    res.json({
+      ok: true,
+      empresa_id: empresaId,
+      rango: { desde: desdeYMD, hasta: hastaYMD },
+      total_emitidos_sf: total,
+      total_analizados: norm.length,
+      incompleto: total > norm.length,   // SF reportó más de los que pudimos leer (paginación)
+      grupos_duplicados: gruposDuplicados,
+      candidatos,
+      diagnostico: {
+        sample_normalizado: norm[0] || null,
+        sample_raw_keys: items[0] ? Object.keys(items[0]) : [],
+        nota: 'Revisa cada candidato contra el portal del SII antes de confirmar. Si total_analizados < total_emitidos_sf, la lista puede estar incompleta.'
+      }
+    });
+  } catch (err) {
+    console.error('[NC DETECTAR]', err);
+    res.status(500).json({ error: 'Error al consultar SimpleFactura: ' + err.message });
+  }
+});
+
+// Construye las filas CSV de Notas de Crédito (tipo 61) con Referencia al DTE original.
+function buildNcCsvRows(items, empresa) {
+  const fechaHoy = fechaSfDDMMYYYY(todayCL());
+  const itemDefault = empresa?.nombre_item_default || 'Anulación documento';
+  return items.map((it, i) => {
+    const tipoRef = parseInt(it.tipo_ref);
+    const esExento = [34, 41].includes(tipoRef);
+    const monto = Math.round(Number(it.monto) || 0);
+    const razon = (it.razon || '').substring(0, 100);
+    return [
+      i + 1,                                  // Id
+      61,                                     // TipoDte = Nota de Crédito Electrónica
+      1,                                      // FmaPago: contado
+      fechaHoy,                               // FechaEmision (hoy)
+      fechaHoy,                               // Vencimiento
+      rutParaSF(it.rut),                      // RutRecep
+      '',                                     // GiroRecep
+      'NO INFORMADO',                         // Contacto
+      '',                                     // CorreoRecep (no reenviar)
+      'NO INFORMADO',                         // DirRecep
+      '', '',                                 // CmnaRecep, CiudadRecep
+      razon,                                  // RazonSocialRecep
+      '', '', '',                             // DirDest, CmnaDest, CiudadDest
+      tipoRef,                                // ReferenciaTpoDocRef (tipo del DTE original)
+      it.folio_ref,                           // ReferenciaFolioRef (folio a anular)
+      fechaSfDDMMYYYY(it.fch_ref),            // ReferenciaFchRef
+      'Anula documento emitido por duplicado',// ReferenciaRazonRef
+      1,                                      // ReferenciaCodigo = 1 (Anula documento de referencia)
+      '',                                     // CodigoProducto
+      (it.nombre_item || itemDefault),        // NombreProducto
+      `Anulación DTE ${tipoRef} folio ${it.folio_ref}`, // DescripcionProducto
+      1,                                      // CantidadProducto
+      monto,                                  // PrecioProducto
+      'UNID',                                 // UnidadMedida
+      0, 0, 0,                                // Descuento, Recargo, RebajaAvaluo
+      esExento ? 1 : 0,                       // IndicadorExento (espeja el DTE original)
+      monto,                                  // TotalProducto
+      '', '', '', '', '', '',                 // GlosaDR..IndExeDR
+      '',                                     // Correo
+      '', '', ''                              // tracking interno (no aplica)
+    ];
+  });
+}
+function buildNcCsvContent(items, empresa) {
+  let csv = SF_CSV_HEADERS.join(';') + '\n';
+  for (const row of buildNcCsvRows(items, empresa)) csv += row.map(escaparCsvSF).join(';') + '\n';
+  return '﻿' + csv;
+}
+
+// POST /api/notas-credito/emitir   body: { empresa_id, items:[{tipo_ref,folio_ref,fch_ref,rut,razon,monto}] }
+// Emite las NC seleccionadas vía massiveInvoice (mismo canal que la facturación masiva).
+app.post('/api/notas-credito/emitir', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden emitir notas de crédito' });
+  const { empresa_id, items } = req.body || {};
+  if (!empresa_id) return res.status(400).json({ error: 'empresa_id requerido' });
+  if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'Sin items a emitir' });
+
+  // Lock anti doble-click (clave por empresa)
+  const lockKey = `NC-${empresa_id}`;
+  if (!lockEmision(lockKey, res)) {
+    return res.status(409).json({ ok: false, error: 'Ya hay una emisión de notas de crédito en curso para esta empresa. Espera a que termine.' });
+  }
+
+  const empresas = getAppData('empresas');
+  const empresa = empresas[empresa_id];
+  const sfConf = empresa?.simplefactura || {};
+  if (!sfConf.rut_emisor || (!sfConf.username && !sfConf.api_token))
+    return res.status(400).json({ error: 'Sin credenciales SimpleFactura configuradas para ' + empresa_id });
+
+  // Filtrar folios que YA tienen NC emitida (evita doble anulación)
+  const yaAcreditados = new Set(
+    db.prepare("SELECT folio_ref FROM notas_credito WHERE empresa_id=? AND estado='emitida'").all(empresa_id).map(r => String(r.folio_ref))
+  );
+  const aEmitir = [], yaConNc = [];
+  for (const it of items) {
+    if (!it.folio_ref || !it.rut || it.monto == null) continue;
+    if (yaAcreditados.has(String(it.folio_ref))) { yaConNc.push(it.folio_ref); continue; }
+    aEmitir.push(it);
+  }
+  if (aEmitir.length === 0) {
+    return res.status(400).json({ error: 'Todos los folios seleccionados ya tienen Nota de Crédito emitida', ya_con_nc: yaConNc });
+  }
+
+  const now = nowCL();
+  const ncBatchId = `NC-${empresa_id}-${Date.now()}`;
+  try {
+    const token = await sfGetToken(sfConf.username || 'api-token', sfConf.password, sfConf.api_token || null);
+    const csvContent = buildNcCsvContent(aEmitir, empresa);
+    const csvBuffer = Buffer.from(csvContent, 'utf8');
+    const dataJson = JSON.stringify({
+      rutEmisor: rutParaSF(sfConf.rut_emisor || empresa.rut || ''),
+      nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
+    });
+    const { body: mpBody, contentType: mpCT } = buildMultipartBody(
+      csvBuffer, 'input', `NotasCredito_${empresa_id}_${Date.now()}.csv`, 'text/csv', { data: dataJson }
+    );
+    let uploadResp = await fetch(`${SF_API}/massiveInvoice`, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': mpCT }, body: mpBody
+    });
+    if (uploadResp.status === 401) {
+      delete sfTokenCache[sfConf.username];
+      const nt = await sfGetToken(sfConf.username || 'api-token', sfConf.password, sfConf.api_token || null);
+      uploadResp = await fetch(`${SF_API}/massiveInvoice`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${nt}`, 'Content-Type': mpCT }, body: mpBody
+      });
+    }
+    const rawText = await uploadResp.text();
+    console.log(`[NC EMITIR] HTTP ${uploadResp.status} → ${rawText.substring(0, 600)}`);
+    let data; try { data = JSON.parse(rawText); } catch (e) { data = { raw: rawText }; }
+
+    // Map idCsv → folio NC (mismo formato de respuesta que la facturación masiva)
+    const dataArr = Array.isArray(data?.data) ? data.data : [];
+    const errorsArr = Array.isArray(data?.errors) ? data.errors : [];
+    const folioPorIdCsv = new Map();
+    for (const d of dataArr) { const idc = parseInt(d?.idCsv); if (idc && d?.folio) folioPorIdCsv.set(idc, String(d.folio)); }
+    const errorPorIdCsv = new Map();
+    const erroresSinIdCsv = [];
+    for (const e of errorsArr) {
+      if (e && typeof e === 'object' && e.idCsv) errorPorIdCsv.set(parseInt(e.idCsv), e.error || e.message || JSON.stringify(e));
+      else if (e != null) erroresSinIdCsv.push(typeof e === 'object' ? JSON.stringify(e) : String(e));
+    }
+
+    const insNc = db.prepare(`INSERT INTO notas_credito
+      (empresa_id, nc_batch_id, tipo_ref, folio_ref, fch_ref, rut, razon_social, monto, folio_nc, estado, error, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+    let emitidas = 0, conError = 0;
+    const resultados = [];
+    const huboEstructura = folioPorIdCsv.size > 0 || errorPorIdCsv.size > 0;
+    db.transaction(() => {
+      for (let i = 0; i < aEmitir.length; i++) {
+        const it = aEmitir[i]; const idCsv = i + 1;
+        const folioNc = folioPorIdCsv.get(idCsv);
+        const errLinea = errorPorIdCsv.get(idCsv);
+        // Si SF no entregó estructura por línea pero el HTTP fue OK, asumir emitida.
+        const okSinEstructura = !huboEstructura && uploadResp.ok && erroresSinIdCsv.length === 0;
+        if (folioNc || okSinEstructura) {
+          insNc.run(empresa_id, ncBatchId, parseInt(it.tipo_ref), String(it.folio_ref), fechaYMD(it.fch_ref),
+            it.rut, (it.razon || '').substring(0, 100), Math.round(Number(it.monto) || 0), folioNc || null, 'emitida', null, now);
+          emitidas++; resultados.push({ folio_ref: it.folio_ref, estado: 'emitida', folio_nc: folioNc || null });
+        } else {
+          const motivo = errLinea || erroresSinIdCsv.join(' | ') || `HTTP ${uploadResp.status}`;
+          insNc.run(empresa_id, ncBatchId, parseInt(it.tipo_ref), String(it.folio_ref), fechaYMD(it.fch_ref),
+            it.rut, (it.razon || '').substring(0, 100), Math.round(Number(it.monto) || 0), null, 'error', motivo, now);
+          conError++; resultados.push({ folio_ref: it.folio_ref, estado: 'error', error: motivo });
+        }
+      }
+    })();
+
+    const mensaje = `Notas de crédito: ${emitidas} emitidas, ${conError} con error de ${aEmitir.length}` +
+      (yaConNc.length ? ` (${yaConNc.length} omitidas por ya tener NC)` : '');
+    res.json({
+      ok: emitidas > 0, nc_batch_id: ncBatchId, emitidas, con_error: conError,
+      omitidas_ya_con_nc: yaConNc, httpStatus: uploadResp.status, mensaje, resultados
+    });
+  } catch (err) {
+    console.error('[NC EMITIR FATAL]', err);
+    res.status(500).json({ error: 'Error al emitir notas de crédito: ' + err.message });
+  }
+});
+
+// GET /api/notas-credito/historial?empresa_id=...  — NC ya emitidas (trazabilidad)
+app.get('/api/notas-credito/historial', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores' });
+  const empresaId = req.query.empresa_id;
+  const rows = empresaId
+    ? db.prepare('SELECT * FROM notas_credito WHERE empresa_id=? ORDER BY id DESC LIMIT 500').all(empresaId)
+    : db.prepare('SELECT * FROM notas_credito ORDER BY id DESC LIMIT 500').all();
+  res.json({ ok: true, notas: rows });
 });
 
 // Test SimpleFactura connectivity
@@ -6074,3 +6460,4 @@ app.post('/api/importar/base-historica', requireAuth, upload.single('base'), (re
 });
 
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+// build: anti-doble-emision + notas de credito masivas (jun-2026)

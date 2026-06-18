@@ -3700,29 +3700,35 @@ async function sfFetchDocumentsIssued(sfConf, desdeYMD, hastaYMD) {
   });
   const parseItems = d => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : (Array.isArray(d?.items) ? d.items : []));
 
+  const credSP = { rutEmisor: rutSP, nombreSucursal: sucursal };
+  const credCP = { rutEmisor: rutCP, nombreSucursal: sucursal };
   const variantes = [
-    { label: 'credSP-UTC',   body: { credenciales: { rutEmisor: rutSP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
-    { label: 'credCP-UTC',   body: { credenciales: { rutEmisor: rutCP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
-    { label: 'credSP-local', body: { credenciales: { rutEmisor: rutSP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeLocal, hasta: hastaLocal } },
-    { label: 'credCP-local', body: { credenciales: { rutEmisor: rutCP, nombreSucursal: sucursal }, ambiente: 0, salida: 0, desde: desdeLocal, hasta: hastaLocal } },
+    { label: 'credSP-UTC',     body: { credenciales: credSP, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
+    { label: 'credCP-UTC',     body: { credenciales: credCP, ambiente: 0, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
+    { label: 'sinSucursal',    body: { credenciales: { rutEmisor: rutSP },                  ambiente: 0, salida: 0, desde: desdeUTC, hasta: hastaUTC } },
+    { label: 'sucVacia',       body: { credenciales: { rutEmisor: rutSP, nombreSucursal: '' }, ambiente: 0, salida: 0, desde: desdeUTC, hasta: hastaUTC } },
+    { label: 'fechaSimple',    body: { credenciales: credSP, ambiente: 0, salida: 0, desde: desdeYMD,   hasta: hastaYMD } },
+    { label: 'FechaDesdeHasta',body: { credenciales: credSP, ambiente: 0, salida: 0, FechaDesde: desdeUTC, FechaHasta: hastaUTC } },
+    { label: 'credSP-local',   body: { credenciales: credSP, ambiente: 0, salida: 0, desde: desdeLocal, hasta: hastaLocal } },
+    { label: 'ambiente1',      body: { credenciales: credSP, ambiente: 1, salida: 0, desde: desdeUTC,   hasta: hastaUTC } },
   ];
 
-  let chosen = null, primera = null;
+  const pausa = ms => new Promise(r => setTimeout(r, ms));
+  let chosen = null;
+  const intentos = [];
   for (const v of variantes) {
     let status, text;
-    try { ({ status, text } = await doReq(v.body)); } catch (e) { continue; }
+    try { ({ status, text } = await doReq(v.body)); } catch (e) { intentos.push({ variante: v.label, error: e.message }); continue; }
     let d; try { d = JSON.parse(text); } catch (e) { d = null; }
-    if (!primera) primera = {
-      variante: v.label, status, preview: (text || '').slice(0, 500),
-      keys: (d && typeof d === 'object' && !Array.isArray(d)) ? Object.keys(d) : (Array.isArray(d) ? ['(array)'] : [])
-    };
     const items = parseItems(d);
     const total = (typeof d?.total === 'number') ? d.total : items.length;
+    intentos.push({ variante: v.label, status, count: items.length, total, message: (d && d.message) || null, preview: (text || '').slice(0, 200) });
     if (items.length > 0 || total > 0) { chosen = { v, d, items, total, status }; break; }
+    await pausa(350);   // respetar rate limit SF (2/seg)
   }
 
   if (!chosen) {
-    return { items: [], total: 0, raw: primera, debug: { usado: null, intentos: variantes.map(x => x.label), primera } };
+    return { items: [], total: 0, raw: intentos[0] || null, debug: { usado: null, intentos } };
   }
 
   // Paginación defensiva: si SF reporta más de los que trajo, recorrer páginas.

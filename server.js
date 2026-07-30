@@ -3315,14 +3315,28 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
 
   const HAULMER_API_URL = 'https://api.haulmer.com/v2/dte/document';
 
-  let emitidos = 0, erroresEmision = 0;
+  // ── AGRUPACIÓN POR RUT (misma lógica que SimpleFactura) ─────────────────────
+  // Un DTE por grupo; cada movimiento del grupo = una línea de Detalle con su fecha.
+  await getUFCLP(todayCL()); // poblar caché UF para el umbral de agrupación
+  const umbralAgrup = umbralAgrupacionSyncCLP();
+  const grupos = agruparMovsParaSF(movs, empresa, umbralAgrup);
+  const gruposMulti = grupos.filter(g => g.movs.length > 1).length;
+  console.log(`[HAULMER AGRUPACION] ${movs.length} movimientos → ${grupos.length} DTE (${gruposMulti} agrupados, umbral 135UF=$${umbralAgrup.toLocaleString('es-CL')})`);
+
+  let emitidos = 0, erroresEmision = 0, docsEmitidos = 0;
   const resultados = [];
 
   try {
-    for (const m of movs) {
-      const tipoDte = getTipoDte(m.rut_normalizado, empresa);
-      const fecha   = fechaParaHaulmer(m.fecha);
-      const monto   = Math.round(m.monto_total || m.monto || 0);
+    for (const g of grupos) {
+      const m       = g.movs[0]; // mov representativo del grupo: RUT/receptor/dirección
+      const multi   = g.movs.length > 1;
+      const tipoDte = g.tipoDte;
+      // Fecha del documento: la última fecha de movimiento del grupo (1 mov = su fecha)
+      const fechaDocISO = g.movs.reduce((mx, x) => (x.fecha && x.fecha > mx ? x.fecha : mx), m.fecha);
+      const fecha   = fechaParaHaulmer(fechaDocISO);
+      const monto   = Math.round(g.movs.reduce((s, x) => s + (x.monto_total || x.monto || 0), 0));
+      // Correo del grupo: primer movimiento que tenga email propio
+      const emailGrupo = ((g.movs.find(x => x.email_receptor && x.email_receptor.trim()) || {}).email_receptor || '').trim();
 
       // Payload Haulmer v2 — orden de campos sigue esquema SII estricto
       // Boletas (39/41): DTE_v10 + EnvioBOLETA_v11.xsd → NO tiene FmaPago
@@ -3338,24 +3352,29 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // el portal de Haulmer (decision de politica abr 2026).
       let superaUmbral135UF = false;
       if (esBoleta) {
-        const uf = await getUFCLP((m.fecha || '').substring(0, 10));
+        // Nota: la agrupación ya parte los grupos antes de superar 135 UF, así que
+        // aquí solo caen movimientos INDIVIDUALES cuyo monto propio supera el umbral.
+        const uf = await getUFCLP((fechaDocISO || '').substring(0, 10));
         const umbralCLP = Math.round(UMBRAL_LEY_21713_UF * uf);
         superaUmbral135UF = monto > umbralCLP;
         if (superaUmbral135UF) {
           const rutDigits = (m.rut || '').replace(/[.\-]/g, '');
           const rutValido = rutDigits && !/^6+6[kK0-9]?$/.test(rutDigits);
-          const tieneEmail = m.email_receptor && m.email_receptor.trim();
+          const tieneEmail = !!emailGrupo;
           if (!rutValido || !tieneEmail) {
             const motivo = !rutValido
               ? `Boleta > 135 UF (Ley 21.713) requiere RUT real del cliente. RUT actual: "${m.rut || 'vacio'}"`
               : `Boleta > 135 UF (Ley 21.713) requiere correo del cliente para emision automatica`;
-            db.prepare("UPDATE movimientos SET estado='pendiente_manual', updated_at=? WHERE id=?").run(now, m.id);
-            console.log(`[HAULMER] mov ${m.id} → pendiente_manual: ${motivo}`);
-            resultados.push({
-              id: m.id, status: 'pendiente_manual', motivo,
-              monto, umbral_clp: umbralCLP, uf_dia: uf
-            });
-            continue; // saltar emision para este mov
+            const updPM = db.prepare("UPDATE movimientos SET estado='pendiente_manual', updated_at=? WHERE id=?");
+            for (const x of g.movs) {
+              updPM.run(now, x.id);
+              console.log(`[HAULMER] mov ${x.id} → pendiente_manual: ${motivo}`);
+              resultados.push({
+                id: x.id, status: 'pendiente_manual', motivo,
+                monto, umbral_clp: umbralCLP, uf_dia: uf
+              });
+            }
+            continue; // saltar emision para este grupo
           }
         }
       }
@@ -3403,7 +3422,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         RUTRecep:    rutRecep,
         RznSocRecep: (m.razon_social || m.nombre_origen || '').substring(0, 100),
         // CorreoRecep en posicion XSD correcta (entre RznSocRecep y DirRecep) cuando supera 135 UF
-        ...(superaUmbral135UF && m.email_receptor ? { CorreoRecep: m.email_receptor.trim() } : {}),
+        ...(superaUmbral135UF && emailGrupo ? { CorreoRecep: emailGrupo } : {}),
         DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
         CmnaRecep:   m.comuna || 'NO INFORMADA',
         CiudadRecep: m.ciudad || ciudadOrigen
@@ -3413,38 +3432,46 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         GiroRecep:   (m.giro || 'NO INFORMADA').substring(0, 80),
         // Solo poblar CorreoRecep si el cliente tiene correo propio.
         // Sin fallback al emisor para evitar que el DTE le llegue a TS en lugar del cliente.
-        CorreoRecep: m.email_receptor || '',
+        CorreoRecep: emailGrupo || '',
         DirRecep:    (m.direccion || 'NO INFORMADA').substring(0, 100),
         CmnaRecep:   m.comuna || 'NO INFORMADA',
         CiudadRecep: m.ciudad || ciudadOrigen
       };
 
+      // Detalle: UNA línea por movimiento del grupo. En grupos multi cada línea
+      // lleva la fecha de SU transferencia (NmbItem max 80 chars por XSD SII).
+      const detalles = g.movs.map((x, idx) => {
+        const montoMov = Math.round(x.monto_total || x.monto || 0);
+        const baseNombre = (x.nombre_item || nombreItem + ' ' + (x.banco_cartola || '')).trim();
+        const nombre = (multi ? `${baseNombre} (Transf. ${fechaSfDDMMYYYY(x.fecha)})` : baseNombre).substring(0, 80);
+        return esAfecto
+          ? {
+              NroLinDet: idx + 1,
+              NmbItem:   nombre,
+              QtyItem:   1,
+              PrcItem:   Math.round(montoMov / 1.19),
+              MontoItem: Math.round(montoMov / 1.19)
+            }
+          : {
+              NroLinDet: idx + 1,
+              NmbItem:   nombre,
+              QtyItem:   1,
+              PrcItem:   montoMov,
+              MontoItem: montoMov,
+              IndExe:    1
+            };
+      });
+
       // Totales: si tipo es AFECTO (33/39) → neto + IVA 19%. Si EXENTO (34/41) → todo MntExe.
       // Monto stored ya incluye IVA cuando aplica (transferencia recibida total).
+      // Afecto: MntNeto = SUMA de los netos por línea (consistencia con Detalle al centavo).
       const totales = esAfecto
         ? (() => {
-            const neto = Math.round(monto / 1.19);
+            const neto = detalles.reduce((s, d) => s + d.MontoItem, 0);
             const iva  = monto - neto;
             return { MntNeto: neto, TasaIVA: 19, IVA: iva, MntTotal: monto };
           })()
         : { MntExe: monto, MntTotal: monto };
-
-      const detalle = esAfecto
-        ? {
-            NroLinDet: 1,
-            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
-            QtyItem:   1,
-            PrcItem:   Math.round(monto / 1.19),
-            MontoItem: Math.round(monto / 1.19)
-          }
-        : {
-            NroLinDet: 1,
-            NmbItem:   (m.nombre_item || nombreItem + ' ' + (m.banco_cartola || '')).trim(),
-            QtyItem:   1,
-            PrcItem:   monto,
-            MontoItem: monto,
-            IndExe:    1
-          };
 
       const payload = {
         response: ['FOLIO'],
@@ -3455,7 +3482,7 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
             Receptor: receptor,
             Totales: totales
           },
-          Detalle: [detalle]
+          Detalle: detalles
         }
       };
 
@@ -3465,16 +3492,18 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       // El correo es ADICIONAL al envio al "correo de intercambio" del SII; receptores
       // sin contrato de intercambio (ej: personas naturales) solo reciben con sendEmail.
       // Aplica para boletas (39/41) y facturas (33/34).
-      if (m.email_receptor && m.email_receptor.trim()) {
-        payload.sendEmail = { to: m.email_receptor.trim() };
-        console.log(`[HAULMER] sendEmail.to=${m.email_receptor} para mov ${m.id}`);
+      if (emailGrupo) {
+        payload.sendEmail = { to: emailGrupo };
+        console.log(`[HAULMER] sendEmail.to=${emailGrupo} para ${multi ? `grupo de ${g.movs.length} movs` : `mov ${m.id}`}`);
       }
 
-      // Idempotency-Key DETERMINISTA por (lote, mov): si por cualquier motivo se
-      // reenvía el mismo movimiento, Haulmer reconoce la clave y NO emite un duplicado.
-      // (Antes incluía Date.now(), lo que cambiaba la clave en cada intento y anulaba
-      //  la protección de idempotencia del proveedor.)
-      const idempKey = `${loteId}-mov-${m.id}`;
+      // Idempotency-Key DETERMINISTA por (lote, mov/grupo): si por cualquier motivo se
+      // reenvía el mismo documento, Haulmer reconoce la clave y NO emite un duplicado.
+      // Grupos de 1 mov conservan el formato histórico `-mov-` (compatible con
+      // reintentos de lotes previos a la agrupación).
+      const idempKey = multi
+        ? `${loteId}-grp-${g.movs[0].id}-${g.movs[g.movs.length - 1].id}-${g.movs.length}`
+        : `${loteId}-mov-${m.id}`;
 
       try {
         const resp = await fetch(HAULMER_API_URL, {
@@ -3490,45 +3519,56 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); } catch(e) { data = { raw }; }
-        console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
+        console.log(`[HAULMER] DTE ${tipoDte} ${multi ? `grupo ${g.movs.length} movs (${g.movs.map(x=>x.id).join(',')})` : `mov ${m.id}`} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
-          // FIX: guardar el folio que Haulmer retorna (payload pide response:['FOLIO']).
-          // Haulmer puede devolverlo como FOLIO / folio / Folio según versión.
+          // Guardar el folio que Haulmer retorna (payload pide response:['FOLIO']).
+          // Todos los movimientos del grupo comparten el MISMO folio (1 DTE).
           const folioHaulmer = data?.FOLIO ?? data?.folio ?? data?.Folio ?? null;
-          db.prepare("UPDATE movimientos SET estado='facturado', folio_dte=COALESCE(?, folio_dte), fecha_facturacion=?, updated_at=? WHERE id=?")
-            .run(folioHaulmer != null ? String(folioHaulmer) : null, now, now, m.id);
-          emitidos++;
-          // Metadata compacta para el endpoint /api/debug/haulmer (sin guardar el raw completo).
-          resultados.push({
-            id: m.id, status: 'emitido',
-            folio: folioHaulmer,
-            sendEmail_sent: payload.sendEmail || null,
-            email_receptor: m.email_receptor || null,
-            resp: raw.substring(0,200)
-          });
+          const updFact = db.prepare("UPDATE movimientos SET estado='facturado', folio_dte=COALESCE(?, folio_dte), fecha_facturacion=?, updated_at=? WHERE id=?");
+          for (const x of g.movs) {
+            updFact.run(folioHaulmer != null ? String(folioHaulmer) : null, now, now, x.id);
+            // Metadata compacta para /api/debug/haulmer y backfill (una entrada por mov).
+            resultados.push({
+              id: x.id, status: 'emitido',
+              folio: folioHaulmer,
+              grupo_movs: g.movs.length,
+              sendEmail_sent: payload.sendEmail || null,
+              email_receptor: x.email_receptor || null,
+              resp: raw.substring(0,200)
+            });
+          }
+          emitidos += g.movs.length;
+          docsEmitidos++;
         } else {
-          db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
-          erroresEmision++;
-          resultados.push({
-            id: m.id, status: 'error', httpStatus: resp.status,
-            sendEmail_sent: payload.sendEmail || null,
-            email_receptor: m.email_receptor || null,
-            resp: raw.substring(0,200)
-          });
+          const updErr = db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?");
+          for (const x of g.movs) {
+            updErr.run(now, x.id);
+            resultados.push({
+              id: x.id, status: 'error', httpStatus: resp.status,
+              grupo_movs: g.movs.length,
+              sendEmail_sent: payload.sendEmail || null,
+              email_receptor: x.email_receptor || null,
+              resp: raw.substring(0,200)
+            });
+          }
+          erroresEmision += g.movs.length;
         }
       } catch(dteErr) {
-        console.error(`[HAULMER] Error mov ${m.id}:`, dteErr.message);
-        db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?").run(now, m.id);
-        erroresEmision++;
-        resultados.push({ id: m.id, status: 'error', error: dteErr.message, sendEmail_sent: payload.sendEmail || null });
+        console.error(`[HAULMER] Error ${multi ? `grupo (${g.movs.map(x=>x.id).join(',')})` : `mov ${m.id}`}:`, dteErr.message);
+        const updErr2 = db.prepare("UPDATE movimientos SET estado='error', updated_at=? WHERE id=?");
+        for (const x of g.movs) {
+          updErr2.run(now, x.id);
+          resultados.push({ id: x.id, status: 'error', error: dteErr.message, grupo_movs: g.movs.length, sendEmail_sent: payload.sendEmail || null });
+        }
+        erroresEmision += g.movs.length;
       }
     }
 
     const loteEstado = emitidos === movs.length ? 'emitido' : (emitidos > 0 ? 'parcial' : 'error');
-    const mensaje = `Haulmer: ${emitidos} emitidos, ${erroresEmision} errores de ${movs.length} DTEs`;
+    const mensaje = `Haulmer: ${emitidos} movimientos emitidos en ${docsEmitidos} DTE${gruposMulti ? ` (${gruposMulti} boletas agrupadas por RUT)` : ''}, ${erroresEmision} errores de ${movs.length} movimientos`;
     db.prepare("UPDATE lotes_facturacion SET estado=?, response_api=?, updated_at=? WHERE lote_id=?")
-      .run(loteEstado, JSON.stringify({ mensaje, emitidos, erroresEmision, resultados: resultados.slice(0,50) }), now, loteId);
+      .run(loteEstado, JSON.stringify({ mensaje, emitidos, erroresEmision, documentos: docsEmitidos, boletas_agrupadas: gruposMulti, resultados: resultados.slice(0,50) }), now, loteId);
 
     res.json({ ok: emitidos > 0, emitidos, errores: erroresEmision, total: movs.length, mensaje, resultados: resultados.slice(0,50) });
   } catch (err) {

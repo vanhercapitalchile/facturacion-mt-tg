@@ -6,3 +6,27 @@ data/
 .env
 .DS_Store
 npm-debug.log*
+
+# ── Archivos de trabajo locales (cartolas, bases, docs, mockups) — no subir ──
+/*.xlsx
+/*.xls
+/*.XLS
+/*.csv
+/*.pdf
+/*.png
+/*.jpeg
+/mockup_*.html
+/preview.html
+/demo-server.js
+/test_bch*.js
+/*.skill
+/cruce_bci_datos.json
+/resolucion_pident.json
+/package-lock.json
+/.sync_test.txt
+/_sync_probe.txt
+/ImportarHaulmer.md
+/BLUEPRINT_Conciliacion_Bancaria.md
+/MEMORIA-DESARROLLO.md
+/TS_Capital_Facturacion.md
+/TS Capital para facturar/

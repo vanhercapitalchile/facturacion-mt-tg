@@ -458,14 +458,26 @@ try {
 (function reclassifyMovimientos() {
   try {
     const empresas = getAppData('empresas') || {};
-    const movs = db.prepare("SELECT id, empresa_id, rut_normalizado, nombre_origen, estado, tipo_dte FROM movimientos WHERE estado NOT IN ('facturado')").all();
+    // FIX: excluir 'interno' — antes este SELECT los incluía y el loop de abajo
+    // promovía tipo-41 a 'listo', RESUCITANDO a los socios excluidos (caso real:
+    // rep legal TS 16.793.858-2 reapareció en Facturar). La migración RUTS_INTERNOS
+    // corre ANTES que esto en el startup, así que sin este filtro se deshacía sola.
+    const movs = db.prepare("SELECT id, empresa_id, rut_normalizado, nombre_origen, estado, tipo_dte FROM movimientos WHERE estado NOT IN ('facturado','interno')").all();
     if (!movs.length) return;
     const upd = db.prepare("UPDATE movimientos SET tipo_dte=?, estado=?, razon_social=COALESCE(NULLIF(razon_social,''), nombre_origen, razon_social), updated_at=? WHERE id=?");
+    const updInterno = db.prepare("UPDATE movimientos SET estado='interno', updated_at=? WHERE id=?");
     const now = nowCL ? nowCL() : new Date().toISOString();
     let fixed = 0;
     db.transaction(() => {
       for (const m of movs) {
         if (!m.rut_normalizado) continue;
+        // RUT de socio/empresa propia → forzar 'interno', nunca reclasificar a facturable
+        // (chequeo inline con `empresas` ya cargado — evita un SELECT por movimiento)
+        const exclEmp = (empresas[m.empresa_id]?.ruts_excluidos) || [];
+        if (RUTS_INTERNOS.includes(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen)) {
+          updInterno.run(now, m.id);
+          continue;
+        }
         const empConfig = empresas[m.empresa_id];
         const correcto = getTipoDte(m.rut_normalizado, empConfig);
         if (m.tipo_dte !== correcto) {
@@ -496,6 +508,36 @@ try {
   if (restored.changes > 0)
     console.log(`[MIGRATION] Restaurados ${restored.changes} movimientos tipo_34 a estado='listo' (tenían datos completos)`);
 } catch(e) { console.warn('[MIGRATION] Error restaurando movimientos tipo_34:', e.message); }
+
+// ── Migration: sacar de lotes NO emitidos cualquier mov con RUT interno ───────
+// Complementa la migración RUTS_INTERNOS (que solo cubre pendiente/listo): si un
+// socio se coló hasta un lote pendiente/error, sacarlo antes de que se emita.
+try {
+  const phold2 = RUTS_INTERNOS.map(() => '?').join(',');
+  const r2 = db.prepare(
+    `UPDATE movimientos SET estado='interno', lote_id=NULL, updated_at=datetime('now')
+     WHERE rut_normalizado IN (${phold2}) AND estado IN ('en_lote','error')`
+  ).run(...RUTS_INTERNOS);
+  if (r2.changes > 0) console.log(`[MIGRATION] ${r2.changes} movs con RUT interno sacados de lotes no emitidos`);
+} catch(e) { console.warn('[MIGRATION] Error sacando internos de lotes:', e.message); }
+
+// ── Migration: backfill folio_dte de emisiones Haulmer históricas ─────────────
+// El endpoint emitir-haulmer guardaba el folio solo en response_api.resultados
+// del lote (no en movimientos.folio_dte). Recuperarlo para los ya facturados.
+try {
+  const lotesH = db.prepare(`SELECT lote_id, response_api FROM lotes_facturacion WHERE response_api LIKE '%resultados%'`).all();
+  let backfilled = 0;
+  const updFolio = db.prepare(`UPDATE movimientos SET folio_dte=?, updated_at=datetime('now') WHERE id=? AND (folio_dte IS NULL OR folio_dte='')`);
+  for (const l of lotesH) {
+    let ra; try { ra = JSON.parse(l.response_api); } catch(e) { continue; }
+    for (const r of (ra?.resultados || [])) {
+      if (r && r.status === 'emitido' && r.folio != null && r.id) {
+        backfilled += updFolio.run(String(r.folio), r.id).changes;
+      }
+    }
+  }
+  if (backfilled > 0) console.log(`[MIGRATION] Backfill folio_dte Haulmer: ${backfilled} movimientos actualizados desde response_api de lotes`);
+} catch(e) { console.warn('[MIGRATION] Error backfill folios Haulmer:', e.message); }
 
 // ── Seed ─────────────────────────────────────────────────────────────────────
 (function seedIfEmpty() {
@@ -2370,7 +2412,8 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
   const empresas = getAppData('empresas') || {};
   // Incluir 'en_lote' para poder reclasificar movimientos en lotes con error
-  let sql = "SELECT id, empresa_id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE estado NOT IN ('facturado')";
+  // FIX: excluir 'interno' — antes se reclasificaban socios excluidos de vuelta a 'listo'
+  let sql = "SELECT id, empresa_id, rut_normalizado, nombre_origen, estado FROM movimientos WHERE estado NOT IN ('facturado','interno')";
   const params = [];
   if (empresaId) { sql += ' AND empresa_id = ?'; params.push(empresaId); }
   const movs = db.prepare(sql).all(...params);
@@ -2379,6 +2422,12 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   db.transaction(() => {
     for (const m of movs) {
       if (!m.rut_normalizado) continue;
+      // RUT de socio/empresa propia → forzar 'interno', nunca promover a facturable
+      const exclEmp = (empresas[m.empresa_id]?.ruts_excluidos) || [];
+      if (RUTS_INTERNOS.includes(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen)) {
+        db.prepare("UPDATE movimientos SET estado='interno', updated_at=? WHERE id=?").run(now, m.id);
+        continue;
+      }
       const empConfig = empresas[m.empresa_id];
       const correcto = getTipoDte(m.rut_normalizado, empConfig);
       // Solo promover boletas (41) a 'listo'. Para facturas (34) conservar estado actual:
@@ -2438,6 +2487,19 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
 
   if (movs.length === 0) return res.status(400).json({ error: 'No hay movimientos listos para facturar' });
 
+  // ÚLTIMA LÍNEA DE DEFENSA: nunca armar lote con RUTs de socios/empresas propias.
+  // Si alguno se coló hasta 'listo' (bug histórico del reclasificador), se marca
+  // 'interno' aquí y NO entra al lote.
+  const excluidos = movs.filter(m => esMovimientoInterno(m.rut_normalizado, m.nombre_origen, m.empresa_id));
+  if (excluidos.length) {
+    const idsExcl = new Set(excluidos.map(m => m.id));
+    const updInt = db.prepare("UPDATE movimientos SET estado='interno', lote_id=NULL, updated_at=? WHERE id=?");
+    for (const m of excluidos) updInt.run(now, m.id);
+    console.warn(`[CREAR-LOTE] ${excluidos.length} movs con RUT interno excluidos del lote: ${excluidos.map(m => `#${m.id} ${m.rut || m.rut_normalizado}`).join(', ')}`);
+    movs = movs.filter(m => !idsExcl.has(m.id));
+    if (movs.length === 0) return res.status(400).json({ error: `Todos los movimientos seleccionados tienen RUT interno (socios/empresas propias) — fueron marcados como 'interno' y no se facturarán` });
+  }
+
   const montoTotal = movs.reduce((s, m) => s + (m.monto_total || 0), 0);
   const ultimaFecha = maxFechaLote(movs);
   const nombre = `Lote ${ultimaFecha} ${movs.length} DTE`.trim();
@@ -2451,7 +2513,10 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
     for (const m of movs) updStmt.run(loteId, now, m.id);
   })();
 
-  res.json({ ok: true, lote_id: loteId, nombre, cantidad: movs.length, monto_total: montoTotal });
+  res.json({
+    ok: true, lote_id: loteId, nombre, cantidad: movs.length, monto_total: montoTotal,
+    ...(excluidos.length ? { excluidos_internos: excluidos.length, aviso: `${excluidos.length} movimiento(s) con RUT interno (socios) fueron excluidos del lote y marcados como 'interno'` } : {})
+  });
 });
 
 // Marcar movimientos como facturados manualmente (sin emitir vía API)
@@ -3428,13 +3493,16 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         console.log(`[HAULMER] DTE ${tipoDte} mov ${m.id} → HTTP ${resp.status}: ${raw.substring(0,200)}`);
 
         if (resp.ok && !data?.error) {
-          db.prepare("UPDATE movimientos SET estado='facturado', fecha_facturacion=?, updated_at=? WHERE id=?")
-            .run(now, now, m.id);
+          // FIX: guardar el folio que Haulmer retorna (payload pide response:['FOLIO']).
+          // Haulmer puede devolverlo como FOLIO / folio / Folio según versión.
+          const folioHaulmer = data?.FOLIO ?? data?.folio ?? data?.Folio ?? null;
+          db.prepare("UPDATE movimientos SET estado='facturado', folio_dte=COALESCE(?, folio_dte), fecha_facturacion=?, updated_at=? WHERE id=?")
+            .run(folioHaulmer != null ? String(folioHaulmer) : null, now, now, m.id);
           emitidos++;
           // Metadata compacta para el endpoint /api/debug/haulmer (sin guardar el raw completo).
           resultados.push({
             id: m.id, status: 'emitido',
-            folio: data?.folio || data?.Folio,
+            folio: folioHaulmer,
             sendEmail_sent: payload.sendEmail || null,
             email_receptor: m.email_receptor || null,
             resp: raw.substring(0,200)

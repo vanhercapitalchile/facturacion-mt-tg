@@ -2532,10 +2532,53 @@ app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) =
   const movs = db.prepare(
     `SELECT id, fecha, monto, monto_total, rut, razon_social, nombre_origen, tipo_dte,
             estado, banco_cartola, email_receptor, giro, direccion, comuna, ciudad,
-            id_transferencia, id_compuesto
+            id_transferencia, id_compuesto, folio_dte, fecha_facturacion
      FROM movimientos WHERE lote_id = ? ORDER BY id`
   ).all(req.params.lote_id);
   res.json(movs);
+});
+
+// ── Preview de agrupación de boletas por RUT de un lote ──────────────────────
+// Muestra cuántos DTE se emitirían con la agrupación activa (antes de emitir).
+app.get('/api/facturacion/lotes/:lote_id/preview-agrupacion', requireAuth, async (req, res) => {
+  const loteId = req.params.lote_id;
+  const lote = db.prepare('SELECT * FROM lotes_facturacion WHERE lote_id = ?').get(loteId);
+  if (!lote) return res.status(404).json({ error: 'Lote no encontrado' });
+  // SEGURIDAD: rol empresa solo puede ver lotes de su propia empresa
+  if (req.user.role !== 'admin' && lote.empresa_id !== req.user.empresa) {
+    return res.status(403).json({ error: 'Sin acceso a este lote' });
+  }
+  const empresas = getAppData('empresas');
+  const empresa = empresas[lote.empresa_id];
+  if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+  const movs = db.prepare(
+    `SELECT * FROM movimientos WHERE lote_id = ? AND estado IN ('en_lote','error','listo') ORDER BY id`
+  ).all(loteId);
+  if (!movs.length) return res.json({ ok: true, total_movimientos: 0, total_dte: 0, ahorro: 0, grupos: [] });
+
+  await getUFCLP(todayCL()); // poblar caché UF del día (tiene fallback interno)
+  const umbralCLP = umbralAgrupacionSyncCLP();
+  const grupos = agruparMovsParaSF(movs, empresa, umbralCLP);
+  const agruparActivo = empresa?.simplefactura?.agrupar_boletas !== false;
+
+  res.json({
+    ok: true,
+    agrupar_activo: agruparActivo,
+    total_movimientos: movs.length,
+    total_dte: grupos.length,
+    ahorro: movs.length - grupos.length,
+    umbral_135uf_clp: umbralCLP,
+    grupos: grupos.map(g => ({
+      tipo_dte: g.tipoDte,
+      rut: g.movs[0].rut || g.movs[0].rut_normalizado || '',
+      razon_social: g.movs[0].razon_social || g.movs[0].nombre_origen || '',
+      n_movs: g.movs.length,
+      monto_total: g.monto_total,
+      fechas: g.movs.map(m => m.fecha),
+      mov_ids: g.movs.map(m => m.id)
+    }))
+  });
 });
 
 // Quitar un movimiento específico del lote (admin) — lo devuelve a estado 'listo'
@@ -2860,65 +2903,138 @@ function escaparCsvSF(val) {
   return s;
 }
 
-function buildSfCsvRows(movs, empresa) {
-  return movs.map((m, i) => {
-    const fecha = fechaParaSF(m.fecha);
+// ── AGRUPACIÓN DE BOLETAS POR RUT ─────────────────────────────────────────────
+// Junta los movimientos de boleta (39/41) de un mismo RUT en UN solo DTE
+// multi-ítem (cada movimiento = 1 línea de detalle con su fecha). Reduce la
+// cantidad de documentos emitidos (plan SF 2000 DTE/mes por empresa).
+// Reglas:
+//   - Solo boletas (39/41). Facturas (33/34) siguen 1 movimiento = 1 DTE.
+//   - Solo movimientos del MISMO mes calendario (YYYY-MM de m.fecha).
+//   - Guarda Ley 21.713: si al sumar un mov el grupo superaría 135 UF, se
+//     cierra el grupo y se abre otro para el mismo RUT (se parte en 2 boletas).
+//   - Configurable por empresa: simplefactura.agrupar_boletas (default: ON).
+// Devuelve: [{ tipoDte, movs: [...], monto_total }] en orden de aparición.
+function agruparMovsParaSF(movs, empresa, umbralCLP) {
+  const sf = empresa?.simplefactura || {};
+  const agruparOn = sf.agrupar_boletas !== false && sf.agrupar_boletas !== 'false';
+  const grupos = [];
+  const abiertos = new Map(); // clave tipoDte|rut|mes -> grupo abierto
+  for (const m of movs) {
+    const tipoDte  = getTipoDte(m.rut_normalizado, empresa);
+    const esBoleta = (tipoDte === 39 || tipoDte === 41);
+    const rut      = String(m.rut_normalizado || '').trim();
+    const mes      = String(m.fecha || '').substring(0, 7); // YYYY-MM
+    const monto    = Number(m.monto_total) || 0;
+    if (!agruparOn || !esBoleta || !rut || mes.length < 7) {
+      grupos.push({ tipoDte, movs: [m], monto_total: monto });
+      continue;
+    }
+    const clave = `${tipoDte}|${rut}|${mes}`;
+    let g = abiertos.get(clave);
+    // Ley 21.713: no dejar que un grupo supere 135 UF al agregar este mov
+    if (g && umbralCLP > 0 && (g.monto_total + monto) > umbralCLP) {
+      abiertos.delete(clave);
+      g = null;
+    }
+    if (!g) {
+      g = { tipoDte, movs: [], monto_total: 0 };
+      grupos.push(g);
+      abiertos.set(clave, g);
+    }
+    g.movs.push(m);
+    g.monto_total += monto;
+  }
+  return grupos;
+}
+
+// Umbral 135 UF en CLP sin llamada de red (usa caché de getUFCLP si existe).
+// El endpoint de emisión llama antes a getUFCLP(todayCL()) para poblar la caché.
+function umbralAgrupacionSyncCLP() {
+  const hoy = todayCL().substring(0, 10);
+  const uf = _ufCache[hoy] || 38500; // fallback conservador
+  return Math.round(UMBRAL_LEY_21713_UF * uf);
+}
+
+// Genera las filas CSV desde grupos: filas con el MISMO Id = mismo DTE con
+// varias líneas de detalle (formato masivo SF). Los campos de encabezado del
+// documento (fechas, receptor) se repiten idénticos en cada fila del grupo.
+function buildSfCsvRowsAgrupado(grupos, empresa) {
+  const rows = [];
+  grupos.forEach((g, gi) => {
+    const id = gi + 1;
+    const m0 = g.movs[0];
+    // Fecha del documento: la ÚLTIMA fecha de movimiento del grupo (1 mov = su fecha)
+    const fechaDocISO = g.movs.reduce((mx, m) => (m.fecha && m.fecha > mx ? m.fecha : mx), m0.fecha);
+    const fechaDoc = fechaParaSF(fechaDocISO);
     // Solo enviar email cuando el cliente tenga correo propio en BD.
     // Sin fallback al email_facturacion del emisor para evitar que SF te mande
     // el DTE a TI en lugar de al cliente real.
-    const correoRecep = m.email_receptor || '';
-    const correoExtra = m.email_receptor || '';
+    const correoRecep = (g.movs.find(m => m.email_receptor) || {}).email_receptor || '';
     // Campos del receptor — basados en el formato oficial de los CSVs de ejemplo
     // GiroRecep, CiudadRecep pueden ir vacíos (SF los acepta); sólo RazonSocial y DirRecep requieren valor
-    const razonSocial = (m.razon_social || m.nombre_origen || '').substring(0, 100);
-    const giro        = (m.giro || '').substring(0, 80);
-    const direccion   = (m.direccion || 'NO INFORMADO').substring(0, 100);
-    const comuna      = m.comuna || '';
-    const ciudad      = m.ciudad || '';
-    // tipo_dte: siempre derivar desde config de empresa (ignora valor guardado en movimiento)
-    // Esto permite que un cambio de config se aplique inmediatamente al re-emitir un lote
-    const tipoDte = getTipoDte(m.rut_normalizado, empresa);
+    const razonSocial = (m0.razon_social || m0.nombre_origen || '').substring(0, 100);
+    const giro        = (m0.giro || '').substring(0, 80);
+    const direccion   = (m0.direccion || 'NO INFORMADO').substring(0, 100);
+    const comuna      = m0.comuna || '';
+    const ciudad      = m0.ciudad || '';
+    const multi       = g.movs.length > 1;
 
-    return [
-      i + 1,
-      tipoDte,
-      1,                        // FmaPago: contado
-      fecha,                    // FechaEmision DD-MM-YYYY
-      fecha,                    // Vencimiento (igual a emisión)
-      rutParaSF(m.rut_normalizado || m.rut),  // RutRecep desde normalizado (siempre limpio) o fallback
-      giro,
-      'NO INFORMADO',           // Contacto
-      correoRecep,              // CorreoRecep
-      direccion,
-      comuna,
-      ciudad,
-      razonSocial,
-      '', '', '',               // DirDest, CmnaDest, CiudadDest
-      '', '', '', '', '',       // Referencias (vacías)
-      '',                       // CodigoProducto
-      m.nombre_item || 'Venta paquete activo digital',
-      m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`,
-      1,                        // CantidadProducto
-      m.monto_total || 0,       // PrecioProducto
-      'UNID',
-      0, 0, 0,                  // Descuento, Recargo, RebajaAvaluo
-      1,                        // IndicadorExento=1 (tipos 34 y 41 son AMBOS exentos)
-      m.monto_total || 0,       // TotalProducto
-      '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
-      correoExtra,              // Correo (col 39)
-      m.id_transferencia || '', // ID Transferencia (col 40 — tracking)
-      m.banco_cartola || '',    // Cartola (col 41 — tracking)
-      m.id_compuesto || ''      // Id Compuesto (col 42 — tracking)
-    ];
+    for (const m of g.movs) {
+      const descBase = m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`;
+      // En boletas agrupadas cada línea de detalle lleva la fecha de SU movimiento
+      const descripcion = multi ? `${descBase} (Transf. ${fechaParaSF(m.fecha)})` : descBase;
+      rows.push([
+        id,                       // Id: mismo Id = mismo documento (multi-detalle)
+        g.tipoDte,
+        1,                        // FmaPago: contado
+        fechaDoc,                 // FechaEmision DD-MM-YYYY (única por documento)
+        fechaDoc,                 // Vencimiento (igual a emisión)
+        rutParaSF(m0.rut_normalizado || m0.rut),  // RutRecep desde normalizado (siempre limpio) o fallback
+        giro,
+        'NO INFORMADO',           // Contacto
+        correoRecep,              // CorreoRecep
+        direccion,
+        comuna,
+        ciudad,
+        razonSocial,
+        '', '', '',               // DirDest, CmnaDest, CiudadDest
+        '', '', '', '', '',       // Referencias (vacías)
+        '',                       // CodigoProducto
+        m.nombre_item || 'Venta paquete activo digital',
+        descripcion,
+        1,                        // CantidadProducto
+        m.monto_total || 0,       // PrecioProducto
+        'UNID',
+        0, 0, 0,                  // Descuento, Recargo, RebajaAvaluo
+        1,                        // IndicadorExento=1 (tipos 34 y 41 son AMBOS exentos)
+        m.monto_total || 0,       // TotalProducto
+        '', '', '', '', '', '',   // GlosaDR, TpoMov, TpoValor, ValorDR, ValorOtrMnda, IndExeDR
+        correoRecep,              // Correo (col 39)
+        m.id_transferencia || '', // ID Transferencia (col 40 — tracking)
+        m.banco_cartola || '',    // Cartola (col 41 — tracking)
+        m.id_compuesto || ''      // Id Compuesto (col 42 — tracking)
+      ]);
+    }
   });
+  return rows;
 }
 
-function buildSfCsvContent(movs, empresa) {
+// Wrapper retro-compatible: agrupa internamente, así TODOS los caminos
+// (emisión API, preview CSV, exports manuales) generan el mismo CSV agrupado.
+function buildSfCsvRows(movs, empresa) {
+  return buildSfCsvRowsAgrupado(agruparMovsParaSF(movs, empresa, umbralAgrupacionSyncCLP()), empresa);
+}
+
+function buildSfCsvContentAgrupado(grupos, empresa) {
   let csv = SF_CSV_HEADERS.join(';') + '\n';
-  for (const row of buildSfCsvRows(movs, empresa)) {
+  for (const row of buildSfCsvRowsAgrupado(grupos, empresa)) {
     csv += row.map(escaparCsvSF).join(';') + '\n';
   }
   return '\uFEFF' + csv; // BOM UTF-8 para compatibilidad Excel/SimpleFactura
+}
+
+function buildSfCsvContent(movs, empresa) {
+  return buildSfCsvContentAgrupado(agruparMovsParaSF(movs, empresa, umbralAgrupacionSyncCLP()), empresa);
 }
 
 // Alias para compatibilidad con el endpoint de emisión vía API
@@ -3458,8 +3574,14 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     const token = await sfGetToken(sfConfig.username, sfConfig.password, sfConfig.api_token || null);
     console.log(`[SF] Token obtenido para ${lote.empresa_id} (método: ${sfConfig.api_token ? 'API token' : 'login'})`);
 
-    // 2. Generar CSV en formato SimpleFactura
-    const csvContent = buildSfCsv(movs, empresa);
+    // 2. Agrupar boletas por RUT (mismo mes) y generar CSV en formato SimpleFactura
+    //    Poblar caché UF del día para el umbral Ley 21.713 (getUFCLP tiene fallback interno)
+    await getUFCLP(todayCL());
+    const umbralCLP = umbralAgrupacionSyncCLP();
+    const grupos = agruparMovsParaSF(movs, empresa, umbralCLP);
+    const gruposMulti = grupos.filter(g => g.movs.length > 1).length;
+    console.log(`[SF AGRUPACION] ${movs.length} movimientos → ${grupos.length} DTE (${gruposMulti} agrupados, umbral 135UF=$${umbralCLP.toLocaleString('es-CL')})`);
+    const csvContent = buildSfCsvContentAgrupado(grupos, empresa);
     const csvFilename = `Facturacion_${lote.empresa_id}_${loteId}.csv`;
     const csvBuffer = Buffer.from(csvContent, 'utf8');
 
@@ -3532,20 +3654,41 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       }
     }
 
-    // Clasificar movs uno por uno
+    // Clasificar por DOCUMENTO (grupo). idCsv corresponde al Id del CSV = índice
+    // de grupo (1..grupos.length). Todos los movs de un grupo comparten folio.
+    // MODO DEFENSIVO: si SF devolviera idCsv por FILA (no agrupó — ids > n° de
+    // grupos), mapeamos por posición de fila para no asignar folios cruzados.
+    const filasMovs = grupos.flatMap(g => g.movs); // orden exacto de filas del CSV
+    const idsRespondidos = [...folioPorIdCsv.keys(), ...errorPorIdCsv.keys()];
+    const maxIdRespondido = idsRespondidos.length ? Math.max(...idsRespondidos) : 0;
+    const modoFila = maxIdRespondido > grupos.length; // SF trató cada fila como doc aparte
+    if (modoFila) console.warn(`[SF AGRUPACION] ⚠️ SF respondió ${maxIdRespondido} ids para ${grupos.length} grupos — parece que NO agrupó las filas por Id. Mapeando folios por fila.`);
+
     const movsEmitidos = [], movsConError = [];
-    for (let i = 0; i < movs.length; i++) {
-      const idCsv = i + 1;
-      const folio = folioPorIdCsv.get(idCsv);
-      const errLinea = errorPorIdCsv.get(idCsv);
-      if (folio) movsEmitidos.push({ mov: movs[i], folio });
-      else if (errLinea) movsConError.push({ mov: movs[i], err: errLinea });
-      else if (folioPorIdCsv.size > 0 || errorPorIdCsv.size > 0) {
-        // SF respondió estructurado pero esta línea no figura → considerar error sin detalle
-        movsConError.push({ mov: movs[i], err: 'No retornado por SF' });
+    if (folioPorIdCsv.size > 0 || errorPorIdCsv.size > 0) {
+      if (modoFila) {
+        for (let i = 0; i < filasMovs.length; i++) {
+          const idCsv = i + 1;
+          const folio = folioPorIdCsv.get(idCsv);
+          const errLinea = errorPorIdCsv.get(idCsv);
+          if (folio) movsEmitidos.push({ mov: filasMovs[i], folio });
+          else if (errLinea) movsConError.push({ mov: filasMovs[i], err: errLinea });
+          else movsConError.push({ mov: filasMovs[i], err: 'No retornado por SF' });
+        }
+      } else {
+        for (let gi = 0; gi < grupos.length; gi++) {
+          const idCsv = gi + 1;
+          const folio = folioPorIdCsv.get(idCsv);
+          const errLinea = errorPorIdCsv.get(idCsv);
+          for (const m of grupos[gi].movs) {
+            if (folio) movsEmitidos.push({ mov: m, folio });
+            else if (errLinea) movsConError.push({ mov: m, err: errLinea });
+            else movsConError.push({ mov: m, err: 'No retornado por SF' });
+          }
+        }
       }
-      // Si SF no entregó ni data[] ni errors[] estructurados → caemos al fallback más abajo
     }
+    // Si SF no entregó ni data[] ni errors[] estructurados → caemos al fallback más abajo
 
     // Si SF NO entregó arrays estructurados pero HTTP fue OK, mantener compat: todo emitido.
     if (folioPorIdCsv.size === 0 && errorPorIdCsv.size === 0) {
@@ -3563,15 +3706,16 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
     else if (movsEmitidos.length > 0 && movsConError.length > 0)   loteEstado = 'emitido_parcial';
     else                                                            loteEstado = 'error';
 
-    // Mensaje legible
+    // Mensaje legible (folios únicos = documentos; con agrupación varios movs comparten folio)
+    const foliosUnicos = [...new Set(movsEmitidos.map(x => x.folio).filter(Boolean))];
     let mensaje;
     if (loteEstado === 'emitido') {
-      mensaje = data?.message || `Procesado: ${movsEmitidos.length} DTE emitidos`;
-      const folios = movsEmitidos.map(x => x.folio).filter(Boolean);
-      if (folios.length) mensaje += ` | Folios: ${folios.join(', ')}`;
+      const nDocs = foliosUnicos.length || grupos.length;
+      mensaje = `Procesado: ${nDocs} DTE emitidos (${movsEmitidos.length} movimientos${gruposMulti ? `, ${gruposMulti} boletas agrupadas por RUT` : ''})`;
+      if (foliosUnicos.length) mensaje += ` | Folios: ${foliosUnicos.join(', ')}`;
     } else if (loteEstado === 'emitido_parcial') {
-      mensaje = `⚠️ Emisión parcial: ${movsEmitidos.length} OK, ${movsConError.length} con error.` +
-        (movsEmitidos.length ? ` Folios OK: ${movsEmitidos.map(x=>x.folio).filter(Boolean).join(', ')}.` : '') +
+      mensaje = `⚠️ Emisión parcial: ${movsEmitidos.length} movs OK, ${movsConError.length} con error.` +
+        (foliosUnicos.length ? ` Folios OK: ${foliosUnicos.join(', ')}.` : '') +
         (movsConError.length ? ` Errores: ${movsConError.slice(0,5).map(x=>`#${x.mov.id}:${x.err}`).join(' | ')}` : '');
     } else {
       const errBody = (erroresSinIdCsv.length ? erroresSinIdCsv.join('. ') : '')
@@ -3599,6 +3743,8 @@ app.post('/api/facturacion/emitir/:lote_id', requireAuth, async (req, res) => {
       .run(loteEstado, JSON.stringify({
         httpStatus: uploadResp.status, message: mensaje,
         emitidos: movsEmitidos.length, con_error: movsConError.length,
+        documentos: grupos.length, movimientos: movs.length,
+        boletas_agrupadas: gruposMulti, folios: foliosUnicos,
         data: data?.data, errors: data?.errors
       }), now, loteId);
 

@@ -3874,6 +3874,7 @@ async function toggleLoteDetalle(loteId, btn) {
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">Monto</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Banco</th>
           <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Estado</th>
+          <th style="padding:6px 8px;border-bottom:1px solid var(--border);">Folio DTE</th>
           ${puedeQuitar ? `<th style="padding:6px 8px;border-bottom:1px solid var(--border);"></th>` : ''}
         </tr>
       </thead>
@@ -3893,6 +3894,7 @@ async function toggleLoteDetalle(loteId, btn) {
         <td style="padding:5px 8px;text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td style="padding:5px 8px;"><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || '—'}</span></td>
         <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}${m.estado === 'error' ? ' ⚠️' : ''}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:11px;font-weight:600;color:${m.folio_dte ? 'var(--green,#2ecc71)' : 'var(--txt3)'};">${m.folio_dte || '—'}</td>
         ${puedeQuitar ? `<td style="padding:5px 8px;">
           ${puedeQuitarEste ? `<button onclick="quitarMovimientoDeLote('${loteId}', ${m.id}, this)"
             style="font-size:10px;padding:2px 8px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;"
@@ -3908,18 +3910,52 @@ async function toggleLoteDetalle(loteId, btn) {
   const tipos = {};
   movs.forEach(m => { const t = m.tipo_dte || '?'; tipos[t] = (tipos[t] || 0) + 1; });
   const tipoStr = Object.entries(tipos).map(([k,v]) => `${v}x DTE ${k}`).join(', ');
+  // Folios únicos emitidos (con agrupación, varios movs comparten el mismo folio)
+  const foliosUnicos = [...new Set(movs.map(m => m.folio_dte).filter(Boolean))];
   html = `<div style="padding:6px 0 8px;font-size:12px;color:var(--txt2);display:flex;gap:16px;flex-wrap:wrap;">
     <span><strong>${movs.length}</strong> movimientos</span>
     <span>Total: <strong>${fmt(total)}</strong></span>
     <span>${tipoStr}</span>
+    ${foliosUnicos.length ? `<span style="color:var(--green,#2ecc71);"><strong>${foliosUnicos.length}</strong> DTE emitidos (folios: ${foliosUnicos.join(', ')})</span>` : ''}
   </div>` + html;
 
   container.innerHTML = html;
+
+  // Preview de agrupación por RUT (solo si quedan movs sin facturar y no es Haulmer)
+  const hayPendientes = movs.some(m => m.estado !== 'facturado');
+  if (hayPendientes) {
+    try {
+      const p = await apiFetch(`/api/facturacion/lotes/${loteId}/preview-agrupacion`);
+      if (p?.ok && p.agrupar_activo && p.total_movimientos > 0 && p.ahorro > 0) {
+        const multi = (p.grupos || []).filter(g => g.n_movs > 1);
+        const detalleMulti = multi.slice(0, 8).map(g =>
+          `<span style="white-space:nowrap;">${escHtml(g.razon_social || g.rut)} (${g.n_movs} movs → 1 boleta)</span>`
+        ).join(' · ');
+        container.insertAdjacentHTML('afterbegin', `
+          <div style="margin-bottom:10px;padding:8px 12px;background:rgba(46,204,113,.08);border:1px solid rgba(46,204,113,.3);border-radius:6px;font-size:12px;color:var(--txt2);">
+            📦 <strong style="color:var(--green,#2ecc71);">Agrupación por RUT activa:</strong>
+            al emitir, <strong>${p.total_movimientos}</strong> movimientos se enviarán como
+            <strong>${p.total_dte}</strong> DTE (ahorro de <strong>${p.ahorro}</strong> documentos).
+            ${multi.length ? `<div style="margin-top:4px;color:var(--txt3);">${detalleMulti}${multi.length > 8 ? ` · +${multi.length - 8} más` : ''}</div>` : ''}
+          </div>`);
+      }
+    } catch(e) { /* preview es informativo — no bloquear el detalle */ }
+  }
 }
 
 async function emitirLote(loteId) {
   if (EMITIENDO) return;                 // ya hay una emisión en curso
-  if (!confirm('¿Emitir este lote vía SimpleFactura API?\n\nNo cierres ni recargues la página mientras se emite.')) return;
+  // Mostrar en la confirmación cuántos DTE se emitirán con la agrupación por RUT
+  let resumenAgrup = '';
+  try {
+    const p = await apiFetch(`/api/facturacion/lotes/${loteId}/preview-agrupacion`);
+    if (p?.ok && p.total_movimientos > 0) {
+      resumenAgrup = p.ahorro > 0
+        ? `\n\n📦 Agrupación por RUT: ${p.total_movimientos} movimientos → ${p.total_dte} DTE (ahorro de ${p.ahorro} documentos).`
+        : `\n\nSe emitirán ${p.total_dte} DTE (sin boletas agrupables en este lote).`;
+    }
+  } catch(e) { /* si el preview falla, emitir igual con el mensaje estándar */ }
+  if (!confirm(`¿Emitir este lote vía SimpleFactura API?${resumenAgrup}\n\nNo cierres ni recargues la página mientras se emite.`)) return;
   startEmitiendo('Emitiendo facturas…');
   try {
     const data = await apiFetch(`/api/facturacion/emitir/${loteId}`, { method: 'POST' });
@@ -5155,6 +5191,17 @@ function renderConfig() {
             <option value="34" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 34 ? 'selected' : ''}>34 - Factura Exenta (por defecto)</option>
             <option value="33" ${(emp.simplefactura?.tipo_dte_empresas ?? 34) == 33 ? 'selected' : ''}>33 - Factura Afecta (con IVA)</option>
           </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+            <input type="checkbox" id="cfg-agrupar-${id}" ${emp.simplefactura?.agrupar_boletas === false ? '' : 'checked'} style="width:16px;height:16px;accent-color:var(--green,#2ecc71);">
+            📦 Agrupar boletas por RUT (1 DTE por cliente)
+          </label>
+          <small style="color:var(--txt3);margin-top:4px;display:block;">
+            Al emitir un lote, las boletas (39/41) de un mismo RUT se juntan en <b>un solo DTE</b> con cada transferencia
+            como línea de detalle (con su fecha). Solo agrupa movimientos del <b>mismo mes calendario</b> y parte el grupo
+            si supera 135 UF (Ley 21.713). Reduce los documentos consumidos del plan SimpleFactura. Las facturas (33/34) no se agrupan.
+          </small>
         </div>`;
 
     // Botones SF
@@ -5212,6 +5259,7 @@ async function saveConfig() {
         rut_emisor_sf: document.getElementById(`cfg-sfrutemis-${id}`)?.value.trim() || '',
         sucursal_id_sf: document.getElementById(`cfg-sfsucid-${id}`)?.value.trim() || '',
         emisor_id_sf: document.getElementById(`cfg-sfemisid-${id}`)?.value.trim() || '',
+        agrupar_boletas: document.getElementById(`cfg-agrupar-${id}`)?.checked !== false,
       };
     }
     // Campos compartidos (DTE types + email)

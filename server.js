@@ -3384,8 +3384,11 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         idDoc.IndServicio = 3;   // 3 = Ventas y Servicios
         // MedioPago siempre presente para boletas — TS Capital recibe via transferencia.
         // Obligatorio cuando monto > 135 UF (Ley 21.713 / Resolucion Exenta SII N°44).
-        // Codigos SII: 1=efectivo 2=tarjeta credito 3=tarjeta debito 4=transferencia 5=cheque 6=otros
-        idDoc.MedioPago = 4;
+        // Codigos OFICIALES SII (Formato Boletas Electronicas v4.2, campo 10 Encabezado):
+        //   1=Efectivo 2=Pago electronico 3=Transferencia electronica 4=Cheque 5=Otro
+        // FIX 30-jul-2026: antes se enviaba 4 creyendo que era transferencia y las
+        // boletas salian impresas como "Cheque". Transferencia = 3.
+        idDoc.MedioPago = 3;
       } else {
         idDoc.IndServicio = 3;
         idDoc.FmaPago = 1;       // 1 = Contado (solo facturas)

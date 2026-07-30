@@ -1,0 +1,2 @@
+# Normalizar fines de linea: evita que OneDrive/Windows (CRLF) ensucie git status
+* text=auto

@@ -143,6 +143,29 @@ try { db.exec("ALTER TABLE movimientos ADD COLUMN tipo_cartola TEXT DEFAULT 'def
 try { db.exec('ALTER TABLE movimientos ADD COLUMN dedup_key TEXT'); } catch(e){}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_dedup ON movimientos(empresa_id, banco_cartola, dedup_key)'); } catch(e){}
 
+// ── nmov_santander: N° de movimiento del banco (ancla dedup instantánea↔tradicional) ──
+// La cartola instantánea ("Consulta de movimientos", Movimientos CtaCte) usa FECHA
+// CONTABLE (día hábil siguiente para transferencias fuera de horario/fin de semana),
+// mientras la tradicional ("Transferencias Recibidas") usa la fecha REAL. Validado
+// con archivos TG jul-2026: ~48% de los movimientos difieren en fecha entre formatos,
+// así que la dedup_key (que incluye fecha) NO basta para ese cruce. El N° de
+// movimiento + monto SÍ calza 100% (1857/1857 en la validación).
+try { db.exec('ALTER TABLE movimientos ADD COLUMN nmov_santander TEXT'); } catch(e){}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_mov_nmov ON movimientos(empresa_id, banco_cartola, nmov_santander)'); } catch(e){}
+// Backfill: las filas cargadas desde la tradicional tienen id_transferencia 'YYYY-MM-DD_0000NNNNN'
+try {
+  const r = db.prepare(`
+    UPDATE movimientos
+    SET nmov_santander = LTRIM(SUBSTR(id_transferencia, 12), '0')
+    WHERE banco_cartola = 'SANTANDER'
+      AND (nmov_santander IS NULL OR nmov_santander = '')
+      AND id_transferencia GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9]*'
+      AND SUBSTR(id_transferencia, 12) NOT GLOB '*[^0-9]*'
+      AND LTRIM(SUBSTR(id_transferencia, 12), '0') != ''
+  `).run();
+  if (r.changes > 0) console.log(`[MIGRATION] nmov_santander backfilled en ${r.changes} movimientos Santander`);
+} catch(e) { console.warn('[MIGRATION] Error backfill nmov_santander:', e.message); }
+
 // ── Audit log de cargas de cartola ────────────────────────────────────────────
 // Registra TODA subida de cartola, aunque no haya generado movimientos nuevos
 // (caso histórica 100% duplicada/promovida). Permite a admin auditar quién subió
@@ -5185,10 +5208,25 @@ function normalizarGlosaSantander(glosa) {
   return String(glosa || '').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
+// Glosa canónica cross-format: la cartola tradicional ("Transferencias Recibidas")
+// trunca la glosa a 25 caracteres EXACTOS, mientras la instantánea ("Movimientos
+// CtaCte") trae el texto completo. Truncar a 25 hace la clave idéntica entre
+// formatos (validado 1857/1857 con archivos TG jul-2026). Las claves ya guardadas
+// en BD no cambian: sus glosas de origen ya venían truncadas a ≤25.
+function glosaCanonSantander(glosa) {
+  return normalizarGlosaSantander(glosa).substring(0, 25);
+}
+
 function dedupKeySantander(fecha, monto, glosa, seq) {
   const m = Math.round(Math.abs(parseFloat(monto) || 0));
-  const g = normalizarGlosaSantander(glosa).substring(0, 60).replace(/[^A-Z0-9 ]/g, '');
+  const g = glosaCanonSantander(glosa).replace(/[^A-Z0-9 ]/g, '');
   return `${fecha}_${m}_${g}_${seq}`;
+}
+
+// N° de movimiento canónico: solo dígitos, sin ceros a la izquierda ('000029994' → '29994')
+function nmovCanonSantander(nmov) {
+  const d = String(nmov || '').replace(/\D/g, '').replace(/^0+/, '');
+  return d || '';
 }
 
 // Detecta si un .xlsx Santander es "provisoria" (Cartola provisoria Cta. Cte.)
@@ -5200,10 +5238,14 @@ function detectarTipoSantander(buffer) {
     // Histórica: sheet 'Cartola Historica CtaCte' o A1 'Cartolas históricas...'
     if (wb.SheetNames.some(n => /hist(o|ó)rica/i.test(n))) return 'historica';
     if (wb.SheetNames.some(n => /provisoria/i.test(n))) return 'provisoria';
+    // Instantánea: archivo "CartolaMovimiento*.xlsx", sheet 'Movimientos CtaCte',
+    // A1 'Consulta de movimientos de Cuentas Corrientes'
+    if (wb.SheetNames.some(n => /movimientos\s*ctacte/i.test(n))) return 'instantanea';
     const ws0 = wb.Sheets[wb.SheetNames[0]];
     const a1 = String(ws0?.A1?.v || '').toLowerCase();
     if (a1.includes('hist') && a1.includes('rica')) return 'historica';
     if (a1.includes('cartola provisoria')) return 'provisoria';
+    if (a1.includes('consulta de movimientos')) return 'instantanea';
     return 'definitiva';
   } catch(e) { return 'definitiva'; }
 }
@@ -5401,8 +5443,8 @@ function parseSantanderCartola(buffer) {
     // Santander reutiliza números secuenciales cada mes → prefijamos fecha para unicidad entre períodos
     const idConFecha = fecha ? `${fecha}_${useId}` : useId;
 
-    // Clave canónica para dedup cross-format (provisoria ↔ tradicional)
-    const bk = `${fecha}|${Math.round(monto)}|${normalizarGlosaSantander(glosa)}`;
+    // Clave canónica para dedup cross-format (provisoria/instantánea ↔ tradicional)
+    const bk = `${fecha}|${Math.round(monto)}|${glosaCanonSantander(glosa)}`;
     bucketSeq[bk] = (bucketSeq[bk] || 0) + 1;
     const dedupKey = dedupKeySantander(fecha, monto, glosa, bucketSeq[bk]);
 
@@ -5414,7 +5456,8 @@ function parseSantanderCartola(buffer) {
       nombre_origen: nombre,
       banco_origen: 'No específica',
       cuenta_origen: '999999',
-      dedup_key: dedupKey
+      dedup_key: dedupKey,
+      nmov_santander: nmovCanonSantander(idRaw)  // ancla dedup vs cartola instantánea
     });
   }
   return movimientos;
@@ -5511,7 +5554,7 @@ function parseSantanderProvisoria(buffer) {
     }
 
     // Clave canónica + bucketSeq para distinguir duplicados legítimos
-    const bk = `${fecha}|${Math.round(monto)}|${normalizarGlosaSantander(desc)}`;
+    const bk = `${fecha}|${Math.round(monto)}|${glosaCanonSantander(desc)}`;
     bucketSeq[bk] = (bucketSeq[bk] || 0) + 1;
     const dedupKey = dedupKeySantander(fecha, monto, desc, bucketSeq[bk]);
 
@@ -5526,6 +5569,133 @@ function parseSantanderProvisoria(buffer) {
       banco_origen: 'No específica',
       cuenta_origen: '999999',
       dedup_key: dedupKey
+    });
+  }
+  return movimientos;
+}
+
+// ── Parser Santander Instantánea (.xlsx) ─────────────────────────────────────
+// Archivo "CartolaMovimiento{cuenta}{YYYYMMDD}.xlsx" descargado de la consulta de
+// movimientos en línea. Sheet 'Movimientos CtaCte', A1 'Consulta de movimientos
+// de Cuentas Corrientes'. Header (fila ~11):
+//   MONTO | DESCRIPCIÓN MOVIMIENTO | FECHA | SALDO | N° DOCUMENTO | SUCURSAL | CARGO/ABONO | N° MOVIMIENTO
+// Diferencias clave vs los otros formatos (validado con archivos TG jul-2026):
+//   - DESCRIPCIÓN COMPLETA (los otros 3 formatos truncan a 25 chars) → nombres más puros
+//   - FECHA CONTABLE (día hábil siguiente si la transferencia llega fuera de horario
+//     o en fin de semana) — difiere de la fecha real de la tradicional en ~48% de
+//     los movimientos → el dedup cross-format se ancla en N° MOVIMIENTO + monto
+//   - Trae TODOS los movimientos de la cuenta (cargos y abonos) → solo A facturables
+//   - Montos con separador de miles coma ("1,300,000")
+function parseSantanderInstantanea(buffer) {
+  if (!XLSX_LIB) throw new Error('Módulo xlsx no disponible en el servidor');
+  const wb = XLSX_LIB.read(buffer, { type: 'buffer' });
+  const sheetName = wb.SheetNames.find(n => /movimientos\s*ctacte/i.test(n)) || wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const data = XLSX_LIB.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  // Header: col 0 MONTO, col 1 DESCRIPCIÓN. Mapear el resto de columnas por nombre
+  // (con fallback a posiciones fijas del formato observado).
+  let headerIdx = -1;
+  let colFecha = 2, colTipo = 6, colNmov = 7;
+  for (let i = 0; i < Math.min(25, data.length); i++) {
+    const c0 = String(data[i]?.[0] || '').toUpperCase();
+    const c1 = String(data[i]?.[1] || '').toUpperCase();
+    if (c0.includes('MONTO') && (c1.includes('DESCRIP') || c1.includes('MOVIMIENTO'))) {
+      headerIdx = i;
+      const hdr = data[i].map(c => String(c || '').toUpperCase());
+      const idxFecha = hdr.findIndex(h => h.includes('FECHA'));
+      const idxTipo  = hdr.findIndex(h => h.includes('CARGO'));
+      const idxNmov  = hdr.findIndex(h => h.includes('MOVIMIENTO') && h.includes('N'));
+      if (idxFecha > 1) colFecha = idxFecha;
+      if (idxTipo  > 1) colTipo  = idxTipo;
+      // N° MOVIMIENTO: buscar desde el final (col 1 también contiene 'MOVIMIENTO')
+      for (let c = hdr.length - 1; c > 1; c--) {
+        if (hdr[c].includes('MOVIMIENTO')) { colNmov = c; break; }
+      }
+      if (idxNmov > 1) colNmov = Math.max(colNmov, idxNmov);
+      break;
+    }
+  }
+  if (headerIdx === -1) headerIdx = 11;
+
+  const movimientos = [];
+  const bucketSeq = {};
+
+  for (let i = headerIdx + 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 5) continue;
+
+    const desc = String(row[1] || '').trim();
+    if (!desc) continue; // bloque de saldos / filas vacías
+
+    // Solo abonos (A) explícitos — igual criterio de seguridad que la provisoria
+    const tipo = String(row[colTipo] || '').trim().toUpperCase();
+    if (tipo !== 'A') continue;
+
+    // Monto: número nativo o string con miles por coma ("1,300,000") o punto
+    let monto = row[0];
+    if (typeof monto === 'string') monto = parseInt(monto.replace(/[^\d-]/g, ''), 10);
+    monto = Math.abs(Number(monto) || 0);
+    if (!monto) continue;
+
+    // Fecha: DD/MM/YYYY o serial Excel → YYYY-MM-DD
+    let fecha = row[colFecha];
+    if (typeof fecha === 'number') {
+      const d = XLSX_LIB.SSF.parse_date_code(fecha);
+      fecha = d ? `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}` : '';
+    } else {
+      fecha = String(fecha || '').trim();
+      if (fecha.includes('/')) {
+        const [d, m, y] = fecha.split('/');
+        fecha = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+      }
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+
+    // Extraer RUT y nombre — mismos patrones que tradicional/provisoria, pero como
+    // la descripción viene COMPLETA el nombre sale entero (no truncado).
+    let rutDigits = '', nombre = '';
+    const m0 = desc.match(/^(\d{1,2}\.\d{3}\.\d{3}-[\dkK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+    if (m0) {
+      rutDigits = m0[1].replace(/[.\-]/g, '').toUpperCase();
+      nombre    = m0[2]?.trim() || '';
+    } else {
+      const m1 = desc.match(/^0*(\d{7,9}[0-9kK])\s+Transf[\s.]*(?:de\s+)?(.*)$/i);
+      if (m1) {
+        rutDigits = m1[1];
+        nombre    = m1[2]?.trim() || '';
+      } else {
+        const m2 = desc.match(/(\d{7,9}[0-9kK])/);
+        if (m2 && validarDvRut(m2[1])) rutDigits = m2[1];
+        nombre = cleanSantanderName(desc);
+      }
+    }
+    // Colapsar espacios múltiples del nombre (la extracción ya quitó RUT y prefijos Transf)
+    nombre = nombre.replace(/\s{2,}/g, ' ').trim();
+
+    const nmovRaw   = String(row[colNmov] || '').trim();
+    const nmovCanon = nmovCanonSantander(nmovRaw);
+
+    // Clave canónica (glosa truncada a 25 = igual que la tradicional)
+    const bk = `${fecha}|${Math.round(monto)}|${glosaCanonSantander(desc)}`;
+    bucketSeq[bk] = (bucketSeq[bk] || 0) + 1;
+    const dedupKey = dedupKeySantander(fecha, monto, desc, bucketSeq[bk]);
+
+    // id_transferencia con el mismo formato que la tradicional (fecha_nmovPadded);
+    // la fecha puede diferir (contable vs real) — la unicidad cross-format la da nmov
+    const idTransf = nmovCanon ? `${fecha}_${nmovRaw}` : `INST_${dedupKey}`;
+
+    movimientos.push({
+      id_transferencia: idTransf,
+      fecha, monto,
+      glosa: desc,
+      rut: rutDigits ? formatRutDigits(rutDigits) : '',
+      rut_digits: rutDigits,
+      nombre_origen: nombre,
+      banco_origen: 'No específica',
+      cuenta_origen: '999999',
+      dedup_key: dedupKey,
+      nmov_santander: nmovCanon
     });
   }
   return movimientos;
@@ -5952,9 +6122,12 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     try {
       if (bancoCartola === 'SANTANDER') {
         // provisoria e histórica comparten estructura → mismo parser.
-        movimientosRaw = (tipoCartolaSantander === 'provisoria' || tipoCartolaSantander === 'historica')
-          ? parseSantanderProvisoria(req.file.buffer)
-          : parseSantanderCartola(req.file.buffer);
+        // instantánea (Movimientos CtaCte) tiene parser propio con N° movimiento.
+        movimientosRaw = tipoCartolaSantander === 'instantanea'
+          ? parseSantanderInstantanea(req.file.buffer)
+          : (tipoCartolaSantander === 'provisoria' || tipoCartolaSantander === 'historica')
+            ? parseSantanderProvisoria(req.file.buffer)
+            : parseSantanderCartola(req.file.buffer);
       }
       else if (bancoCartola === 'BANCO ESTADO') movimientosRaw = parseBancoEstadoCartola(req.file.buffer);
       else if (bancoCartola === 'BANCO CHILE')  movimientosRaw = parseBancoChileCartola(req.file.buffer);
@@ -6031,23 +6204,46 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     // id_compuesto distinto, conservar el original preserva trazabilidad y permite
     // a queries externas localizar el registro por su id_compuesto inicial. La
     // unicidad cross-format se mantiene vía dedup_key.
+    // Match por N° de movimiento del banco (ancla instantánea ↔ tradicional).
+    // La instantánea usa fecha CONTABLE y la tradicional fecha REAL (difieren en
+    // ~48% de los movs) → la dedup_key por fecha no basta; nmov + monto sí.
+    // Ventana ±6 días por si Santander reutiliza la numeración entre períodos.
+    const checkNmov = db.prepare(`SELECT id, estado, tipo_cartola, fecha, monto, razon_social, nombre_origen,
+                                         lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte
+                                  FROM movimientos
+                                  WHERE empresa_id = ? AND banco_cartola = ? AND nmov_santander = ? AND nmov_santander != ''`);
     const promote     = db.prepare(`UPDATE movimientos
                                     SET tipo_cartola = ?,
                                         id_transferencia = ?,
                                         glosa = ?,
                                         rut = COALESCE(NULLIF(?, ''), rut),
                                         rut_normalizado = COALESCE(NULLIF(?, ''), rut_normalizado),
-                                        nombre_origen = COALESCE(NULLIF(?, ''), nombre_origen),
+                                        nombre_origen = CASE WHEN LENGTH(COALESCE(?, '')) > LENGTH(COALESCE(nombre_origen, ''))
+                                                             THEN ? ELSE nombre_origen END,
+                                        fecha = COALESCE(NULLIF(?, ''), fecha),
+                                        dedup_key = COALESCE(NULLIF(?, ''), dedup_key),
+                                        nmov_santander = COALESCE(NULLIF(?, ''), nmov_santander),
                                         updated_at = ?
                                     WHERE id = ?`);
+    // Enriquecimiento de nombre desde la instantánea (descripción completa): solo si
+    // el nombre guardado es un PREFIJO del nuevo (o sea, era el truncado de 25c) y
+    // el movimiento aún no está facturado.
+    const enrichNombre = db.prepare(`UPDATE movimientos
+                                     SET nombre_origen = ?,
+                                         razon_social = CASE
+                                           WHEN razon_social IS NOT NULL AND razon_social != ''
+                                                AND ? LIKE razon_social || '%' AND LENGTH(?) > LENGTH(razon_social)
+                                           THEN ? ELSE razon_social END,
+                                         updated_at = ?
+                                     WHERE id = ? AND estado != 'facturado'`);
     const insertMov   = db.prepare(`
       INSERT INTO movimientos
         (empresa_id, id_transferencia, fecha, monto, glosa, rut, rut_normalizado,
          nombre_origen, banco_origen, banco_cartola, cuenta_origen, id_compuesto,
          estado, tipo_dte, razon_social, giro, direccion, comuna, ciudad, email_receptor,
          nombre_item, descripcion_item, precio, monto_exento, monto_total,
-         fecha_carga, created_at, updated_at, lote_carga_id, tipo_cartola, dedup_key, cargado_por)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         fecha_carga, created_at, updated_at, lote_carga_id, tipo_cartola, dedup_key, nmov_santander, cargado_por)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const cargadoPor  = req.user.username || 'sistema';
     const insertCliente = db.prepare(`
@@ -6058,7 +6254,9 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
-    const lotePrefix  = tipoCartolaSantander === 'provisoria' ? 'prov-' : (tipoCartolaSantander === 'historica' ? 'hist-' : '');
+    const lotePrefix  = tipoCartolaSantander === 'provisoria' ? 'prov-'
+                      : tipoCartolaSantander === 'historica'  ? 'hist-'
+                      : tipoCartolaSantander === 'instantanea' ? 'inst-' : '';
     const loteCargaId = `${empresaId}-${bancoCartola}-${lotePrefix}${Date.now()}`.toLowerCase().replace(/\s/g, '-');
     let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0, promovidos = 0;
     const resultDetails = [];
@@ -6071,38 +6269,75 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           const idCompuesto = `${empresaId}_${idTransf}_${bancoCartola}`;
           const dedupKey    = mov.dedup_key || null;
 
-          // ── Verificar duplicado ──────────────────────────────────────────
-          const existing = checkDup.get(idCompuesto, empresaId);
-          if (existing) {
-            duplicados++;
-            if (!primerDupFecha) { primerDupFecha = existing.created_at; primerDupLote = existing.lote_carga_id; }
-            resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado, primera_carga: existing.created_at });
-            continue;
+          // ── Verificar duplicado exacto por id_compuesto ──────────────────
+          // Para SANTANDER este chequeo corre DESPUÉS del bloque cross-format:
+          // un mov instantánea con la misma fecha que la tradicional genera el
+          // MISMO id_compuesto (fecha_nmov) y este early-exit impedía promoverlo
+          // (validado: 957/1857 quedaban sin promover con los archivos TG).
+          if (bancoCartola !== 'SANTANDER') {
+            const existing = checkDup.get(idCompuesto, empresaId);
+            if (existing) {
+              duplicados++;
+              if (!primerDupFecha) { primerDupFecha = existing.created_at; primerDupLote = existing.lote_carga_id; }
+              resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existing.estado, primera_carga: existing.created_at });
+              continue;
+            }
           }
 
-          // ── Cross-format dedup Santander (provisoria ↔ tradicional) ──────
-          // Si subimos una tradicional y existe un movimiento provisorio con
-          // misma dedup_key → promoverlo in-place preservando facturación.
-          // Si subimos una provisoria y ya existe el movimiento (cualquier tipo) → omitir.
-          if (bancoCartola === 'SANTANDER' && dedupKey) {
-            const matchPrev = checkDedup.get(empresaId, bancoCartola, dedupKey);
+          // ── Cross-format dedup Santander (provisoria/instantánea ↔ tradicional) ──
+          // Capa 1: dedup_key canónica (fecha + monto + glosa25 + seq) — cubre formatos
+          //         que comparten fecha (provisoria↔tradicional, recargas del mismo tipo).
+          // Capa 2: N° movimiento + monto + ventana ±6 días — cubre instantánea↔tradicional,
+          //         donde la fecha difiere (contable vs real) en ~48% de los movimientos.
+          // Cartola oficial (definitiva/histórica) promueve preliminares (provisoria/instantánea)
+          // preservando facturación; en cualquier otro cruce, el movimiento se omite.
+          if (bancoCartola === 'SANTANDER') {
+            const esOficialActual = (tipoCartolaSantander === 'definitiva' || tipoCartolaSantander === 'historica');
+            const esPreliminar = t => (t === 'provisoria' || t === 'instantanea');
+
+            // ORDEN IMPORTA: el N° de movimiento se prueba PRIMERO porque es ancla
+            // exacta 1:1. Si se probara primero la dedup_key, un pagador que repite
+            // el mismo monto en días contiguos + el desfase contable/real cruzaría
+            // las parejas equivocadas (validado: dedup_key-first producía 957 falsos
+            // duplicados y 4 falsos nuevos con los archivos TG; nmov-first: 0 y 0).
+            let matchPrev = null, matchVia = null;
+            if (mov.nmov_santander) {
+              const mMonto = Math.round(mov.monto || 0);
+              const fechaMs = new Date(`${mov.fecha}T12:00:00Z`).getTime();
+              const candidatos = checkNmov.all(empresaId, bancoCartola, mov.nmov_santander);
+              matchPrev = candidatos.find(c => {
+                if (Math.round(c.monto || 0) !== mMonto) return false;
+                const cMs = new Date(`${c.fecha}T12:00:00Z`).getTime();
+                return Number.isFinite(cMs) && Math.abs(cMs - fechaMs) <= 6 * 86400000;
+              }) || null;
+              if (matchPrev) matchVia = 'nmov';
+            }
+            if (!matchPrev && dedupKey) {
+              matchPrev = checkDedup.get(empresaId, bancoCartola, dedupKey) || null;
+              if (matchPrev) matchVia = 'dedup_key';
+            }
+
             if (matchPrev) {
-              // Una cartola oficial (definitiva o histórica) promueve provisorias previas.
-              const esOficialActual = (tipoCartolaSantander === 'definitiva' || tipoCartolaSantander === 'historica');
-              if (esOficialActual && matchPrev.tipo_cartola === 'provisoria') {
-                // Promoción provisoria → oficial (conserva estado/lote/folio/id_compuesto).
+              if (esOficialActual && esPreliminar(matchPrev.tipo_cartola)) {
+                // Promoción preliminar → oficial (conserva estado/lote/folio/id_compuesto).
                 // tipo_cartola refleja la fuente ('definitiva' o 'historica').
-                // id_compuesto se mantiene en su valor PROV_ original para audit trail.
+                // Si el mov está facturado, NO se le cambia la fecha (trazabilidad de la
+                // boleta ya emitida); si no, se corrige a la fecha real de la oficial.
+                // El nombre solo se sobrescribe si el nuevo es MÁS LARGO (la tradicional
+                // trunca a 25c; la instantánea trae el nombre completo — no degradarlo).
                 const rutNormProm = normalizeRut(mov.rut || mov.rut_digits || '');
+                const fechaProm   = matchPrev.estado === 'facturado' ? '' : (mov.fecha || '');
                 promote.run(
                   tipoCartolaSantander,
                   idTransf, mov.glosa || '',
-                  mov.rut || '', rutNormProm, mov.nombre_origen || '',
+                  mov.rut || '', rutNormProm,
+                  mov.nombre_origen || '', mov.nombre_origen || '',
+                  fechaProm, dedupKey || '', mov.nmov_santander || '',
                   now, matchPrev.id
                 );
                 promovidos++;
                 resultDetails.push({
-                  id_compuesto: idCompuesto, status: 'promovido',
+                  id_compuesto: idCompuesto, status: 'promovido', via: matchVia,
                   estado_conservado: matchPrev.estado,
                   folio_dte_conservado: matchPrev.folio_dte || null,
                   fecha_facturacion_conservada: matchPrev.fecha_facturacion || null,
@@ -6110,12 +6345,30 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 });
                 continue;
               } else {
-                // Mismo tipo o provisoria sobre definitiva → duplicado
+                // Duplicado (mismo tipo, o preliminar sobre oficial). Si la actual es
+                // instantánea, aprovechar su descripción completa para enriquecer el
+                // nombre truncado del movimiento existente (solo prefijo→completo, no facturado).
+                if (tipoCartolaSantander === 'instantanea' && mov.nombre_origen &&
+                    mov.nombre_origen.length > String(matchPrev.nombre_origen || '').length) {
+                  try {
+                    enrichNombre.run(mov.nombre_origen, mov.nombre_origen, mov.nombre_origen, mov.nombre_origen, now, matchPrev.id);
+                  } catch(enrErr) { /* enriquecimiento es best-effort */ }
+                }
                 duplicados++;
                 if (!primerDupFecha) { primerDupFecha = matchPrev.created_at; primerDupLote = matchPrev.lote_carga_id; }
-                resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado_dedup', estado_previo: matchPrev.estado, tipo_previo: matchPrev.tipo_cartola, primera_carga: matchPrev.created_at });
+                resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado_dedup', via: matchVia, estado_previo: matchPrev.estado, tipo_previo: matchPrev.tipo_cartola, primera_carga: matchPrev.created_at });
                 continue;
               }
+            }
+
+            // Red de seguridad: id_compuesto exacto ya existente sin match cross-format
+            // (p.ej. mov antiguo sin nmov ni dedup_key de cargas previas a estas columnas)
+            const existingSant = checkDup.get(idCompuesto, empresaId);
+            if (existingSant) {
+              duplicados++;
+              if (!primerDupFecha) { primerDupFecha = existingSant.created_at; primerDupLote = existingSant.lote_carga_id; }
+              resultDetails.push({ id_compuesto: idCompuesto, status: 'duplicado', estado_previo: existingSant.estado, primera_carga: existingSant.created_at });
+              continue;
             }
           }
 
@@ -6276,6 +6529,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
             now, now, now, loteCargaId,
             (bancoCartola === 'SANTANDER') ? tipoCartolaSantander : 'definitiva',
             dedupKey,
+            mov.nmov_santander || null,
             cargadoPor
           );
           nuevos++;

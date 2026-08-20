@@ -2710,10 +2710,14 @@ app.get('/api/facturacion/lotes/:lote_id/preview-agrupacion', requireAuth, async
   const umbralCLP = umbralAgrupacionSyncCLP();
   const grupos = agruparMovsParaSF(movs, empresa, umbralCLP);
   const agruparActivo = empresa?.simplefactura?.agrupar_boletas !== false;
+  const agruparFactDiaActivo = empresa?.proveedor_dte === 'haulmer'
+    ? empresa?.haulmer?.agrupar_facturas_mismo_dia === true
+    : empresa?.simplefactura?.agrupar_facturas_mismo_dia === true;
 
   res.json({
     ok: true,
     agrupar_activo: agruparActivo,
+    agrupar_facturas_mismo_dia: agruparFactDiaActivo,
     total_movimientos: movs.length,
     total_dte: grupos.length,
     ahorro: movs.length - grupos.length,
@@ -3095,6 +3099,18 @@ function agruparMovsParaSF(movsIn, empresa, umbralCLP) {
   const agruparOn = sf.agrupar_boletas !== false && sf.agrupar_boletas !== 'false';
   const grupos = [];
   const abiertos = new Map(); // clave tipoDte|rut|mes -> grupo abierto
+  // (20-ago-2026) Agrupación de FACTURAS EXENTAS (34) del MISMO DÍA para empresas
+  // con Open Factura (Haulmer). Opt-in: empresa.haulmer.agrupar_facturas_mismo_dia.
+  // Independiente de la agrupación de boletas: no altera el comportamiento anterior
+  // cuando el flag está apagado (default) ni para empresas SimpleFactura.
+  // Extensión: también disponible para empresas SimpleFactura vía
+  // empresa.simplefactura.agrupar_facturas_mismo_dia (default OFF). El CSV masivo
+  // SF ya soporta documentos multi-línea (mismo Id), igual que las boletas agrupadas.
+  const esHaulmer = empresa?.proveedor_dte === 'haulmer';
+  const hm = empresa?.haulmer || {};
+  const flagFactDia = esHaulmer ? hm.agrupar_facturas_mismo_dia : sf.agrupar_facturas_mismo_dia;
+  const agruparFactDia = (flagFactDia === true || flagFactDia === 'true');
+  const abiertosFactDia = new Map(); // clave 34|rut|YYYY-MM-DD -> grupo
   const movs = ordenarMovsCronologico(movsIn);
   for (const m of movs) {
     const tipoDte  = getTipoDte(m.rut_normalizado, empresa);
@@ -3102,6 +3118,21 @@ function agruparMovsParaSF(movsIn, empresa, umbralCLP) {
     const rut      = String(m.rut_normalizado || '').trim();
     const mes      = String(m.fecha || '').substring(0, 7); // YYYY-MM
     const monto    = Number(m.monto_total) || 0;
+    if (agruparFactDia && tipoDte === 34 && rut) {
+      const dia = String(m.fecha || '').substring(0, 10); // YYYY-MM-DD
+      if (dia.length === 10) {
+        const claveDia = `34|${rut}|${dia}`;
+        let gd = abiertosFactDia.get(claveDia);
+        if (!gd) {
+          gd = { tipoDte, movs: [], monto_total: 0, mismo_dia: true };
+          grupos.push(gd);
+          abiertosFactDia.set(claveDia, gd);
+        }
+        gd.movs.push(m);
+        gd.monto_total += monto;
+        continue;
+      }
+    }
     if (!agruparOn || !esBoleta || !rut || mes.length < 7) {
       grupos.push({ tipoDte, movs: [m], monto_total: monto });
       continue;

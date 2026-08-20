@@ -5143,6 +5143,17 @@ function renderConfig() {
           <input type="text" class="inline-input" id="cfg-haulmer-key-${id}" value="${emp.haulmer?.api_key || ''}" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" style="font-family:monospace;font-size:12px;">
           <small style="color:var(--txt3);margin-top:4px;display:block;">API Key de Open Factura (Haulmer). Se envía como header <code>apikey</code> en cada request.</small>
         </div>
+        <div class="form-group" style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+            <input type="checkbox" id="cfg-agrupar-fact-dia-${id}" ${emp.haulmer?.agrupar_facturas_mismo_dia === true ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--purple,#8b5cf6);">
+            🧾 Agrupar facturas exentas (34) del mismo día por RUT
+          </label>
+          <small style="color:var(--txt3);margin-top:4px;display:block;">
+            Al emitir un lote, si un mismo RUT transfirió <b>más de una vez el mismo día</b>, sus facturas exentas (34) se juntan en
+            <b>un solo DTE</b> con cada transferencia como línea de detalle (con su fecha). Transferencias de días distintos
+            siguen generando un DTE cada una. Las boletas no se ven afectadas por esta opción.
+          </small>
+        </div>
         <div class="form-group"><label>Email facturación</label><input type="text" class="inline-input" id="cfg-email-${id}" value="${emp.email_facturacion || ''}"></div>
         <div class="form-group"><label>Tipo DTE personas naturales</label>
           <select class="inline-input" id="cfg-dtepers-${id}">
@@ -5204,6 +5215,17 @@ function renderConfig() {
             como línea de detalle (con su fecha). Solo agrupa movimientos del <b>mismo mes calendario</b> y parte el grupo
             si supera 135 UF (Ley 21.713). Reduce los documentos consumidos del plan SimpleFactura. Las facturas (33/34) no se agrupan.
           </small>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+            <input type="checkbox" id="cfg-agrupar-fact-dia-${id}" ${emp.simplefactura?.agrupar_facturas_mismo_dia === true ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green,#2ecc71);">
+            🧾 Agrupar facturas exentas (34) del mismo día por RUT
+          </label>
+          <small style="color:var(--txt3);margin-top:4px;display:block;">
+            Al emitir un lote, si un mismo RUT transfirió <b>más de una vez el mismo día</b>, sus facturas exentas (34) se juntan en
+            <b>un solo DTE</b> con cada transferencia como línea de detalle (con su fecha). Transferencias de días distintos
+            siguen generando un DTE cada una. Independiente de la agrupación de boletas.
+          </small>
         </div>`;
 
     // Botones SF
@@ -5247,7 +5269,8 @@ async function saveConfig() {
       // Guardar config Haulmer
       empresas[id].haulmer = {
         ...empresas[id].haulmer,
-        api_key: document.getElementById(`cfg-haulmer-key-${id}`)?.value.trim() || ''
+        api_key: document.getElementById(`cfg-haulmer-key-${id}`)?.value.trim() || '',
+        agrupar_facturas_mismo_dia: document.getElementById(`cfg-agrupar-fact-dia-${id}`)?.checked === true
       };
     } else {
       // Guardar config SimpleFactura
@@ -5262,6 +5285,7 @@ async function saveConfig() {
         sucursal_id_sf: document.getElementById(`cfg-sfsucid-${id}`)?.value.trim() || '',
         emisor_id_sf: document.getElementById(`cfg-sfemisid-${id}`)?.value.trim() || '',
         agrupar_boletas: document.getElementById(`cfg-agrupar-${id}`)?.checked !== false,
+        agrupar_facturas_mismo_dia: document.getElementById(`cfg-agrupar-fact-dia-${id}`)?.checked === true,
       };
     }
     // Campos compartidos (DTE types + email)

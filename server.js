@@ -236,6 +236,13 @@ try {
 try { db.exec('ALTER TABLE movimientos ADD COLUMN email_provisional INTEGER DEFAULT 0'); } catch(e){}
 try { db.exec('ALTER TABLE clientes ADD COLUMN email_provisional INTEGER DEFAULT 0'); } catch(e){}
 
+// ── Migration: fecha de emisión forzada (ago 2026) ───────────────────────────
+// Permite emitir un DTE con una FchEmis distinta a la fecha del movimiento
+// bancario (ej: boletas del 29..31-jul de MT emitidas con fecha 01-08-2026 por
+// atraso en la carga). Si es NULL se usa m.fecha como siempre. Se setea/limpia
+// desde POST /api/facturacion/forzar-fecha-emision (solo admin).
+try { db.exec('ALTER TABLE movimientos ADD COLUMN fecha_emision_forzada TEXT'); } catch(e){}
+
 // ── Migration: limpiar CR/LF en campos de texto (emails con newline al final) ─
 // Causa de error SF: "Field at index N does not exist" cuando un email tiene \n
 try {
@@ -2480,6 +2487,60 @@ function lockEmision(loteId, res) {
   return true;
 }
 
+// ── Forzar fecha de emisión + glosa de detalle (solo admin) ──────────────────
+// Caso de uso (ago 2026): boletas de MT del 29..31-jul cargadas tarde deben
+// emitirse con FchEmis 01-08-2026 y detalle "Boleta pendiente transferencia a
+// Banco Santander (Transf. DD-MM-YYYY)". Afecta SOLO movimientos aún no
+// facturados (pendiente/listo, sin lote) de UNA empresa y un rango de fechas.
+// Body: { empresa_id, desde, hasta, fecha_emision, descripcion, preview, revertir }
+//   - preview=true  → solo cuenta/lista, no modifica nada
+//   - revertir=true → limpia fecha_emision_forzada y restaura descripcion_item
+//                     al default de la empresa
+app.post('/api/facturacion/forzar-fecha-emision', requireAuth, requireAdmin, (req, res) => {
+  const { empresa_id, desde, hasta, fecha_emision, descripcion, preview, revertir } = req.body || {};
+  const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (!empresa_id) return res.status(400).json({ ok: false, error: 'empresa_id requerido' });
+  if (!isoRe.test(desde || '') || !isoRe.test(hasta || '')) return res.status(400).json({ ok: false, error: 'desde/hasta deben ser YYYY-MM-DD' });
+  if (!revertir && !isoRe.test(fecha_emision || '')) return res.status(400).json({ ok: false, error: 'fecha_emision debe ser YYYY-MM-DD' });
+
+  const movs = db.prepare(`
+    SELECT id, fecha, monto_total, rut_normalizado, razon_social, tipo_dte, estado, descripcion_item, fecha_emision_forzada
+    FROM movimientos
+    WHERE empresa_id = ? AND estado IN ('pendiente','listo')
+      AND (lote_id IS NULL OR lote_id = '')
+      AND substr(fecha,1,10) >= ? AND substr(fecha,1,10) <= ?
+    ORDER BY fecha, id
+  `).all(empresa_id, desde, hasta);
+
+  const base = String(descripcion || 'Boleta pendiente transferencia a Banco Santander').trim();
+  const now = nowCL();
+  const plan = movs.map(m => ({
+    id: m.id, fecha: m.fecha, monto_total: m.monto_total, rut: m.rut_normalizado,
+    razon_social: m.razon_social, tipo_dte: m.tipo_dte, estado: m.estado,
+    descripcion_actual: m.descripcion_item || '',
+    descripcion_nueva: revertir ? '' : `${base} (Transf. ${fechaParaSF(m.fecha)})`,
+    fecha_emision_actual: m.fecha_emision_forzada || '',
+    fecha_emision_nueva: revertir ? '' : fecha_emision
+  }));
+
+  if (preview) return res.json({ ok: true, preview: true, total: plan.length, movimientos: plan });
+
+  let cambiados = 0;
+  if (revertir) {
+    const empConf = getAppData('empresas')?.[empresa_id] || {};
+    const descDefault = empConf.descripcion_item_default || null;
+    const upd = db.prepare('UPDATE movimientos SET fecha_emision_forzada = NULL, descripcion_item = ?, updated_at = ? WHERE id = ?');
+    const tx = db.transaction(() => { for (const p of plan) cambiados += upd.run(descDefault, now, p.id).changes; });
+    tx();
+  } else {
+    const upd = db.prepare('UPDATE movimientos SET fecha_emision_forzada = ?, descripcion_item = ?, updated_at = ? WHERE id = ?');
+    const tx = db.transaction(() => { for (const p of plan) cambiados += upd.run(fecha_emision, p.descripcion_nueva, now, p.id).changes; });
+    tx();
+  }
+  console.log(`[FORZAR FECHA] ${req.user.username} empresa=${empresa_id} ${desde}..${hasta} → ${revertir ? 'REVERTIR' : 'FchEmis ' + fecha_emision} (${cambiados} movs)`);
+  res.json({ ok: true, total: cambiados, revertir: !!revertir });
+});
+
 app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
   const { empresa_id, movimiento_ids, tipo_dte } = req.body;
   const empresaId = req.user.role === 'admin' ? empresa_id : req.user.empresa;
@@ -2975,6 +3036,13 @@ function rutConPuntos(rut) {
   return `${formatted}-${dv}`;
 }
 
+// Fecha ISO con la que se EMITE el DTE de un movimiento: la forzada si existe,
+// si no la fecha del movimiento bancario.
+function fechaEmisionMov(m) {
+  const f = String(m?.fecha_emision_forzada || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : (m?.fecha || '');
+}
+
 function fechaParaSF(fechaISO) {
   // DB guarda YYYY-MM-DD, SimpleFactura espera DD-MM-YYYY
   if (!fechaISO) return todayCL().split('-').reverse().join('-');
@@ -3051,8 +3119,9 @@ function buildSfCsvRowsAgrupado(grupos, empresa) {
   grupos.forEach((g, gi) => {
     const id = gi + 1;
     const m0 = g.movs[0];
-    // Fecha del documento: la ÚLTIMA fecha de movimiento del grupo (1 mov = su fecha)
-    const fechaDocISO = g.movs.reduce((mx, m) => (m.fecha && m.fecha > mx ? m.fecha : mx), m0.fecha);
+    // Fecha del documento: la ÚLTIMA fecha de movimiento del grupo (1 mov = su fecha).
+    // Si el movimiento tiene fecha_emision_forzada, ésta manda sobre m.fecha.
+    const fechaDocISO = g.movs.reduce((mx, m) => { const f = fechaEmisionMov(m); return (f && f > mx) ? f : mx; }, fechaEmisionMov(m0));
     const fechaDoc = fechaParaSF(fechaDocISO);
     // Solo enviar email cuando el cliente tenga correo propio en BD.
     // Sin fallback al email_facturacion del emisor para evitar que SF te mande
@@ -3069,8 +3138,10 @@ function buildSfCsvRowsAgrupado(grupos, empresa) {
 
     for (const m of g.movs) {
       const descBase = m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`;
-      // En boletas agrupadas cada línea de detalle lleva la fecha de SU movimiento
-      const descripcion = multi ? `${descBase} (Transf. ${fechaParaSF(m.fecha)})` : descBase;
+      // En boletas agrupadas cada línea de detalle lleva la fecha de SU movimiento.
+      // Si la descripción ya trae la fecha de transferencia (fecha forzada), no duplicar.
+      const yaTraeFecha = /Transf(erencia)?\.?\s+\d{2}-\d{2}-\d{4}/i.test(descBase);
+      const descripcion = (multi && !yaTraeFecha) ? `${descBase} (Transf. ${fechaParaSF(m.fecha)})` : descBase;
       rows.push([
         id,                       // Id: mismo Id = mismo documento (multi-detalle)
         g.tipoDte,
@@ -3355,7 +3426,8 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
       const multi   = g.movs.length > 1;
       const tipoDte = g.tipoDte;
       // Fecha del documento: la última fecha de movimiento del grupo (1 mov = su fecha)
-      const fechaDocISO = g.movs.reduce((mx, x) => (x.fecha && x.fecha > mx ? x.fecha : mx), m.fecha);
+      // (fecha_emision_forzada manda sobre x.fecha si está seteada)
+      const fechaDocISO = g.movs.reduce((mx, x) => { const f = fechaEmisionMov(x); return (f && f > mx) ? f : mx; }, fechaEmisionMov(m));
       const fecha   = fechaParaHaulmer(fechaDocISO);
       const monto   = Math.round(g.movs.reduce((s, x) => s + (x.monto_total || x.monto || 0), 0));
       // Correo del grupo: primer movimiento que tenga email propio

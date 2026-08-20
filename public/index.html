@@ -616,6 +616,7 @@ select.inline-input option { background:var(--bg2); color:var(--txt); }
           <div class="topbar-actions">
             <button class="btn btn-secondary btn-sm" onclick="loadClientesNuevos()" title="Detecta RUTs de movimientos pendientes que no están en ninguna base">&#x1F50D; Detectar clientes nuevos</button>
             <button class="btn btn-secondary btn-sm" onclick="abrirAsignarEmailGenerico()" title="Asigna el email_facturacion de la empresa a movs tipo 34 sin email (marca como provisional)">⚠️ Asignar email genérico tipo 34</button>
+            <button class="btn btn-secondary btn-sm" onclick="abrirForzarFechaEmision()" title="Emitir los movimientos pendientes de una empresa y rango de fechas con otra fecha de emisión y glosa de detalle (ej: boletas atrasadas)">📅 Forzar fecha de emisión</button>
           </div>
         </div>
         <div id="clientes-nuevos-panel" style="display:none;margin-bottom:16px;"></div>
@@ -3205,7 +3206,7 @@ function renderFacturacionTable() {
   tbody.innerHTML = movs.map(m => `
     <tr>
       <td><input type="checkbox" class="fact-check" value="${m.id}" checked></td>
-      <td>${m.fecha || '—'}</td>
+      <td>${m.fecha || '—'}${m.fecha_emision_forzada ? ` <span class="badge" title="Se emitirá con fecha ${escFact(m.fecha_emision_forzada)} — detalle: ${escFact(m.descripcion_item || '')}" style="background:rgba(52,152,219,.15);color:#1f6fa8;border:1px solid #3498db;font-size:9px;padding:1px 6px;margin-left:4px;border-radius:10px;font-weight:600;white-space:nowrap;">📅 ${escFact(m.fecha_emision_forzada.split('-').reverse().join('-'))}</span>` : ''}</td>
       <td style="font-weight:600">${fmt(m.monto)}</td>
       <td style="font-size:12px">${m.rut || '—'}</td>
       <td>${m.rut_normalizado ? `<span style="cursor:pointer;color:var(--accent,#3498db);text-decoration:underline;text-underline-offset:2px;" onclick="abrirEdicionRapidaCliente('${m.rut_normalizado}','${escFact(m.empresa_id||'')}',${m.id})" title="Click para editar email/teléfono/giro">${escFact(m.razon_social || '—')}</span>` : (escFact(m.razon_social) || '—')}${m.email_provisional ? ' <span class="badge" title="Email genérico provisional - reemplazar con email real del cliente" style="background:rgba(241,196,15,.18);color:#a86c00;border:1px solid #f1c40f;font-size:9px;padding:1px 6px;margin-left:4px;border-radius:10px;font-weight:600;">⚠ PROV</span>' : ''}</td>
@@ -5747,6 +5748,79 @@ async function aplicarEmailGenerico() {
   setTimeout(() => {
     if (typeof loadFacturacion === 'function') loadFacturacion(0);
   }, 800);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FORZAR FECHA DE EMISIÓN + GLOSA (admin only — facturar)
+// Caso: boletas cargadas tarde que deben emitirse con otra FchEmis y un detalle
+// tipo "Boleta pendiente transferencia a Banco Santander (Transf. DD-MM-YYYY)".
+// ══════════════════════════════════════════════════════════════════════════════
+function abrirForzarFechaEmision() {
+  const empSel = (CURRENT_EMPRESA && CURRENT_EMPRESA !== 'all') ? CURRENT_EMPRESA : 'mt-inversiones';
+  const opt = (v, l) => `<option value="${v}" ${v === empSel ? 'selected' : ''}>${l}</option>`;
+  const modal = document.getElementById('modal-content');
+  modal.innerHTML = `
+    <h3>📅 Forzar fecha de emisión</h3>
+    <p style="font-size:12px;color:var(--txt2);margin:0 0 12px;">
+      Aplica a los movimientos <strong>aún no facturados</strong> (pendiente/listo, sin lote) de la empresa y rango de
+      fecha de transferencia indicados. Al emitir, el DTE saldrá con la <strong>fecha de emisión</strong> elegida y
+      cada línea de detalle llevará la <strong>glosa + fecha de su transferencia</strong>. No afecta otras empresas.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <label style="font-size:12px;">Empresa<br>
+        <select id="ffe-empresa" class="inline-input" style="width:100%;">
+          ${opt('mt-inversiones','MT Inversiones')}${opt('tg-inversiones','TG Inversiones')}${opt('ts-capital','TS Capital')}${opt('vanher-capital','Vanher Capital')}
+        </select></label>
+      <label style="font-size:12px;">Fecha de emisión del DTE<br><input type="date" id="ffe-fecha" class="inline-input" style="width:100%;" value="2026-08-01"></label>
+      <label style="font-size:12px;">Transferencias desde<br><input type="date" id="ffe-desde" class="inline-input" style="width:100%;" value="2026-07-29"></label>
+      <label style="font-size:12px;">Transferencias hasta<br><input type="date" id="ffe-hasta" class="inline-input" style="width:100%;" value="2026-07-31"></label>
+    </div>
+    <label style="font-size:12px;display:block;margin-bottom:10px;">Glosa del detalle (se le agrega "(Transf. DD-MM-YYYY)" por movimiento)<br>
+      <input type="text" id="ffe-desc" class="inline-input" style="width:100%;" value="Boleta pendiente transferencia a Banco Santander"></label>
+    <div id="ffe-preview" style="font-size:12px;color:var(--txt2);margin-bottom:10px;min-height:18px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-secondary" onclick="ffeRun(true, true)" title="Quita la fecha forzada y restaura la descripción por defecto">↩ Revertir</button>
+      <button class="btn btn-secondary" onclick="ffeRun(true, false)">👁 Previsualizar</button>
+      <button class="btn btn-primary" onclick="ffeRun(false, false)">Aplicar</button>
+    </div>
+  `;
+  showModal();
+  ffeRun(true, false);
+}
+
+async function ffeRun(preview, revertir) {
+  const body = {
+    empresa_id: document.getElementById('ffe-empresa').value,
+    desde: document.getElementById('ffe-desde').value,
+    hasta: document.getElementById('ffe-hasta').value,
+    fecha_emision: document.getElementById('ffe-fecha').value,
+    descripcion: document.getElementById('ffe-desc').value,
+    preview: !!preview, revertir: !!revertir
+  };
+  if (!preview && !revertir) {
+    const fEm = body.fecha_emision.split('-').reverse().join('-');
+    if (!confirm(`¿Forzar fecha de emisión ${fEm} a los movimientos no facturados de ${body.empresa_id} con transferencia entre ${body.desde} y ${body.hasta}?\n\nDetalle: "${body.descripcion} (Transf. DD-MM-YYYY)"`)) return;
+  }
+  if (!preview && revertir) {
+    if (!confirm(`¿Revertir la fecha forzada y la glosa de los movimientos no facturados de ${body.empresa_id} entre ${body.desde} y ${body.hasta}?`)) return;
+  }
+  const box = document.getElementById('ffe-preview');
+  if (box) box.textContent = '⏳ Consultando...';
+  const data = await apiFetch('/api/facturacion/forzar-fecha-emision', { method: 'POST', body: JSON.stringify(body) });
+  if (!data?.ok) { if (box) box.textContent = ''; showToast('Error: ' + (data?.error || 'desconocido'), 'error'); return; }
+  if (preview) {
+    const movs = data.movimientos || [];
+    if (revertir) { box.innerHTML = `Revertir afectaría a <strong>${movs.length}</strong> movimientos (los que tengan fecha forzada volverán a emitirse con su fecha real).`; return; }
+    const total = movs.reduce((s, m) => s + (Number(m.monto_total) || 0), 0);
+    const conF = movs.filter(m => m.fecha_emision_actual).length;
+    const ejemplo = movs[0] ? `<br>Ej.: ${movs[0].fecha} · ${fmt(movs[0].monto_total)} · ${movs[0].razon_social || movs[0].rut || ''} → <em>${movs[0].descripcion_nueva}</em>` : '';
+    box.innerHTML = `Se afectarían <strong>${movs.length}</strong> movimientos (${fmt(total)})${conF ? `, ${conF} ya tienen fecha forzada` : ''}.${ejemplo}`;
+    return;
+  }
+  closeModal();
+  showToast(revertir ? `↩ ${data.total} movimientos revertidos a su fecha real` : `✓ ${data.total} movimientos se emitirán con fecha ${body.fecha_emision.split('-').reverse().join('-')}`, 'success');
+  setTimeout(() => loadFacturacion(0), 500);
 }
 
 // ════════════════════════════════

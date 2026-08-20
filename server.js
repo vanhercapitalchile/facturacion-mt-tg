@@ -2556,7 +2556,7 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
     // Modo tipo: traer TODOS los movimientos listo del tipo dado para esta empresa
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
     movs = db.prepare(
-      `SELECT * FROM movimientos WHERE empresa_id = ? AND estado = 'listo' AND tipo_dte = ? ORDER BY fecha ASC`
+      `SELECT * FROM movimientos WHERE empresa_id = ? AND estado = 'listo' AND tipo_dte = ? ORDER BY fecha ASC, id ASC`
     ).all(empresaId, parseInt(tipo_dte));
   } else {
     const placeholders = (movimiento_ids || []).map(() => '?').join(',');
@@ -2565,7 +2565,7 @@ app.post('/api/facturacion/crear-lote', requireAuth, (req, res) => {
     // Admin sin empresaId definido sigue restringido a la empresa que mandó en el body.
     if (!empresaId) return res.status(400).json({ error: 'Empresa no especificada' });
     movs = db.prepare(
-      `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo' AND empresa_id = ?`
+      `SELECT * FROM movimientos WHERE id IN (${placeholders}) AND estado = 'listo' AND empresa_id = ? ORDER BY fecha ASC, id ASC`
     ).all(...movimiento_ids, empresaId);
   }
 
@@ -2682,7 +2682,7 @@ app.get('/api/facturacion/lotes/:lote_id/movimientos', requireAuth, (req, res) =
     `SELECT id, fecha, monto, monto_total, rut, razon_social, nombre_origen, tipo_dte,
             estado, banco_cartola, email_receptor, giro, direccion, comuna, ciudad,
             id_transferencia, id_compuesto, folio_dte, fecha_facturacion
-     FROM movimientos WHERE lote_id = ? ORDER BY id`
+     FROM movimientos WHERE lote_id = ? ORDER BY fecha ASC, id ASC`
   ).all(req.params.lote_id);
   res.json(movs);
 });
@@ -2702,7 +2702,7 @@ app.get('/api/facturacion/lotes/:lote_id/preview-agrupacion', requireAuth, async
   if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
 
   const movs = db.prepare(
-    `SELECT * FROM movimientos WHERE lote_id = ? AND estado IN ('en_lote','error','listo') ORDER BY id`
+    `SELECT * FROM movimientos WHERE lote_id = ? AND estado IN ('en_lote','error','listo') ORDER BY fecha ASC, id ASC`
   ).all(loteId);
   if (!movs.length) return res.json({ ok: true, total_movimientos: 0, total_dte: 0, ahorro: 0, grupos: [] });
 
@@ -3070,11 +3070,32 @@ function escaparCsvSF(val) {
 //     cierra el grupo y se abre otro para el mismo RUT (se parte en 2 boletas).
 //   - Configurable por empresa: simplefactura.agrupar_boletas (default: ON).
 // Devuelve: [{ tipoDte, movs: [...], monto_total }] en orden de aparición.
-function agruparMovsParaSF(movs, empresa, umbralCLP) {
+// Orden cronológico de emisión (20-ago-2026): los movimientos se procesan de la
+// fecha de transferencia más antigua a la más nueva, y los DTE resultantes se
+// emiten en ese mismo orden. Así los folios (correlativos) que asigna SF/Haulmer
+// quedan alineados con la fecha: un cliente nunca ve un folio mayor en una
+// transferencia más antigua que en una más reciente. Aplica a TODAS las empresas
+// porque todos los caminos de emisión/preview/CSV pasan por agruparMovsParaSF.
+function ordenarMovsCronologico(movs) {
+  return [...movs].sort((a, b) => {
+    const fa = String(fechaEmisionMov(a) || ''), fb = String(fechaEmisionMov(b) || '');
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    const ta = String(a.fecha || ''), tb = String(b.fecha || '');
+    if (ta !== tb) return ta < tb ? -1 : 1;
+    return (a.id || 0) - (b.id || 0);
+  });
+}
+
+function fechaDocGrupo(g) {
+  return g.movs.reduce((mx, m) => { const f = String(fechaEmisionMov(m) || ''); return f > mx ? f : mx; }, '');
+}
+
+function agruparMovsParaSF(movsIn, empresa, umbralCLP) {
   const sf = empresa?.simplefactura || {};
   const agruparOn = sf.agrupar_boletas !== false && sf.agrupar_boletas !== 'false';
   const grupos = [];
   const abiertos = new Map(); // clave tipoDte|rut|mes -> grupo abierto
+  const movs = ordenarMovsCronologico(movsIn);
   for (const m of movs) {
     const tipoDte  = getTipoDte(m.rut_normalizado, empresa);
     const esBoleta = (tipoDte === 39 || tipoDte === 41);
@@ -3100,6 +3121,13 @@ function agruparMovsParaSF(movs, empresa, umbralCLP) {
     g.movs.push(m);
     g.monto_total += monto;
   }
+  // Ordenar los DTE por su fecha de documento (última transf. del grupo) ascendente;
+  // empate → por id del primer movimiento. Sort de JS es estable.
+  grupos.sort((a, b) => {
+    const fa = fechaDocGrupo(a), fb = fechaDocGrupo(b);
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    return (a.movs[0].id || 0) - (b.movs[0].id || 0);
+  });
   return grupos;
 }
 

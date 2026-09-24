@@ -3170,6 +3170,41 @@ function umbralAgrupacionSyncCLP() {
   return Math.round(UMBRAL_LEY_21713_UF * uf);
 }
 
+// ── Texto estándar del ítem DTE (definición Hernán, sep-2026) ────────────────
+// "Activo Digital Stablecoin (USDT), transferencia a Banco SANTANDER (Transf. DD-MM-YYYY)"
+// Objetivo: que el contribuyente reconozca su transferencia y no crea que se
+// le está cobrando otro servicio ("Venta paquete..." confundía).
+// - El banco sale de la cartola del movimiento (SANTANDER, BCI, ESTADO, CHILE...);
+//   se evita duplicar la palabra Banco ('BANCO ESTADO' → 'Banco ESTADO').
+// - La fecha es SIEMPRE la fecha REAL de la transferencia (m.fecha), también en
+//   boletas de 1 solo movimiento y aunque el DTE se emita con fecha forzada.
+// - Este texto MANDA sobre nombre_item/descripcion_item guardados en el mov y
+//   sobre los defaults de config: es el estándar único para todos los DTE.
+// - itemDteTextoCorto: variante ≤80 chars para NmbItem (XSD SII) — con el texto
+//   completo la fecha "(Transf. DD-MM-YYYY)" excede 80, así que usa "(DD-MM-YYYY)".
+function itemDteNombre(m) {
+  const bancoRaw = String(m?.banco_cartola || m?.banco_origen || '').trim();
+  const banco = bancoRaw.replace(/^BANCO\s+/i, '').toUpperCase();
+  return banco
+    ? `Activo Digital Stablecoin (USDT), transferencia a Banco ${banco}`
+    : 'Activo Digital Stablecoin (USDT), transferencia a Banco';
+}
+function fechaItemDte(m) {
+  const f = String(m?.fecha || '').trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(f) ? fechaParaSF(f.substring(0, 10)) : '';
+}
+function itemDteTexto(m) {
+  const fechaTx = fechaItemDte(m);
+  return fechaTx ? `${itemDteNombre(m)} (Transf. ${fechaTx})` : itemDteNombre(m);
+}
+function itemDteTextoCorto(m, maxLen = 80) {
+  const full = itemDteTexto(m);
+  if (full.length <= maxLen) return full;
+  const fechaTx = fechaItemDte(m);
+  const compacto = fechaTx ? `${itemDteNombre(m)} (${fechaTx})` : itemDteNombre(m);
+  return compacto.substring(0, maxLen);
+}
+
 // Genera las filas CSV desde grupos: filas con el MISMO Id = mismo DTE con
 // varias líneas de detalle (formato masivo SF). Los campos de encabezado del
 // documento (fechas, receptor) se repiten idénticos en cada fila del grupo.
@@ -3196,11 +3231,11 @@ function buildSfCsvRowsAgrupado(grupos, empresa) {
     const multi       = g.movs.length > 1;
 
     for (const m of g.movs) {
-      const descBase = m.descripcion_item || `Venta paquete activo digital Banco ${m.banco_cartola}`;
-      // En boletas agrupadas cada línea de detalle lleva la fecha de SU movimiento.
-      // Si la descripción ya trae la fecha de transferencia (fecha forzada), no duplicar.
-      const yaTraeFecha = /Transf(erencia)?\.?\s+\d{2}-\d{2}-\d{4}/i.test(descBase);
-      const descripcion = (multi && !yaTraeFecha) ? `${descBase} (Transf. ${fechaParaSF(m.fecha)})` : descBase;
+      // Texto estándar del ítem: "Activo Digital, transferencia a Banco X (Transf. DD-MM-YYYY)".
+      // Siempre con la fecha REAL de la transferencia (m.fecha) — también en boletas de
+      // 1 movimiento y cuando el DTE se emite con fecha forzada. Ignora deliberadamente
+      // nombre_item/descripcion_item guardados (texto antiguo "Venta paquete...").
+      const descripcion = itemDteTexto(m).substring(0, 1000);
       rows.push([
         id,                       // Id: mismo Id = mismo documento (multi-detalle)
         g.tipoDte,
@@ -3218,7 +3253,7 @@ function buildSfCsvRowsAgrupado(grupos, empresa) {
         '', '', '',               // DirDest, CmnaDest, CiudadDest
         '', '', '', '', '',       // Referencias (vacías)
         '',                       // CodigoProducto
-        m.nombre_item || 'Venta paquete activo digital',
+        itemDteNombre(m).substring(0, 80),
         descripcion,
         1,                        // CantidadProducto
         m.monto_total || 0,       // PrecioProducto
@@ -3344,7 +3379,8 @@ function buildHaulmerCsvContent(movs, empresa) {
     const dir     = (m.direccion || 'NO INFORMADA').substring(0, 100);
     const comuna  = m.comuna || 'NO INFORMADA';
     const monto   = Math.round(m.monto_total || m.monto || 0);
-    const itemNombre = (m.nombre_item || `${nombreItem} ${m.banco_cartola || ''}`).trim();
+    // Texto estándar del ítem (con fecha real de la transferencia) — ver itemDteTexto
+    const itemNombre = itemDteTextoCorto(m, 80);
 
     const row = [
       tipoDte,                    // 34 o 41
@@ -3595,12 +3631,13 @@ app.post('/api/facturacion/emitir-haulmer/:lote_id', requireAuth, async (req, re
         CiudadRecep: m.ciudad || ciudadOrigen
       };
 
-      // Detalle: UNA línea por movimiento del grupo. En grupos multi cada línea
-      // lleva la fecha de SU transferencia (NmbItem max 80 chars por XSD SII).
+      // Detalle: UNA línea por movimiento del grupo, con el texto estándar
+      // "Activo Digital, transferencia a Banco X (Transf. DD-MM-YYYY)" — siempre
+      // con la fecha REAL de la transferencia (NmbItem max 80 chars por XSD SII).
+      // Ignora nombre_item guardado y nombre_item_default (texto antiguo).
       const detalles = g.movs.map((x, idx) => {
         const montoMov = Math.round(x.monto_total || x.monto || 0);
-        const baseNombre = (x.nombre_item || nombreItem + ' ' + (x.banco_cartola || '')).trim();
-        const nombre = (multi ? `${baseNombre} (Transf. ${fechaSfDDMMYYYY(x.fecha)})` : baseNombre).substring(0, 80);
+        const nombre = itemDteTextoCorto(x, 80);
         return esAfecto
           ? {
               NroLinDet: idx + 1,

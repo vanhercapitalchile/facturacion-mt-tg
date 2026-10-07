@@ -383,6 +383,32 @@ const RUTS_INTERNOS = [
   '188744567', // José Javier Turra Guzmán (TG Inversiones)
   '168693591'  // Vanessa Andrea Soto Castillo (Vanher Capital)
 ];
+
+// ── RUTs OTC (plataformas cripto) — NUNCA facturables (política Hernán, oct 2026) ──
+// Los abonos desde estas plataformas corresponden a RETIROS PROPIOS (devolución de
+// fondos enviados de más a la plataforma), NO a ventas. Aplica a TODAS las empresas.
+// ⚠️ BUDA existe como *cliente* en la base de MT (76.415.528-9 "BUDA.C") → el filtro
+// debe correr ANTES del matching de clientes; por eso va en el chequeo global.
+// OJO: "BUDARE CASH SPA" es un cliente legítimo distinto — el match por nombre usa
+// 'BUDACOM' (no 'BUDA') para no confundirlos.
+const RUTS_OTC_NO_FACTURABLES = [
+  '764155289',  // BUDA.COM SPA (Buda)
+  '77638982K',  // KOYWE SPA (Koywe)
+  '775542381'   // SKIPO CHILE SPA (Skipo) — RUT 77.554.238-1 verificado en registro CMF
+];
+const NOMBRES_OTC_NO_FACTURABLES = [
+  'BUDACOM',    // "BUDA COM SPA" / "BUDA.COM SPA" normalizado — NO usar 'BUDA' a secas
+  'KOYWE',
+  'SKIPO'
+];
+function esRutOtc(rutNorm) {
+  return !!rutNorm && RUTS_OTC_NO_FACTURABLES.includes(String(rutNorm).toUpperCase());
+}
+function esNombreOtc(nombreOrigen) {
+  if (!nombreOrigen) return false;
+  const norm = String(nombreOrigen).toUpperCase().replace(/[\s.\-]/g, '');
+  return NOMBRES_OTC_NO_FACTURABLES.some(frag => norm.includes(frag));
+}
 try {
   // Marcar interno TODOS los RUTs de la lista RUTS_INTERNOS (no solo 5).
   // Antes faltaban Margoth/José/Vanessa históricos → quedaban facturables.
@@ -428,6 +454,49 @@ try {
            AND estado IN ('pendiente','listo')`);
   console.log('[STARTUP] RUTs excluidos Vanher marcados como interno');
 } catch(e) { console.warn('[STARTUP] Error marcando RUTs excluidos Vanher:', e.message); }
+
+// ── Migración OTC: Buda / Koywe / Skipo nunca facturables (política oct 2026) ──
+// Marca 'interno' cualquier mov pendiente/listo de esos RUTs o nombres, saca de
+// lotes NO emitidos los que se hayan colado, y AUDITA si ya existen DTE facturados
+// a esas plataformas (esos requieren revisión manual / Nota de Crédito).
+try {
+  const pholdOtc = RUTS_OTC_NO_FACTURABLES.map(() => '?').join(',');
+  const r1 = db.prepare(
+    `UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+     WHERE UPPER(COALESCE(rut_normalizado,'')) IN (${pholdOtc})
+     AND estado IN ('pendiente','listo')`
+  ).run(...RUTS_OTC_NO_FACTURABLES);
+  const r2 = db.prepare(
+    `UPDATE movimientos SET estado='interno', lote_id=NULL, updated_at=datetime('now')
+     WHERE UPPER(COALESCE(rut_normalizado,'')) IN (${pholdOtc})
+     AND estado IN ('en_lote','error')`
+  ).run(...RUTS_OTC_NO_FACTURABLES);
+  // Por nombre (glosas sin RUT): BUDACOM / KOYWE / SKIPO — 'BUDA' a secas NO
+  // ('BUDARE CASH SPA' es un cliente legitimo distinto).
+  const r3 = db.prepare(
+    `UPDATE movimientos SET estado='interno', updated_at=datetime('now')
+     WHERE estado IN ('pendiente','listo')
+     AND (
+       REPLACE(REPLACE(REPLACE(UPPER(COALESCE(nombre_origen,'')),' ',''),'.',''),'-','') LIKE '%BUDACOM%'
+       OR REPLACE(REPLACE(REPLACE(UPPER(COALESCE(nombre_origen,'')),' ',''),'.',''),'-','') LIKE '%KOYWE%'
+       OR REPLACE(REPLACE(REPLACE(UPPER(COALESCE(nombre_origen,'')),' ',''),'.',''),'-','') LIKE '%SKIPO%'
+     )`
+  ).run();
+  const total = r1.changes + r2.changes + r3.changes;
+  if (total > 0) console.log(`[OTC] ${total} movimientos Buda/Koywe/Skipo marcados como interno (${r1.changes} pendiente/listo por RUT, ${r2.changes} sacados de lotes, ${r3.changes} por nombre)`);
+
+  // AUDITORIA: DTE ya facturados a plataformas OTC — no se tocan, pero se reportan
+  const yaFact = db.prepare(
+    `SELECT empresa_id, COUNT(*) n, GROUP_CONCAT(COALESCE(folio_dte,'s/folio')) folios
+     FROM movimientos
+     WHERE UPPER(COALESCE(rut_normalizado,'')) IN (${pholdOtc}) AND estado='facturado'
+     GROUP BY empresa_id`
+  ).all(...RUTS_OTC_NO_FACTURABLES);
+  for (const f of yaFact) {
+    console.warn(`[OTC] ⚠️ ${f.empresa_id}: ${f.n} DTE YA FACTURADOS a RUTs OTC (folios: ${String(f.folios).substring(0,300)}) — revisar y anular con Nota de Credito si corresponde`);
+  }
+  if (!yaFact.length) console.log('[OTC] ✓ Sin DTE facturados a RUTs de Buda/Koywe/Skipo');
+} catch(e) { console.warn('[OTC] Error en migracion OTC:', e.message); }
 
 // ── Cleanup: eliminar intentos fallidos de facturación anteriores al deploy ──
 // Resetea movimientos y borra lotes con estado 'error'. Seguro de correr múltiples veces.
@@ -504,7 +573,7 @@ try {
         // RUT de socio/empresa propia → forzar 'interno', nunca reclasificar a facturable
         // (chequeo inline con `empresas` ya cargado — evita un SELECT por movimiento)
         const exclEmp = (empresas[m.empresa_id]?.ruts_excluidos) || [];
-        if (RUTS_INTERNOS.includes(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen)) {
+        if (RUTS_INTERNOS.includes(m.rut_normalizado) || esRutOtc(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen) || esNombreOtc(m.nombre_origen)) {
           updInterno.run(now, m.id);
           continue;
         }
@@ -780,9 +849,10 @@ function checkEmpresaAdminOnly(req, res, empresaId) {
 }
 
 // Devuelve true si el RUT está excluido de facturación para una empresa específica
-// Combina los globales (RUTS_INTERNOS) con los excluidos por config de empresa
+// Combina los globales (RUTS_INTERNOS + plataformas OTC) con los excluidos por config de empresa
 function esRutExcluido(rutNorm, empresaId) {
   if (rutNorm && RUTS_INTERNOS.includes(rutNorm)) return true;
+  if (esRutOtc(rutNorm)) return true;
   const empConf = getAppData('empresas')?.[empresaId] || {};
   const excluidos = empConf.ruts_excluidos || [];
   if (rutNorm && excluidos.includes(rutNorm)) return true;
@@ -793,6 +863,7 @@ function esRutExcluido(rutNorm, empresaId) {
 function esMovimientoInterno(rutNorm, nombreOrigen, empresaId) {
   if (esRutExcluido(rutNorm, empresaId)) return true;
   if (esNombreInterno(nombreOrigen)) return true;
+  if (esNombreOtc(nombreOrigen)) return true;
   return false;
 }
 
@@ -2454,7 +2525,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
       if (!m.rut_normalizado) continue;
       // RUT de socio/empresa propia → forzar 'interno', nunca promover a facturable
       const exclEmp = (empresas[m.empresa_id]?.ruts_excluidos) || [];
-      if (RUTS_INTERNOS.includes(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen)) {
+      if (RUTS_INTERNOS.includes(m.rut_normalizado) || esRutOtc(m.rut_normalizado) || exclEmp.includes(m.rut_normalizado) || esNombreInterno(m.nombre_origen) || esNombreOtc(m.nombre_origen)) {
         db.prepare("UPDATE movimientos SET estado='interno', updated_at=? WHERE id=?").run(now, m.id);
         continue;
       }

@@ -166,6 +166,28 @@ try {
   if (r.changes > 0) console.log(`[MIGRATION] nmov_santander backfilled en ${r.changes} movimientos Santander`);
 } catch(e) { console.warn('[MIGRATION] Error backfill nmov_santander:', e.message); }
 
+// ── tipo_dte_forzado por cliente: excepción a la regla por rango de RUT ──────
+// Valores: NULL (según regla), 33, 34, 39, 41. Prioridad sobre tipo_dte_personas/
+// tipo_dte_empresas. Caso: persona natural con inicio de actividades que requiere
+// Factura Exenta 34 aunque su RUT caiga en Boleta 41.
+// Declarada AQUÍ (temprano) porque resolverTipoDte se llama desde migraciones de
+// startup (reclassify IIFE ~línea 575) que corren antes de las declaraciones tardías:
+// un const posterior quedaría en TDZ y el try/catch lo tragaría silenciosamente.
+const TIPOS_DTE_VALIDOS_FORZADO = [33, 34, 39, 41];
+try { db.exec('ALTER TABLE clientes ADD COLUMN tipo_dte_forzado INTEGER'); } catch(e){}
+// Seed idempotente: RUT 26.644.586-5 (ts-capital, cliente con inicio de actividades) → 34
+try {
+  const rSeed = db.prepare(`UPDATE clientes SET tipo_dte_forzado = 34, updated_at = datetime('now')
+    WHERE empresa_id = 'ts-capital' AND rut_normalizado = '266445865'
+      AND (tipo_dte_forzado IS NULL OR tipo_dte_forzado != 34)`).run();
+  if (rSeed.changes > 0) console.log('[TIPO DTE FORZADO] Seed: ts-capital RUT 26.644.586-5 → 34 (Factura Exenta)');
+  // Sincronizar movs aún no facturados ni en lote de ese RUT (no toca facturados/lotes)
+  const rSync = db.prepare(`UPDATE movimientos SET tipo_dte = 34, updated_at = datetime('now')
+    WHERE empresa_id = 'ts-capital' AND rut_normalizado = '266445865'
+      AND estado IN ('pendiente','listo') AND COALESCE(tipo_dte, 0) != 34`).run();
+  if (rSync.changes > 0) console.log(`[TIPO DTE FORZADO] Seed: ${rSync.changes} movs pendiente/listo de 26.644.586-5 actualizados a 34`);
+} catch(e) { console.warn('[MIGRATION] Error seed tipo_dte_forzado:', e.message); }
+
 // ── Audit log de cargas de cartola ────────────────────────────────────────────
 // Registra TODA subida de cartola, aunque no haya generado movimientos nuevos
 // (caso histórica 100% duplicada/promovida). Permite a admin auditar quién subió
@@ -578,7 +600,7 @@ try {
           continue;
         }
         const empConfig = empresas[m.empresa_id];
-        const correcto = getTipoDte(m.rut_normalizado, empConfig);
+        const correcto = resolverTipoDte(m.empresa_id, empConfig, m.rut_normalizado);
         if (m.tipo_dte !== correcto) {
           // Solo promover boletas (41) a 'listo'. Para facturas (34) NO bajar a 'pendiente':
           // si ya tenía datos completos y estaba 'listo', debe seguir disponible para facturar.
@@ -1047,10 +1069,12 @@ app.post('/api/clientes', requireAuth, (req, res) => {
   const empresaId = req.user.role === 'admin' ? c.empresa_id : req.user.empresa;
   const now = nowCL();
   const rutNorm = normalizeRut(c.rut);
+  // tipo_dte_forzado: NULL = según regla por RUT; válidos 33/34/39/41
+  const tipoForzado = TIPOS_DTE_VALIDOS_FORZADO.includes(parseInt(c.tipo_dte_forzado)) ? parseInt(c.tipo_dte_forzado) : null;
   const result = db.prepare(`
-    INSERT INTO clientes (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion, comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante, created_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(empresaId, c.tipo || 'empresa', c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, now, now);
+    INSERT INTO clientes (empresa_id, tipo, rut, rut_normalizado, razon_social, giro, direccion, comuna, ciudad, nombre, email, telefono, representante_legal, rut_representante, tipo_dte_forzado, created_at, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(empresaId, c.tipo || 'empresa', c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, tipoForzado, now, now);
   res.json({ ok: true, id: result.lastInsertRowid });
 });
 
@@ -1069,10 +1093,22 @@ app.put('/api/clientes/:id', requireAuth, (req, res) => {
 
   db.transaction(() => {
     // Actualizar datos del cliente
+    const tipoForzadoPut = TIPOS_DTE_VALIDOS_FORZADO.includes(parseInt(c.tipo_dte_forzado)) ? parseInt(c.tipo_dte_forzado) : null;
     db.prepare(`
-      UPDATE clientes SET tipo=?, rut=?, rut_normalizado=?, razon_social=?, giro=?, direccion=?, comuna=?, ciudad=?, nombre=?, email=?, telefono=?, representante_legal=?, rut_representante=?, updated_at=?
+      UPDATE clientes SET tipo=?, rut=?, rut_normalizado=?, razon_social=?, giro=?, direccion=?, comuna=?, ciudad=?, nombre=?, email=?, telefono=?, representante_legal=?, rut_representante=?, tipo_dte_forzado=?, updated_at=?
       WHERE id=?
-    `).run(c.tipo, c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, now, req.params.id);
+    `).run(c.tipo, c.rut, rutNorm, c.razon_social, c.giro, c.direccion, c.comuna, c.ciudad, c.nombre, c.email, c.telefono, c.representante_legal, c.rut_representante, tipoForzadoPut, now, req.params.id);
+    // Sincronizar tipo_dte en movs AÚN NO facturados ni en lote del mismo RUT
+    // (pendiente/listo solamente — no toca facturados ni lotes existentes)
+    if (rutNorm) {
+      const tipoResuelto = tipoForzadoPut != null
+        ? tipoForzadoPut
+        : getTipoDte(rutNorm, getAppData('empresas')?.[target.empresa_id]);
+      const rT = db.prepare(`UPDATE movimientos SET tipo_dte = ?, updated_at = ?
+        WHERE empresa_id = ? AND rut_normalizado = ? AND estado IN ('pendiente','listo') AND COALESCE(tipo_dte,0) != ?`)
+        .run(tipoResuelto, now, target.empresa_id, rutNorm, tipoResuelto);
+      if (rT.changes > 0) console.log(`[TIPO DTE FORZADO] Cliente ${req.params.id} (${rutNorm}): ${rT.changes} movs pendiente/listo → tipo ${tipoResuelto}`);
+    }
 
     // Propagar datos del cliente a movimientos no facturados del mismo RUT en esta empresa.
     // razon_social/giro/direccion/comuna/ciudad: cliente es source of truth → sobreescribir
@@ -1842,6 +1878,10 @@ app.patch('/api/movimientos/:id/asociar-cliente', requireAuth, (req, res) => {
 
   const now = nowCL();
 
+  // Tipo DTE del cliente asociado: respeta tipo_dte_forzado, si no regla por RUT
+  const empresasAsoc = getAppData('empresas') || {};
+  const tipoDteAsoc = resolverTipoDte(mov.empresa_id, empresasAsoc[mov.empresa_id], cliente.rut_normalizado);
+
   // Aplicar a mov individual o a todos los movs del mismo rut original
   let movsAfectados = 1;
   db.transaction(() => {
@@ -1858,7 +1898,7 @@ app.patch('/api/movimientos/:id/asociar-cliente', requireAuth, (req, res) => {
       cliente.rut, cliente.rut_normalizado, cliente.razon_social,
       cliente.giro || '', cliente.direccion || '', cliente.comuna || '',
       cliente.ciudad || '', cliente.email || '',
-      cliente.tipo === 'empresa' ? 34 : 41,
+      tipoDteAsoc,
       now, movId
     );
 
@@ -1877,7 +1917,7 @@ app.patch('/api/movimientos/:id/asociar-cliente', requireAuth, (req, res) => {
         cliente.rut, cliente.rut_normalizado, cliente.razon_social,
         cliente.giro || '', cliente.direccion || '', cliente.comuna || '',
         cliente.ciudad || '', cliente.email || '',
-        cliente.tipo === 'empresa' ? 34 : 41,
+        tipoDteAsoc,
         now, mov.rut_normalizado, mov.empresa_id, movId
       );
       movsAfectados += r.changes;
@@ -2132,7 +2172,7 @@ app.post('/api/movimientos/procesar', requireAuth, (req, res) => {
         } else if (rutNorm) {
           // Determine DTE type by RUT using empresa config (tipo_dte_personas / tipo_dte_empresas)
           const empConf = getAppData('empresas')?.[empresaId];
-          tipoDte = getTipoDte(rutNorm, empConf);
+          tipoDte = resolverTipoDte(empresaId, empConf, rutNorm);
 
           const cliente = clienteMap.get(rutNorm);
           if (cliente) {
@@ -2508,6 +2548,23 @@ function getTipoDte(rutNormalizado, empresaConfig) {
   }
 }
 
+// ── Excepción por cliente: tipo_dte_forzado manda sobre la regla por rango ───
+// Busca el cliente (empresa_id, rut_normalizado); si tiene tipo_dte_forzado
+// válido lo usa y loguea. Si no, cae a getTipoDte (regla actual).
+function resolverTipoDte(empresaId, empresaConfig, rutNormalizado) {
+  if (empresaId && rutNormalizado) {
+    try {
+      const row = db.prepare('SELECT tipo_dte_forzado FROM clientes WHERE empresa_id = ? AND rut_normalizado = ? AND tipo_dte_forzado IS NOT NULL').get(empresaId, rutNormalizado);
+      const forzado = row ? parseInt(row.tipo_dte_forzado) : NaN;
+      if (TIPOS_DTE_VALIDOS_FORZADO.includes(forzado)) {
+        console.log(`[TIPO DTE FORZADO] ${empresaId} RUT ${rutNormalizado} → ${forzado} (excepción por cliente, prioridad sobre regla por RUT)`);
+        return forzado;
+      }
+    } catch(e) { /* columna puede no existir en BD antigua — cae a la regla */ }
+  }
+  return getTipoDte(rutNormalizado, empresaConfig);
+}
+
 // ── Re-classify all pending movements (manual trigger) ───────────────────────
 app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
   const empresaId = filterByEmpresa(req);
@@ -2530,7 +2587,7 @@ app.post('/api/movimientos/reclasificar', requireAuth, (req, res) => {
         continue;
       }
       const empConfig = empresas[m.empresa_id];
-      const correcto = getTipoDte(m.rut_normalizado, empConfig);
+      const correcto = resolverTipoDte(m.empresa_id, empConfig, m.rut_normalizado);
       // Solo promover boletas (41) a 'listo'. Para facturas (34) conservar estado actual:
       // bajar de 'listo' a 'pendiente' ocultaría documentos ya listos para emitir.
       const nuevoEstado = correcto === 41 ? 'listo' : m.estado;
@@ -3184,7 +3241,7 @@ function agruparMovsParaSF(movsIn, empresa, umbralCLP) {
   const abiertosFactDia = new Map(); // clave 34|rut|YYYY-MM-DD -> grupo
   const movs = ordenarMovsCronologico(movsIn);
   for (const m of movs) {
-    const tipoDte  = getTipoDte(m.rut_normalizado, empresa);
+    const tipoDte  = resolverTipoDte(m.empresa_id, empresa, m.rut_normalizado);
     const esBoleta = (tipoDte === 39 || tipoDte === 41);
     const rut      = String(m.rut_normalizado || '').trim();
     const mes      = String(m.fecha || '').substring(0, 7); // YYYY-MM
@@ -3450,7 +3507,7 @@ function buildHaulmerCsvContent(movs, empresa) {
   const nombreItem = empresa.nombre_item_default || 'Venta Activo Digital. Transferencia a Banco';
   let csv = HAULMER_CSV_ROW1 + '\n' + HAULMER_CSV_ROW2 + '\n';
   for (const m of movs) {
-    const tipoDte = getTipoDte(m.rut_normalizado, empresa);
+    const tipoDte = resolverTipoDte(m.empresa_id, empresa, m.rut_normalizado);
     const fecha   = fechaParaHaulmer(m.fecha);
     const rut     = m.rut ? m.rut : '';   // con puntos y guión
     const razon   = (m.razon_social || m.nombre_origen || '').substring(0, 100);
@@ -6319,6 +6376,19 @@ app.post('/api/movimientos/reparar-huerfanos', requireAuth, requireAdmin, (req, 
       AND lote_id NOT IN (SELECT lote_id FROM lotes_facturacion WHERE lote_id IS NOT NULL)
   `).run(now);
 
+  // Recalcular tipo_dte de los reparados (respeta tipo_dte_forzado por cliente)
+  try {
+    const empresasRep = getAppData('empresas') || {};
+    const updTipoRep = db.prepare("UPDATE movimientos SET tipo_dte = ?, updated_at = ? WHERE id = ? AND estado = 'listo'");
+    const getRutRep  = db.prepare('SELECT rut_normalizado FROM movimientos WHERE id = ?');
+    for (const h of huerfanos) {
+      const mRep = getRutRep.get(h.id);
+      if (mRep?.rut_normalizado) {
+        updTipoRep.run(resolverTipoDte(h.empresa_id, empresasRep[h.empresa_id], mRep.rut_normalizado), now, h.id);
+      }
+    }
+  } catch(eTipo) { console.warn('[REPARAR HUÉRFANOS] Error recalculando tipo_dte:', eTipo.message); }
+
   console.log(`[REPARAR HUÉRFANOS] ${r.changes} movs reseteados a 'listo' por ${req.user.username}. Por empresa: ${JSON.stringify(porEmpresa)}`);
   res.json({
     ok: true,
@@ -6633,7 +6703,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
           if (esMovimientoInterno(rutNorm, mov.nombre_origen, empresaId)) {
             estado = 'interno';
           } else if (rutNorm) {
-            tipoDte = getTipoDte(rutNorm, empConf);
+            tipoDte = resolverTipoDte(empresaId, empConf, rutNorm);
             let clienteExistente = clienteMap.get(rutNorm);
 
             // ── Cross-empresa enrichment ────────────────────────────────────

@@ -1567,6 +1567,48 @@ async function apiFetch(url, opts = {}) {
   return res.json();
 }
 
+// ── Ver/Descargar PDF del DTE emitido (nov 2026) ─────────────────────────────
+// Llama al proxy del backend (/api/dte/pdf/:movId) que obtiene el PDF desde
+// SimpleFactura o Haulmer según la empresa, y lo abre en una pestaña nueva
+// (o lo descarga si el navegador bloquea popups).
+async function verDtePdf(movId, btn) {
+  const prevHtml = btn ? btn.innerHTML : null;
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳'; }
+    const res = await fetch(`/api/dte/pdf/${movId}`, { headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {} });
+    if (res.status === 401) { doLogout(); return; }
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!res.ok || !ct.includes('application/pdf')) {
+      let msg = 'No se pudo obtener el PDF del DTE';
+      try {
+        const j = await res.json();
+        msg = j.error || msg;
+        if (j.detalle) msg += ' — ' + String(j.detalle).substring(0, 180);
+      } catch (e) { /* respuesta no JSON */ }
+      showToast(msg, 'error', 7000);
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    // Nombre sugerido viene en Content-Disposition; para descarga manual usamos uno genérico
+    const cd = res.headers.get('content-disposition') || '';
+    const nombre = (cd.match(/filename="?([^";]+)"?/) || [])[1] || `DTE_mov_${movId}.pdf`;
+    const w = window.open(url, '_blank');
+    if (!w) {
+      // Popup bloqueado → forzar descarga
+      const a = document.createElement('a');
+      a.href = url; a.download = nombre;
+      document.body.appendChild(a); a.click(); a.remove();
+      showToast('PDF descargado: ' + nombre, 'success');
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (e) {
+    showToast('Error obteniendo PDF: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = prevHtml; }
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // SHOW APP
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3896,7 +3938,7 @@ async function toggleLoteDetalle(loteId, btn) {
         <td style="padding:5px 8px;text-align:right;font-weight:600;">${fmt(m.monto_total || m.monto)}</td>
         <td style="padding:5px 8px;"><span class="badge badge-gray" style="font-size:10px;">${m.banco_cartola || '—'}</span></td>
         <td style="padding:5px 8px;color:${estadoColor};font-weight:600;font-size:11px;">${m.estado}${m.estado === 'error' ? ' ⚠️' : ''}</td>
-        <td style="padding:5px 8px;font-family:monospace;font-size:11px;font-weight:600;color:${m.folio_dte ? 'var(--green,#2ecc71)' : 'var(--txt3)'};">${m.folio_dte || '—'}</td>
+        <td style="padding:5px 8px;font-family:monospace;font-size:11px;font-weight:600;color:${m.folio_dte ? 'var(--green,#2ecc71)' : 'var(--txt3)'};white-space:nowrap;">${m.folio_dte ? `${m.folio_dte} <button onclick="verDtePdf(${m.id}, this)" style="padding:1px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;cursor:pointer;" title="Ver PDF del DTE emitido">📄</button>` : '—'}</td>
         ${puedeQuitar ? `<td style="padding:5px 8px;">
           ${puedeQuitarEste ? `<button onclick="quitarMovimientoDeLote('${loteId}', ${m.id}, this)"
             style="font-size:10px;padding:2px 8px;background:#c0392b;color:#fff;border:none;border-radius:4px;cursor:pointer;"
@@ -6034,7 +6076,7 @@ async function loadConsultaMovs() {
       <td style="text-align:right;font-weight:500;">${fmtMonto(m.monto)}</td>
       <td><span class="badge badge-${m.estado==='facturado'?'green':m.estado==='error'?'red':m.estado==='listo'?'blue':m.estado==='interno'?'gray':'gold'}">${esc(m.estado||'—')}</span></td>
       <td style="text-align:center;">${m.tipo_dte || '—'}</td>
-      <td style="font-family:monospace;font-size:11px;">${esc(m.folio_dte || '—')}</td>
+      <td style="font-family:monospace;font-size:11px;white-space:nowrap;">${m.folio_dte ? `${esc(m.folio_dte)} <button onclick="verDtePdf(${m.id}, this)" style="padding:1px 6px;font-size:11px;background:var(--surface);color:var(--txt);border:1px solid var(--border);border-radius:4px;cursor:pointer;" title="Ver PDF del DTE emitido">📄</button>` : '—'}</td>
       <td style="font-size:11px;color:${m.email_receptor?'var(--txt2)':'var(--red)'};">${esc(m.email_receptor || '(sin email)')}${m.email_provisional ? ' <span class="badge" style="background:rgba(241,196,15,.15);color:#a86c00;border:1px solid #f1c40f;font-size:9px;padding:1px 6px;">⚠ PROV</span>' : ''}</td>
       <td style="font-size:11px;">${esc(m.lote_id || '—')}</td>
       <td style="font-family:monospace;font-size:10px;color:var(--txt3);">${esc(m.id_transferencia || '—')}</td>

@@ -3964,6 +3964,117 @@ app.get('/api/facturacion/test-haulmer/:empresa_id', requireAuth, async (req, re
   }
 });
 
+// ── Ver/Descargar PDF del DTE emitido (nov 2026) ──────────────────────────────
+// GET /api/dte/pdf/:mov_id → proxy al proveedor según empresa:
+//   • SimpleFactura: POST https://api.simplefactura.cl/dte/pdf (Bearer token)
+//     body: { credenciales:{rutEmisor, nombreSucursal}, dteReferenciadoExterno:{folio, codigoTipoDte, ambiente} }
+//     Respuesta 200 = PDF binario (igual que el SDK oficial, FacturaService.obtener_pdf).
+//   • Haulmer/OpenFactura: GET https://api.haulmer.com/v2/dte/document/{rut}/{tipo}/{folio}/pdf (header apikey)
+//     Respuesta puede ser PDF binario o JSON con el PDF en base64 según versión del API.
+// El PDF se devuelve inline (Content-Disposition) para que el navegador lo abra en pestaña nueva.
+const dtePdfEsBinarioPdf = (buf) => buf && buf.length > 5 && buf.slice(0, 5).toString('latin1') === '%PDF-';
+
+app.get('/api/dte/pdf/:mov_id', requireAuth, async (req, res) => {
+  const movId = parseInt(req.params.mov_id);
+  if (!movId) return res.status(400).json({ error: 'ID de movimiento inválido' });
+
+  const mov = db.prepare('SELECT * FROM movimientos WHERE id = ?').get(movId);
+  if (!mov) return res.status(404).json({ error: 'Movimiento no encontrado' });
+  if (req.user.role !== 'admin' && mov.empresa_id !== req.user.empresa) {
+    return res.status(403).json({ error: 'Sin permiso para ver DTEs de esta empresa' });
+  }
+  if (!mov.folio_dte) return res.status(400).json({ error: 'Este movimiento no tiene folio DTE asociado' });
+
+  const folio   = parseInt(String(mov.folio_dte).trim());
+  const tipoDte = parseInt(mov.tipo_dte) || 39;
+  if (!folio) return res.status(400).json({ error: `Folio DTE no numérico: ${mov.folio_dte}` });
+
+  const empresas = getAppData('empresas');
+  const empresa  = empresas[mov.empresa_id];
+  if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+  const nombreArchivo = `DTE_${tipoDte}_folio_${folio}_${mov.empresa_id}.pdf`;
+
+  try {
+    let pdfBuf = null;
+
+    if (empresa.proveedor_dte === 'haulmer') {
+      // ── Haulmer / OpenFactura ──────────────────────────────────────────────
+      const hConf = empresa.haulmer || {};
+      if (!hConf.api_key) throw new Error('API Key de Haulmer no configurada para esta empresa');
+      const rutEmisor = (empresa.rut || '').replace(/\./g, ''); // sin puntos, con guión
+      const url = `https://api.haulmer.com/v2/dte/document/${encodeURIComponent(rutEmisor)}/${tipoDte}/${folio}/pdf`;
+      console.log(`[DTE PDF] Haulmer GET ${url}`);
+      const r = await fetch(url, {
+        headers: { 'apikey': hConf.api_key, 'Accept': 'application/pdf, application/json' },
+        signal: AbortSignal.timeout(30000)
+      });
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!r.ok) throw new Error(`Haulmer HTTP ${r.status}: ${buf.toString('utf8').substring(0, 300)}`);
+      if (dtePdfEsBinarioPdf(buf)) {
+        pdfBuf = buf;
+      } else {
+        // Algunas respuestas vienen como JSON con el PDF en base64
+        let j; try { j = JSON.parse(buf.toString('utf8')); } catch (e) {
+          throw new Error(`Haulmer respuesta inesperada (ni PDF ni JSON): ${buf.toString('utf8').substring(0, 200)}`);
+        }
+        const b64 = j.pdf || j.PDF || j.file || (j.data && (j.data.pdf || (typeof j.data === 'string' ? j.data : null))) || null;
+        if (!b64) throw new Error(`Haulmer sin PDF en respuesta JSON: ${JSON.stringify(j).substring(0, 200)}`);
+        pdfBuf = Buffer.from(String(b64), 'base64');
+        if (!dtePdfEsBinarioPdf(pdfBuf)) throw new Error('Haulmer: el campo base64 no contiene un PDF válido');
+      }
+    } else {
+      // ── SimpleFactura ──────────────────────────────────────────────────────
+      const sfConf = empresa.simplefactura || {};
+      if (!sfConf.rut_emisor || (!sfConf.username && !sfConf.api_token)) {
+        throw new Error('Credenciales SimpleFactura no configuradas para esta empresa');
+      }
+      const email = sfConf.username || 'api-token';
+      const token = await sfGetToken(email, sfConf.password, sfConf.api_token || null);
+
+      const pedirPdf = async (ambiente) => {
+        const body = {
+          credenciales: {
+            rutEmisor: rutParaSF(sfConf.rut_emisor || empresa.rut || ''),
+            nombreSucursal: (sfConf.nombre_sucursal || 'Casa Matriz').trim()
+          },
+          dteReferenciadoExterno: { folio, codigoTipoDte: tipoDte, ambiente }
+        };
+        console.log(`[DTE PDF] SF POST ${SF_API}/dte/pdf folio=${folio} tipo=${tipoDte} ambiente=${ambiente}`);
+        const r = await fetch(`${SF_API}/dte/pdf`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(30000)
+        });
+        return { status: r.status, buf: Buffer.from(await r.arrayBuffer()) };
+      };
+
+      // El parámetro "ambiente" no está claro en la doc pública (el SDK oficial usa
+      // 0=Certificación/1=Producción, pero documentsIssued en este mismo código
+      // funciona en producción con 0). Probamos 0 y si no devuelve PDF, 1.
+      let resp = await pedirPdf(0);
+      if (resp.status !== 200 || !dtePdfEsBinarioPdf(resp.buf)) {
+        const resp1 = await pedirPdf(1);
+        if (resp1.status === 200 && dtePdfEsBinarioPdf(resp1.buf)) resp = resp1;
+      }
+      if (resp.status !== 200 || !dtePdfEsBinarioPdf(resp.buf)) {
+        const txt = resp.buf.toString('utf8').substring(0, 300);
+        throw new Error(`SimpleFactura HTTP ${resp.status}: ${txt || '(respuesta vacía)'}`);
+      }
+      pdfBuf = resp.buf;
+    }
+
+    console.log(`[DTE PDF] ✓ mov=${movId} folio=${folio} tipo=${tipoDte} empresa=${mov.empresa_id} (${pdfBuf.length} bytes)`);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${nombreArchivo}"`);
+    res.send(pdfBuf);
+  } catch (err) {
+    console.error(`[DTE PDF ERROR] mov=${movId} folio=${folio}:`, err.message);
+    res.status(502).json({ error: 'No se pudo obtener el PDF del proveedor', detalle: err.message });
+  }
+});
+
 // ── Debug: descargar el CSV que se enviaría a SF sin emitirlo ─────────────────
 app.get('/api/facturacion/preview-csv/:lote_id', requireAuth, (req, res) => {
   const loteId = req.params.lote_id;

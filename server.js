@@ -6513,7 +6513,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     // ── Procesar e insertar movimientos ───────────────────────────────────────
     const checkDup    = db.prepare('SELECT id, estado, created_at, lote_carga_id FROM movimientos WHERE id_compuesto = ? AND empresa_id = ?');
     // Para Santander: buscar coincidencia por dedup_key cross-format (provisoria ↔ tradicional)
-    const checkDedup  = db.prepare(`SELECT id, estado, tipo_cartola, lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte
+    const checkDedup  = db.prepare(`SELECT id, estado, tipo_cartola, lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte, nmov_santander
                                     FROM movimientos
                                     WHERE empresa_id = ? AND banco_cartola = ? AND dedup_key = ?`);
     // Promoción in-place provisoria → definitiva (preserva estado de facturación)
@@ -6588,7 +6588,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
         try {
           const idTransf    = String(mov.id_transferencia || '').trim();
           const idCompuesto = `${empresaId}_${idTransf}_${bancoCartola}`;
-          const dedupKey    = mov.dedup_key || null;
+          let dedupKey      = mov.dedup_key || null;
 
           // ── Verificar duplicado exacto por id_compuesto ──────────────────
           // Para SANTANDER este chequeo corre DESPUÉS del bloque cross-format:
@@ -6634,8 +6634,39 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               if (matchPrev) matchVia = 'nmov';
             }
             if (!matchPrev && dedupKey) {
-              matchPrev = checkDedup.get(empresaId, bancoCartola, dedupKey) || null;
-              if (matchPrev) matchVia = 'dedup_key';
+              let cand = checkDedup.get(empresaId, bancoCartola, dedupKey) || null;
+              // FIX FALSO DUPLICADO (nov 2026): la seq de la dedup_key solo desambigua
+              // montos repetidos DENTRO de un mismo archivo. Si un cliente transfiere
+              // 2+ veces el MISMO monto el mismo día y la segunda llega en una cartola
+              // posterior (carga incremental), su clave calcula seq=1 otra vez y choca
+              // con la ya guardada → antes se descartaba como duplicado y el movimiento
+              // quedaba sin facturar (caso real: 2x $7M mismo día → factura con 1 sola
+              // línea de $7M). Si AMBOS lados tienen N° de movimiento y difieren, son
+              // transferencias DISTINTAS: se corre la seq hasta una clave libre y el
+              // movimiento se inserta normal.
+              if (cand && mov.nmov_santander && cand.nmov_santander &&
+                  String(cand.nmov_santander) !== String(mov.nmov_santander)) {
+                const base = String(dedupKey).replace(/_\d+$/, '');
+                let seqN = parseInt(String(dedupKey).match(/_(\d+)$/)?.[1] || '1');
+                let intentos = 0;
+                while (cand && cand.nmov_santander && String(cand.nmov_santander) !== String(mov.nmov_santander) && intentos < 50) {
+                  seqN++; intentos++;
+                  dedupKey = `${base}_${seqN}`;
+                  cand = checkDedup.get(empresaId, bancoCartola, dedupKey) || null;
+                }
+                if (cand && String(cand.nmov_santander || '') === String(mov.nmov_santander)) {
+                  // misma transferencia real, guardada con clave corrida → match normal
+                  matchPrev = cand; matchVia = 'dedup_key';
+                } else if (!cand) {
+                  console.log(`[DEDUP] Falso duplicado evitado: ${empresaId} ${mov.fecha} $${mov.monto} nmov=${mov.nmov_santander} difiere del guardado — se inserta como movimiento distinto (clave ${dedupKey})`);
+                  matchPrev = null; // insertar con la clave libre
+                } else {
+                  // candidato sin nmov (p.ej. provisoria) → conservador: tratarlo como match
+                  matchPrev = cand; matchVia = 'dedup_key';
+                }
+              } else if (cand) {
+                matchPrev = cand; matchVia = 'dedup_key';
+              }
             }
 
             if (matchPrev) {

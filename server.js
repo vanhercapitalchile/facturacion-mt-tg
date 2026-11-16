@@ -5632,14 +5632,46 @@ function normalizarGlosaSantander(glosa) {
 // CtaCte") trae el texto completo. Truncar a 25 hace la clave idéntica entre
 // formatos (validado 1857/1857 con archivos TG jul-2026). Las claves ya guardadas
 // en BD no cambian: sus glosas de origen ya venían truncadas a ≤25.
+// v2 (nov 2026): tras truncar a 25 se eliminan símbolos, se colapsan espacios y
+// se hace trim. Antes el corte a 25 podía dejar un espacio final cuando la glosa
+// larga (provisoria trunca a 34, instantánea trae completa) se cortaba justo
+// entre palabras ("...TRANSF JULIA " vs "...TRANSF JULIA" de la tradicional) y
+// la clave exacta no coincidía. Las claves viejas guardadas sin trim las rescata
+// la capa 3 por ventana (compara canon recalculado en JS, no la clave literal).
 function glosaCanonSantander(glosa) {
-  return normalizarGlosaSantander(glosa).substring(0, 25);
+  return normalizarGlosaSantander(glosa).substring(0, 25)
+    .replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function dedupKeySantander(fecha, monto, glosa, seq) {
   const m = Math.round(Math.abs(parseFloat(monto) || 0));
-  const g = glosaCanonSantander(glosa).replace(/[^A-Z0-9 ]/g, '');
-  return `${fecha}_${m}_${g}_${seq}`;
+  return `${fecha}_${m}_${glosaCanonSantander(glosa)}_${seq}`;
+}
+
+// Sumar días a una fecha ISO (YYYY-MM-DD) — para la ventana de match cross-format
+function addDiasISO(fechaISO, dias) {
+  const d = new Date(`${fechaISO}T12:00:00Z`);
+  if (isNaN(d.getTime())) return fechaISO;
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().substring(0, 10);
+}
+function diasEntreISO(a, b) {
+  const ta = new Date(`${a}T12:00:00Z`).getTime(), tb = new Date(`${b}T12:00:00Z`).getTime();
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return 9999;
+  return Math.round((ta - tb) / 86400000);
+}
+
+// Comparación tolerante de glosas canónicas para el match por ventana.
+// El banco a veces trunca con DOBLE espacio ("0776747610 Transf.  INVER" en la
+// tradicional vs "0776747610 Transf. INVERSIONES MO" en la provisoria): tras
+// colapsar espacios una queda más corta que la otra y la igualdad exacta falla.
+// Como ambas derivan del MISMO texto cortado a 25, basta comparar el prefijo
+// común (≥16 chars = RUT de 10 + " TRANS", ya identifica al pagador).
+function glosaCanonCompatible(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const L = Math.min(a.length, b.length);
+  return L >= 16 && a.substring(0, L) === b.substring(0, L);
 }
 
 // N° de movimiento canónico: solo dígitos, sin ceros a la izquierda ('000029994' → '29994')
@@ -6575,6 +6607,17 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
       });
     }
 
+    // SANTANDER: procesar en orden CRONOLÓGICO ascendente (la tradicional viene
+    // descendente). El match por ventana (capa 3) empareja FIFO contra los movs
+    // guardados; con ambas secuencias ordenadas el emparejamiento es estable y
+    // no deja huérfanos. Sort estable → el orden relativo dentro del mismo día
+    // se conserva (consistente con la seq de la dedup_key asignada en el parser).
+    if (bancoCartola === 'SANTANDER') {
+      movimientosRaw = movimientosRaw.map((m, i) => [m, i])
+        .sort((a, b) => String(a[0].fecha).localeCompare(String(b[0].fecha)) || (a[1] - b[1]))
+        .map(x => x[0]);
+    }
+
     const apiKey    = getSimpleApiKey(empresaId);
     const empresas  = getAppData('empresas') || {};
     const empConf   = empresas[empresaId];
@@ -6644,6 +6687,28 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                                          lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte
                                   FROM movimientos
                                   WHERE empresa_id = ? AND banco_cartola = ? AND nmov_santander = ? AND nmov_santander != ''`);
+    // Capa 3 (nov 2026): match por VENTANA de fechas + monto + glosa canónica.
+    // La cartola PROVISORIA (como la instantánea) usa fecha CONTABLE: los abonos de
+    // fin de semana / fuera de horario se registran el día hábil siguiente (delta
+    // 0-3 días vs la fecha REAL de la tradicional; medido 56% con archivos TG
+    // nov-2026). La provisoria NO trae N° de movimiento (solo N° documento, que la
+    // tradicional no tiene) → ni la capa 1 (nmov) ni la capa 2 (dedup_key con fecha
+    // exacta) pueden cruzarla. Esta capa busca candidatos por monto exacto + glosa
+    // canónica igual dentro de la ventana de fechas y consume cada candidato una
+    // sola vez por carga (pagadores que repiten el mismo monto en días contiguos
+    // se emparejan 1:1, no en cascada).
+    // IMPORTANTE: se excluyen los movs insertados por ESTA MISMA carga
+    // (lote_carga_id actual): dos movimientos del mismo archivo nunca son
+    // duplicados entre sí — sin esta exclusión, un pagador que repite el mismo
+    // monto en días contiguos dentro del archivo se "tragaba" como duplicado
+    // del mov insertado segundos antes (validado: GLOBAL $200.000 el 16 y 17/11).
+    const checkVentana = db.prepare(`SELECT id, estado, tipo_cartola, fecha, monto, glosa, nmov_santander,
+                                            lote_id, lote_carga_id, created_at, fecha_facturacion, folio_dte
+                                     FROM movimientos
+                                     WHERE empresa_id = ? AND banco_cartola = ?
+                                       AND fecha BETWEEN ? AND ?
+                                       AND monto BETWEEN ? AND ?
+                                       AND COALESCE(lote_carga_id, '') != ?`);
     const promote     = db.prepare(`UPDATE movimientos
                                     SET tipo_cartola = ?,
                                         id_transferencia = ?,
@@ -6693,6 +6758,9 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
     let nuevos = 0, duplicados = 0, errores = 0, clientesNuevos = 0, promovidos = 0;
     const resultDetails = [];
     let primerDupFecha = null, primerDupLote = null;
+    // IDs de movimientos ya emparejados en ESTA carga (cualquier capa): un mov
+    // guardado solo puede absorber UN mov del archivo entrante.
+    const matchConsumidos = new Set();
 
     const txFn = db.transaction(() => {
       for (const mov of movimientosRaw) {
@@ -6738,14 +6806,23 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               const fechaMs = new Date(`${mov.fecha}T12:00:00Z`).getTime();
               const candidatos = checkNmov.all(empresaId, bancoCartola, mov.nmov_santander);
               matchPrev = candidatos.find(c => {
+                if (matchConsumidos.has(c.id)) return false;
                 if (Math.round(c.monto || 0) !== mMonto) return false;
                 const cMs = new Date(`${c.fecha}T12:00:00Z`).getTime();
                 return Number.isFinite(cMs) && Math.abs(cMs - fechaMs) <= 6 * 86400000;
               }) || null;
               if (matchPrev) matchVia = 'nmov';
             }
-            if (!matchPrev && dedupKey) {
+            // Capa 2 (clave exacta) SOLO para movimientos entrantes CON N° de
+            // movimiento (tradicional/instantánea). Para la provisoria/histórica
+            // (sin nmov) el match exacto por fecha se saltaba la cola FIFO de la
+            // capa 3 y rompía la cadena de asignación cuando la fecha contable
+            // difiere de la real (validado: dejaba huérfano 1 de 8 YANEIBIS
+            // $300.000 nov-2026); la ventana de la capa 3 incluye delta 0, así
+            // que no se pierde ningún match.
+            if (!matchPrev && dedupKey && mov.nmov_santander) {
               let cand = checkDedup.get(empresaId, bancoCartola, dedupKey) || null;
+              if (cand && matchConsumidos.has(cand.id)) cand = null;
               // FIX FALSO DUPLICADO (nov 2026): la seq de la dedup_key solo desambigua
               // montos repetidos DENTRO de un mismo archivo. Si un cliente transfiere
               // 2+ veces el MISMO monto el mismo día y la segunda llega en una cartola
@@ -6780,7 +6857,42 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
               }
             }
 
+            // ── Capa 3: ventana de fechas (fecha contable ↔ fecha real) ─────────
+            // Solo si las capas exactas no encontraron nada. Dirección de la ventana:
+            //  - entrante PRELIMINAR (provisoria/instantánea, fecha contable): el mov
+            //    guardado con fecha real es IGUAL o ANTERIOR (contable >= real) → [f-4, f]
+            //  - entrante OFICIAL (tradicional/histórica, fecha real): el guardado
+            //    preliminar con fecha contable es IGUAL o POSTERIOR → [f, f+4]
+            // Guardas: monto exacto, glosa canónica idéntica, si AMBOS lados tienen
+            // N° de movimiento y difieren son transferencias distintas (no match), y
+            // cada candidato se consume una sola vez por carga.
+            if (!matchPrev && mov.fecha && /^\d{4}-\d{2}-\d{2}$/.test(mov.fecha)) {
+              const esPrelimActual = (tipoCartolaSantander === 'provisoria' || tipoCartolaSantander === 'instantanea');
+              const fDesde = esPrelimActual ? addDiasISO(mov.fecha, -4) : mov.fecha;
+              const fHasta = esPrelimActual ? mov.fecha : addDiasISO(mov.fecha, 4);
+              const mMontoV = Math.round(mov.monto || 0);
+              const glosaCanonIn = glosaCanonSantander(mov.glosa);
+              if (glosaCanonIn) {
+                // Candidato MÁS ANTIGUO primero (no menor delta): al procesar el
+                // archivo en orden cronológico, el emparejamiento conserva el orden
+                // FIFO de ambas fuentes y no deja huérfanos cuando un pagador repite
+                // el mismo monto varios días seguidos (greedy por menor delta sí los
+                // dejaba: validado con YANEIBIS 5x$300.000 nov-2026).
+                const candV = checkVentana.all(empresaId, bancoCartola, fDesde, fHasta, mMontoV - 1, mMontoV + 1, loteCargaId)
+                  .filter(c => Math.round(c.monto || 0) === mMontoV)
+                  .filter(c => glosaCanonCompatible(glosaCanonSantander(c.glosa), glosaCanonIn))
+                  .filter(c => !(c.nmov_santander && mov.nmov_santander && String(c.nmov_santander) !== String(mov.nmov_santander)))
+                  .filter(c => !matchConsumidos.has(c.id))
+                  .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || (a.id - b.id));
+                if (candV.length) {
+                  matchPrev = candV[0];
+                  matchVia = 'ventana';
+                }
+              }
+            }
+
             if (matchPrev) {
+              matchConsumidos.add(matchPrev.id);
               if (esOficialActual && esPreliminar(matchPrev.tipo_cartola)) {
                 // Promoción preliminar → oficial (conserva estado/lote/folio/id_compuesto).
                 // tipo_cartola refleja la fuente ('definitiva' o 'historica').
@@ -6811,7 +6923,7 @@ app.post('/api/movimientos/cargar-y-procesar', requireAuth, upload.single('carto
                 // Duplicado (mismo tipo, o preliminar sobre oficial). Si la actual es
                 // instantánea, aprovechar su descripción completa para enriquecer el
                 // nombre truncado del movimiento existente (solo prefijo→completo, no facturado).
-                if (tipoCartolaSantander === 'instantanea' && mov.nombre_origen &&
+                if ((tipoCartolaSantander === 'instantanea' || tipoCartolaSantander === 'provisoria') && mov.nombre_origen &&
                     mov.nombre_origen.length > String(matchPrev.nombre_origen || '').length) {
                   try {
                     enrichNombre.run(mov.nombre_origen, mov.nombre_origen, mov.nombre_origen, mov.nombre_origen, now, matchPrev.id);
